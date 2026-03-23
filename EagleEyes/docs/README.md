@@ -7,7 +7,7 @@ Welcome to the central documentation hub for the EagleEye real-time parking appl
 [Trello Board](https://trello.com/b/IFMGacCF): We use Trello to manage our Sprint Backlog, active tasks, and bug tracking.\
 [Figma Prototype](https://www.figma.com/design/ftmfOUMH1ZVUxEmOKf4XoK/EagleEyes-App?node-id=0-1&t=0swajFja7mmvvWPR-1): Interactive high-fidelity mockups and UI components.
 
-## 📂 **Directory Map**\
+## 📂 **Directory Map**
 [**01-Requirements**](./01-Requirements/)
 
 Focuses on the "What" and "Why" of the project.
