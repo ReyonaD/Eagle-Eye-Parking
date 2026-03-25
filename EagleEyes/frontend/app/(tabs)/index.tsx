@@ -1,71 +1,32 @@
-import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ActivityIndicator, Platform } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BACKEND_URL = Platform.OS === 'android'
-  ? 'http://10.0.2.2:8000/api/v1/health' 
-  : 'http://localhost:8000/api/v1/health';
+export default function MapScreen() {
+  const router = useRouter();
 
-export default function Home() {
-  const [serverMessage, setServerMessage] = useState('Connecting to FastAPI...');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(BACKEND_URL)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-      })
-      .then((data) => {
-        setServerMessage(`Connected! Status: ${JSON.stringify(data)}`);
-        setLoading(false);
-      })
-      .catch((error) => {
-        setServerMessage(`Connection Failed: ${error.message}`);
-        setLoading(false);
-      });
-  }, []);
+  const handleLogout = async () => {
+    // Destroy the token
+    await AsyncStorage.removeItem('token');
+    
+    // The _layout.tsx Bouncer will automatically detect the token is gone 
+    // and kick you back to the login screen, but we can also manually route there:
+    router.replace('/login');
+  };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>EagleEyes Diagnostics</Text>
-      
-      {loading ? <ActivityIndicator size="large" color="#0000ff" /> : null}
-      
-      <View style={styles.statusBox}>
-        <Text style={styles.status}>{serverMessage}</Text>
-      </View>
+      <Text style={styles.title}>EagleEyes Map here!</Text>
+      <Text style={styles.subtitle}>UNT Parking data will go here!</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f0f4f8',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  header: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#00853E', 
-  },
-  statusBox: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  status: {
-    fontSize: 16,
-    textAlign: 'center',
-    color: '#333',
-  },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f9f9f9' },
+  title: { fontSize: 32, fontWeight: 'bold', color: '#00853E', marginBottom: 10 },
+  subtitle: { fontSize: 16, color: '#666', marginBottom: 40 },
+  logoutButton: { backgroundColor: '#d9534f', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 8 },
+  logoutText: { color: 'white', fontSize: 16, fontWeight: 'bold' }
 });

@@ -20,9 +20,10 @@ export const register = async (email, password) => {
 //LOGIN
 export const login = async (email, password) => {
     try{
+        console.log("ATTEMPTING TO SEND -> Email:", email, "| Password:", password);
         //FastAPI login requires form-urlencoded, NOT JSON!
-        const formData = `username=${encodeURIComponent(email)}&passqword=${encodeURIComponent(password)}`;
-    
+        const formData = `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
+        console.log("EXACT PACKAGE BEING SENT:", formData);
         const res = await fetch(`${BASE_URL}/login`, {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -30,7 +31,19 @@ export const login = async (email, password) => {
     });
         const data = await res.json();
         if (!res.ok){
-            throw new Error(data.detail || 'Login failed');
+            let errorMessage = "Authentication failed.";
+    
+        // If FastAPI sends a simple text message (like "Incorrect email or password")
+        if (typeof data.detail === 'string') {
+        errorMessage = data.detail;
+        } 
+        // If FastAPI sends an array of validation errors (like "Not a valid email")
+        else if (Array.isArray(data.detail)) {
+        errorMessage = data.detail[0].msg; 
+        }
+
+        console.log("BACKEND REJECTION:", JSON.stringify(data, null, 2));
+        throw new Error(errorMessage);
         } 
         //save token to AsyncStorage
         await AsyncStorage.setItem('token', data.access_token);
