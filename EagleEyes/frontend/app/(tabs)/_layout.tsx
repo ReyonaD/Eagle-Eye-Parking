@@ -12,22 +12,38 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        // Hardcoding the exact UNT Green from your mockup for the active tab
+        tabBarActiveTintColor: '#00853E',
+        tabBarInactiveTintColor: '#A3D1B6', // A faded green for the inactive tabs
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarStyle: {
+          paddingBottom: 5, 
+        },
+        tabBarLabelStyle: {
+          fontWeight: 'bold', 
+          fontSize: 10,
+        }
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: 'MAP',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="map.fill" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="lots"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'LOTS',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="list.bullet" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'PROFILE',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.crop.circle" color={color} />,
         }}
       />
       <Tabs.Screen
