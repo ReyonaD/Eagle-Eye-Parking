@@ -1,5 +1,7 @@
+import requests
+import os
 from fastapi import FastAPI, Depends, HTTPException, status
-#from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError 
 from sqlalchemy.orm import Session
@@ -12,6 +14,14 @@ from app.core.security import get_password_hash, verify_password, create_access_
 from app.core.security import SECRET_KEY, ALGORITHM
 
 app = FastAPI(title = "EagleEyes API")
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify allowed origins instead of "*"
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -85,16 +95,6 @@ def login(
         "user_id": user.id
         }
 
-    
-# CORS configuration
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],  # In production, specify allowed origins instead of "*"
-#     allow_credentials=True,
-#     allow_methods=["*"],  # Allow all HTTP methods
-#     allow_headers=["*"],  # Allow all headers
-# )
-
 
 @app.get("/")
 def read_root():
@@ -112,3 +112,31 @@ def read_current_user(current_user: User = Depends(get_current_user)):
         "role": current_user.role,
         "is_active": current_user.is_active
     }
+
+@app.get("/api/lots")
+def get_parking_lots():
+    """mock data representing the unt lots drawn in Parkzen Dashaboard"""
+    return [
+        {
+            "id": "lot-20",
+            "name": "Lot 20 (Eagle)",
+            "isFull": False, 
+            "polygonCoordinates": [
+                {"latitude": 33.2160, "longitude": -97.1500},
+                {"latitude": 33.2160, "longitude": -97.1470},
+                {"latitude": 33.2145, "longitude": -97.1470},
+                {"latitude": 33.2145, "longitude": -97.1500},
+            ]
+        },
+        {
+            "id": "highland-garage",
+            "name": "Highland Street Garage",
+            "isFull": True, 
+            "polygonCoordinates": [
+                {"latitude": 33.2130, "longitude": -97.1460},
+                {"latitude": 33.2130, "longitude": -97.1440},
+                {"latitude": 33.2115, "longitude": -97.1440},
+                {"latitude": 33.2115, "longitude": -97.1460},
+            ]
+        }
+    ]

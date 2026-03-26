@@ -1,5 +1,14 @@
-// Reexport the native module. On web, it will be resolved to parkzen-coreModule.web.ts
-// and on native platforms to parkzen-coreModule.ts
-export { default } from './src/parkzen-coreModule';
-export { default as parkzen-coreView } from './src/parkzen-coreView';
-export * from  './src/parkzen-core.types';
+import { requireNativeModule } from 'expo-modules-core';
+
+// Grab the native Swift module directly in this file!
+const ParkzenCore = requireNativeModule('ParkzenCore');
+
+// Expose the permissions function
+export function requestPermissions(): void {
+  return ParkzenCore.requestPermissions();
+}
+
+// Expose the location function
+export async function getParkedLocation(): Promise<{latitude: number, longitude: number} | null> {
+  return await ParkzenCore.getParkedLocation();
+}
