@@ -115,27 +115,78 @@ def read_current_user(current_user: User = Depends(get_current_user)):
 @app.get("/api/lots")
 def get_parking_lots():
     """mock data representing the unt lots drawn in Parkzen Dashaboard"""
-    return [
-        {
-            "id": "lot-20",
-            "name": "Lot 20 (Eagle)",
-            "isFull": False, 
-            "polygonCoordinates": [
-                {"latitude": 33.2160, "longitude": -97.1500},
-                {"latitude": 33.2160, "longitude": -97.1470},
-                {"latitude": 33.2145, "longitude": -97.1470},
-                {"latitude": 33.2145, "longitude": -97.1500},
-            ]
-        },
-        {
-            "id": "highland-garage",
-            "name": "Highland Street Garage",
-            "isFull": True, 
-            "polygonCoordinates": [
-                {"latitude": 33.2130, "longitude": -97.1460},
-                {"latitude": 33.2130, "longitude": -97.1440},
-                {"latitude": 33.2115, "longitude": -97.1440},
-                {"latitude": 33.2115, "longitude": -97.1460},
-            ]
+    # return [
+    #     {
+    #         "id": "lot-20",
+    #         "name": "Lot 20 (Eagle)",
+    #         "isFull": False, 
+    #         "polygonCoordinates": [
+    #             {"latitude": 33.2160, "longitude": -97.1500},
+    #             {"latitude": 33.2160, "longitude": -97.1470},
+    #             {"latitude": 33.2145, "longitude": -97.1470},
+    #             {"latitude": 33.2145, "longitude": -97.1500},
+    #         ]
+    #     },
+    #     {
+    #         "id": "highland-garage",
+    #         "name": "Highland Street Garage",
+    #         "isFull": True, 
+    #         "polygonCoordinates": [
+    #             {"latitude": 33.2130, "longitude": -97.1460},
+    #             {"latitude": 33.2130, "longitude": -97.1440},
+    #             {"latitude": 33.2115, "longitude": -97.1440},
+    #             {"latitude": 33.2115, "longitude": -97.1460},
+    #         ]
+    #     }
+    # ]
+    #load credentials from environment variables
+    client_id = os.getenv("PARKZEN_CLIENT_ID", "University of North Texas")
+    username = os.getenv("PARKZEN_USERNAME")
+    password = os.getenv("PARKZEN_PASSWORD")
+
+    if not username or not password:
+        raise HTTPException(status_code=500, detail="Missing ParkZen credentials in backend .env")
+    
+    try:
+        #get the access token
+        auth_url = "https://api.parkzenapp.com/api/auth/login"
+        auth_payload = {
+            "username": username,
+            "password": password
         }
-    ]
+        auth_response = requests.post(auth_url, json = auth_payload)
+
+        if auth_response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Failed to authenticate with ParkZen")
+        
+        auth_data = auth_response.json()
+        #keep the token checking flexible since the ParkZen API might return the token in different formats. We will try to find the token in multiple places in the response.
+        token = auth_data.get("accessToken") or auth_data.get("token") 
+        if not token and "data" in auth_data:
+            token = auth_data["data"].get("accessToken") or auth_data["data"].get("token")
+            
+        if not token:
+            print("Raw Auth Response:", auth_data)
+            raise HTTPException(status_code=500, detail="Could not find token in login response")
+        #fetch the UNT lots using the token
+        lots_url = f"https://api.parkzenapp.com/api/lots?clientId={client_id}"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        lots_response = requests.get(lots_url, headers=headers)
+
+        if lots_response.status_code != 200:
+            raise HTTPException(lots_response.status_code, detail="Fail to fetch lots from ParkZen API")
+        
+        raws_lots_data = lots_response.json()
+
+        #extract the array
+        actual_lots_array = raws_lots_data.get("data") or raws_lots_data.get("lots") or raws_lots_data
+
+        if not isinstance(actual_lots_array, list):
+            raise HTTPException(status_code=500, detail="Unexpected response format from ParkZen API")
+        
+        #return raw array to the frontend
+        return actual_lots_array
+    except Exception as e:
+        print(f"Server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")

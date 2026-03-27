@@ -42,36 +42,40 @@ export default function MapScreen() {
       }
     };
 
-    const fetchLotDrawings = async () => {
+    const fetchParkZenLots = async () => {
       try {
-        const response = await fetch('http://127.0.0.1:5000/api/lots', {
+        const response = await fetch('http://localhost:5000/api/lots', {
           method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          }
+          headers: { 'Content-Type': 'application/json'}
         });
-        
-        if (response.ok) {
-          const data = await response.json();
-          
-          // Map the Python JSON to React Native's Polygon format
-          const formattedLots = data.map((lot: any) => ({
-            id: lot.id,
-            name: lot.name,
-            fillColor: lot.isFull ? 'rgba(255, 0, 0, 0.4)' : 'rgba(0, 133, 62, 0.4)',
-            strokeColor: lot.isFull ? '#FF0000' : '#00853E',
-            coordinates: lot.polygonCoordinates
+        if (!response.ok) 
+          throw new Error("Backend server rejected the request")
+
+        const data = await response.json();
+        //map the data
+        const formattedLots = data.map((lot: any, index: number) => {
+          const mappedCoords = (lot.vertices || []).map((v: any) => ({
+            latitude: v.latitude || v.lat,
+            longitude: v.longitude || v.lng || v.lon
           }));
 
-          setLiveLots(formattedLots);
-        }
+          return {
+            id: lot.id || index.toString(),
+            name: lot.name || `Lot ${index}`,
+            fillColor: 'rgba(0, 133, 62, 0.4)', // UNT Green
+            strokeColor: '#00853E',
+            coordinates: mappedCoords
+          };
+        });
+        setLiveLots(formattedLots);
+        console.log("Successfully fetched lots from backend:", formattedLots);
       } catch (error) {
-        console.log("Could not fetch lots from backend:", error);
+        console.log("Could not fetch lots from backend", error);
       }
     };
 
     setupParkZen();
-    fetchLotDrawings();
+    fetchParkZenLots();
   }, []);
 
   const handleFindMyCar = async () => {

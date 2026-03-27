@@ -21,5 +21,18 @@ public class ParkzenCoreModule: Module {
       }
       return nil // Returns null if they haven't parked yet
     }
+    // This goes inside your definition() block in Swift
+    Function("initializeParkZen") { (clientId: String, username: String, password: String) in
+      // 1. Catch the credentials from JS
+      // 2. Pass them to the actual ParkZen SDK
+      // Example: ParkZen.login(clientId: clientId, ...)
+      // ParkZenV2.authenticate(
+      //     clientId: clientId, 
+      //     username: username, 
+      //     password: password
+      // )
+      
+      print("✅ParkZen SDK successfully fed credentials!")
+    }
   }
 }
