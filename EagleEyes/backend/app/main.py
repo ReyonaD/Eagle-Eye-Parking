@@ -95,6 +95,16 @@ def login(
         "user_id": user.id
         }
 
+    
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify allowed origins instead of "*"
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
+
 
 @app.get("/")
 def read_root():
