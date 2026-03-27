@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, status
-#from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError 
 from sqlalchemy.orm import Session
@@ -87,13 +87,13 @@ def login(
 
     
 # CORS configuration
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],  # In production, specify allowed origins instead of "*"
-#     allow_credentials=True,
-#     allow_methods=["*"],  # Allow all HTTP methods
-#     allow_headers=["*"],  # Allow all headers
-# )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify allowed origins instead of "*"
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
 
 
 @app.get("/")
