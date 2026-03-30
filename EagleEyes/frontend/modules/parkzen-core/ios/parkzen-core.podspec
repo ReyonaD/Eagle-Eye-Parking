@@ -15,8 +15,10 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore'
 
   # Add this line so the bridge is allowed to talk to the SDK!
-  s.dependency 'ParkZenCore-Dist/Parking'
-  
+  #s.dependency 'ParkZenCore-Dist/Parking'
+  s.vendored_frameworks = 'ParkZenCoreV2.xcframework'
+  # Add this line to FORCE Xcode to look in the pod target root folder
+  #s.xcconfig = { 'FRAMEWORK_SEARCH_PATHS' => '"${PODS_TARGET_SRCROOT}"' }
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',

@@ -23,7 +23,7 @@ Clone this repo to your machine and navigate into the backend folder:
 Install the required Python packages:
 `pip install -r requirements.txt`
 Start the server using this exact command:
-`uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
+`uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload`
 (Note: The --host 0.0.0.0 part is crucial! It opens the network so Android emulators can actually see the server).
 
 ✅ If it's working, you'll see a message saying "Application startup complete". Leave this terminal window open and running!
