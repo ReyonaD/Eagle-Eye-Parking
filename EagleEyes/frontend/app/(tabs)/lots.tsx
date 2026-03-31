@@ -3,7 +3,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-// ─── Top Bar ───────────────────────────────────────────────────────────
+//Top Bar
 function TopBar() {
   return (
     <View style={styles.topBar}>
@@ -30,7 +30,7 @@ function TopBar() {
   );
 }
 
-// ─── Lots Screen ───────────────────────────────────────────────────────
+// Lots Screen
 export default function LotsScreen() {
   return (
     <View style={styles.container}>
@@ -43,7 +43,7 @@ export default function LotsScreen() {
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────
+// Styles
 const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: '#f9f9f9' },
   content:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
