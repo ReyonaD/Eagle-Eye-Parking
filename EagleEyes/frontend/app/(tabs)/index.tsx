@@ -1,30 +1,54 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Alert, Image, ScrollView } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 
-
 import { requestPermissions, getParkedLocation } from '../../modules/parkzen-core';
-/**
- * EAGLEEYES MAP VIEW - FRONTEND HANDOFF NOTE
- * --------------------------------------------------------------------------
- * 1. NATIVE BRIDGE: 'requestPermissions' and 'getParkedLocation' are tied to 
- * the custom iOS Swift module (ParkzenCore). Do not change these names 
- * unless you update the Native Module in /modules/parkzen-core.
- * * 2. DATA SOURCE: The 'fetchLotDrawings' function currently hits our 
- * local Python FastAPI server (Port 5000). 
- * - To change Lot colors/data: Modify 'backend/app/main.py'
- * - To swap to real ParkZen API(waiting response from Fernando): Update the URL in the fetch() below.
- * * 3. MAP UI: We are using 'react-native-maps' with PROVIDER_GOOGLE. 
- * - To change map styles: Use the 'customMapStyle' prop on <MapView>.
- * - To add more layers: Add children (Markers/Polygons) inside <MapView>.
- * * 4. DEV TOOL: Long-press anywhere on the map to simulate a "Parking Event" 
- * since the simulator cannot detect physical driving.
- * --------------------------------------------------------------------------
- */
+
+// Top Bar Component
+function TopBar() {
+  return (
+    <View style={styles.topBar}>
+      {/* Left: Logo - fixed width */}
+      <View style={styles.topBarSide}>
+        <Image
+          source={require('../../assets/images/Logo_EagleEye.png')}
+          style={styles.logo}
+        />
+      </View>
+
+      {/* Center: App Name */}
+      <Text style={styles.appName}>EagleEyes</Text>
+
+      {/* Right: Bell - fixed width */}
+      <View style={styles.topBarSide}>
+        <TouchableOpacity style={styles.bellWrapper}>
+          <Ionicons name="notifications-outline" size={28} color="#333" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 export default function MapScreen() {
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
-  const [liveLots, setLiveLots] = useState<any[]>([]); 
+  const [liveLots, setLiveLots] = useState<any[]>([]);
+  const [selectedCampus, setSelectedCampus] = useState("Main campus");
+  const [openCampus, setOpenCampus] = useState(false);
+  const [selectedPermit, setSelectedPermit] = useState("Eagle");
+  const [openPermit, setOpenPermit] = useState(false);
+
+  const campuses = ["Main campus", "Discovery Park", "Frisco Landing"];
+  const permits = [
+    "Eagle",
+    "Remote",
+    "Faculty",
+    "A-Reserved",
+    "Visitor",
+    "Hall Director",
+    "Resident Reserved",
+    "Motorcycle"
+  ];
 
   const untRegion = {
     latitude: 33.2140,
@@ -52,19 +76,45 @@ export default function MapScreen() {
           throw new Error("Backend server rejected the request")
 
         const data = await response.json();
-        //map the data
         const formattedLots = data.map((lot: any, index: number) => {
           const mappedCoords = (lot.vertices || []).map((v: any) => ({
             latitude: v.latitude || v.lat,
             longitude: v.longitude || v.lng || v.lon
           }));
 
+          // Determine colors based on occupancy status
+          let fillColor = 'rgba(53, 53, 53, 0.4)'; // Default: Unknown (Grey)
+          let strokeColor = '#6c6b6b';
+
+          const hasOccupancyData = lot.isFull !== undefined || lot.status !== undefined || lot.percentEmpty !== undefined;
+
+          if (hasOccupancyData) {
+            const isFull = lot.isFull === true || lot.status === 'Full';
+            const percentEmpty = lot.percentEmpty !== undefined ? lot.percentEmpty : 100;
+            const percentFull = 100 - percentEmpty;
+
+            if (isFull || percentFull >= 95) {
+              fillColor = 'rgba(231, 76, 60, 0.4)'; // Full (Red)
+              strokeColor = '#E74C3C';
+            } else if (percentFull >= 85 && percentFull < 95) {
+              fillColor = 'rgba(243, 156, 18, 0.4)'; // Near Capacity (Orange)
+              strokeColor = '#F39C12';
+            } else {
+              fillColor = 'rgba(46, 204, 113, 0.4)'; // Available (Green)
+              strokeColor = '#2ECC71';
+            }
+          }
+
           return {
+            ...lot, // Keep all raw data for debugging
             id: lot.id || index.toString(),
-            name: lot.name || `Lot ${index}`,
-            fillColor: 'rgba(0, 133, 62, 0.4)', // UNT Green
-            strokeColor: '#00853E',
-            coordinates: mappedCoords
+            name: lot.lot_name || lot.name || lot.lotName || lot.title || (lot.id ? `Lot ${lot.id}` : `Lot ${index}`),
+            fillColor,
+            strokeColor,
+            coordinates: mappedCoords,
+            percentEmpty: lot.percentEmpty,
+            isFull: lot.isFull || lot.status === 'Full',
+            permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
           };
         });
         setLiveLots(formattedLots);
@@ -102,6 +152,78 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
+      <TopBar />
+
+      {/* ROW: CAMPUS (left) + PERMIT (right) */}
+      <View style={styles.row}>
+        {/* CAMPUS DROPDOWN */}
+        <View style={[styles.dropdownWrapper, { flex: 1, marginRight: 8 }]}>
+          <Text style={styles.dropdownLabel}>CAMPUS</Text>
+          <TouchableOpacity
+            style={styles.dropdownBox}
+            onPress={() => setOpenCampus(!openCampus)}
+          >
+            <Text style={styles.dropdownText}>{selectedCampus}</Text>
+            <Ionicons
+              name={openCampus ? "chevron-up" : "chevron-down"}
+              size={20}
+              color="#333"
+            />
+          </TouchableOpacity>
+          {openCampus && (
+            <View style={styles.dropdownList}>
+              {campuses.map((campus) => (
+                <TouchableOpacity
+                  key={campus}
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setSelectedCampus(campus);
+                    setOpenCampus(false);
+                  }}
+                >
+                  <Text style={styles.dropdownItemText}>{campus}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* PERMIT DROPDOWN */}
+        <View style={[styles.dropdownWrapper, { flex: 1, marginLeft: 8 }]}>
+          <Text style={styles.dropdownLabel}>PERMIT</Text>
+          <TouchableOpacity
+            style={styles.dropdownBox}
+            onPress={() => setOpenPermit(!openPermit)}
+          >
+            <Text style={styles.dropdownText}>{selectedPermit}</Text>
+            <Ionicons
+              name={openPermit ? "chevron-up" : "chevron-down"}
+              size={20}
+              color="#333"
+            />
+          </TouchableOpacity>
+          {openPermit && (
+            <View style={styles.dropdownList}>
+              <ScrollView nestedScrollEnabled={true}>
+                {permits.map((permit) => (
+                  <TouchableOpacity
+                    key={permit}
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      setSelectedPermit(permit);
+                      setOpenPermit(false);
+                    }}
+                  >
+                    <Text style={styles.dropdownItemText}>{permit}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* MAP */}
       <MapView 
         style={styles.map} 
         provider={PROVIDER_GOOGLE} 
@@ -116,30 +238,160 @@ export default function MapScreen() {
             fillColor={lot.fillColor}
             strokeColor={lot.strokeColor}
             strokeWidth={2}
+            tappable={true}
+            onPress={() => {
+              // Filter out long coordinate arrays so the alert is readable
+              const { vertices, coordinates, fillColor, strokeColor, id, name, ...debugData } = lot;
+              
+              Alert.alert(
+                lot.name,
+                `Permits: ${lot.permits}\n` +
+                `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
+                `Is Full: ${lot.isFull ? 'Yes' : 'No'}\n\n`
+                // `--- Raw Backend Data ---\n` +
+                // JSON.stringify(debugData, null, 2)
+              );
+            }}
           />
         ))}
-
         {parkedLocation && (
           <Marker coordinate={parkedLocation} title="My Car" pinColor="#0000FF" />
         )}
       </MapView>
 
+      {/* FIND MY CAR BUTTON */}
       <TouchableOpacity style={styles.findCarButton} onPress={handleFindMyCar}>
         <Ionicons name="car" size={24} color="white" />
         <Text style={styles.findCarText}>Find My Car</Text>
       </TouchableOpacity>
+
+      {/* CAPACITY INDICATOR AT BOTTOM */}
+      <View style={styles.capacityContainer}>
+        <View style={styles.capacityRow}>
+          <View style={styles.capacityItem}>
+            <View style={[styles.capacityDot, { backgroundColor: "#2ECC71" }]} />
+            <Text style={styles.capacityText}>AVAILABLE</Text>
+          </View>
+          <View style={styles.capacityItem}>
+            <View style={[styles.capacityDot, { backgroundColor: "#F39C12" }]} />
+            <Text style={styles.capacityText}>NEAR CAPACITY</Text>
+          </View>
+          <View style={styles.capacityItem}>
+            <View style={[styles.capacityDot, { backgroundColor: "#E74C3C" }]} />
+            <Text style={styles.capacityText}>FULL</Text>
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
 
+// Styles
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  map: { width: '100%', height: '100%' },
+  container: { flex: 1, backgroundColor: '#f9f9f9' },
+  map: { flex: 1, width: '100%' },
   findCarButton: {
-    position: 'absolute', bottom: 40, alignSelf: 'center', backgroundColor: '#00853E',
+    position: 'absolute', bottom: 100, alignSelf: 'center', backgroundColor: '#00853E',
     flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 24,
     borderRadius: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 5, elevation: 5,
   },
-  findCarText: { color: 'white', fontWeight: 'bold', fontSize: 18, marginLeft: 10, }
+  findCarText: { color: 'white', fontWeight: 'bold', fontSize: 18, marginLeft: 10 },
+
+  // Top Bar
+  topBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8, paddingTop: 40, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  topBarSide: { width: 50, justifyContent: 'center' },
+  bellWrapper: { alignItems: 'flex-end' },
+  logo: { width: 100, height: 55, resizeMode: 'contain' },
+  appName: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: '#00853E' },
+
+  // Dropdown Row
+  row: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+  },
+
+  // Dropdown
+  dropdownWrapper: {
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  dropdownLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#777",
+    marginBottom: 4,
+  },
+  dropdownBox: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    backgroundColor: "#f9f9f9",
+  },
+  dropdownText: {
+    fontSize: 14,
+    color: "#333",
+  },
+  dropdownList: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    maxHeight: 135,
+    overflow: "hidden",
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: "#333",
+  },
+
+  // Capacity Indicator at Bottom
+  capacityContainer: {
+    position: "absolute",
+    bottom: 0,
+    width: "100%",
+    alignItems: "center",
+    paddingBottom: 12,
+  },
+  capacityRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: "90%",
+    backgroundColor: "#fff",
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  capacityItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  capacityDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  capacityText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
+  },
 });

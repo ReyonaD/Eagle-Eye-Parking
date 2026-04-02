@@ -22,35 +22,28 @@ export default function TabLayout() {
         },
         tabBarLabelStyle: {
           fontWeight: 'bold', 
-          fontSize: 10,
+          fontSize: 12,
         }
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'MAP',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="map.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={32} name="map.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="lots"
         options={{
           title: 'LOTS',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="list.bullet" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={32} name="list.bullet" color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'PROFILE',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.crop.circle" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="mapview"
-        options={{
-          title: 'Map',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="map.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={32} name="person.crop.circle" color={color} />,
         }}
       />
     </Tabs>
