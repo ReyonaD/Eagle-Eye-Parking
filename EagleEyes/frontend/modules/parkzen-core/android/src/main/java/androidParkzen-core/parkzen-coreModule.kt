@@ -1,50 +1,57 @@
-package androidParkzen-core
+package expo.modules.parkzencore
 
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import java.net.URL
+import android.app.Activity
+import android.content.Context
+import android.Manifest
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 
-class parkzen-coreModule : Module() {
-  // Each module class must implement the definition function. The definition consists of components
-  // that describes the module's functionality and behavior.
-  // See https://docs.expo.dev/modules/module-api for more details about available components.
+class ParkzenCoreModule : Module() {
   override fun definition() = ModuleDefinition {
-    // Sets the name of the module that JavaScript code will use to refer to the module. Takes a string as an argument.
-    // Can be inferred from module's class name, but it's recommended to set it explicitly for clarity.
-    // The module will be accessible from `requireNativeModule('parkzen-core')` in JavaScript.
-    Name("parkzen-core")
+    // Sets the name of the module that JavaScript will use
+    Name("ParkzenCore")
 
-    // Defines constant property on the module.
-    Constant("PI") {
-      Math.PI
-    }
-
-    // Defines event names that the module can send to JavaScript.
+    // Defines standard boilerplate events
     Events("onChange")
 
-    // Defines a JavaScript synchronous function that runs the native code on the JavaScript thread.
-    Function("hello") {
-      "Hello world! 👋"
+    // The function we will call from React Native later
+    Function("configure") { apiKey: String, clientId: String ->
+        // We will add the ParkZen SDK initialization here later!
+        "ParkZen Configured!"
     }
 
-    // Defines a JavaScript function that always returns a Promise and whose native code
-    // is by default dispatched on the different thread than the JavaScript runtime runs on.
-    AsyncFunction("setValueAsync") { value: String ->
-      // Send an event to JavaScript.
-      sendEvent("onChange", mapOf(
-        "value" to value
-      ))
-    }
-
-    // Enables the module to be used as a native view. Definition components that are accepted as part of
-    // the view definition: Prop, Events.
-    View(parkzen-coreView::class) {
-      // Defines a setter for the `url` prop.
-      Prop("url") { view: parkzen-coreView, url: URL ->
-        view.webView.loadUrl(url.toString())
+    Function("requestPermissions") {
+      val activity = appContext.activityProvider?.currentActivity
+      if (activity != null) {
+        val requiredPermissions = arrayOf(
+          Manifest.permission.ACCESS_FINE_LOCATION,
+          Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        ActivityCompat.requestPermissions(activity, requiredPermissions, 1001)
+        "Permissions requested"
+      } else {
+        "Activity not available"
       }
-      // Defines an event that the view can send to JavaScript.
-      Events("onLoad")
+    }
+
+    AsyncFunction("getParkedLocation") {
+      // Placeholder for ParkZen SDK integration
+      // Returns null since we're not actually querying the ParkZen SDK on Android yet
+      null
+    }
+
+    Function("initializeParkZen") { clientId: String, username: String, password: String ->
+      // Placeholder for ParkZen SDK authentication
+      "ParkZen initialized with clientId: $clientId"
+    }
+
+    // Links to the View file
+    View(ParkzenCoreView::class) {
+      Prop("name") { view: ParkzenCoreView, prop: String ->
+        // Standard view prop
+      }
     }
   }
 }

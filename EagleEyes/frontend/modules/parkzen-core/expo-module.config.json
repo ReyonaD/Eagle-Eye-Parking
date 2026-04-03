@@ -4,6 +4,6 @@
     "modules": ["ParkzenCoreModule"]
   },
   "android": {
-    "modules": ["androidParkzen-core.parkzen-coreModule"]
+    "modules": ["expo.modules.parkzencore.ParkzenCoreModule"]
   }
 }

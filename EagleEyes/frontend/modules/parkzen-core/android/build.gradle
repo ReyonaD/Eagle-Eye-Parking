@@ -7,7 +7,7 @@ group = 'androidParkzen-core'
 version = '0.7.9'
 
 android {
-  namespace "androidParkzen-core"
+  namespace "expo.modules.parkzencore"
   defaultConfig {
     versionCode 1
     versionName "0.7.9"
@@ -15,4 +15,9 @@ android {
   lintOptions {
     abortOnError false
   }
+}
+
+dependencies {
+  //tell android to look in the local folder for the .aar file
+  implementation files('libs/parkzen-core-0.1.aar')
 }

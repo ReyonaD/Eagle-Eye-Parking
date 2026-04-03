@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Alert, Image, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Alert, Image, ScrollView, Platform } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 
 import { requestPermissions, getParkedLocation } from '../../modules/parkzen-core';
+const BACKEND_URL = Platform.OS === 'android' 
+  ? 'http://192.168.0.99:8000' 
+  : 'http://localhost:8000';
 
+  //console.log("DEBUG: Current Backend URL is:", BACKEND_URL);
 // Top Bar Component
 function TopBar() {
   return (
@@ -60,27 +64,46 @@ export default function MapScreen() {
   useEffect(() => {
     const setupParkZen = async () => {
       try {
-        await requestPermissions();
+        console.log("Attempting to request ParkZen permissions...");
+        const result = await requestPermissions();
+        console.log("ParkZen permissions result:", result);
       } catch (error) {
-        console.log("Bridge not ready:", error);
+        console.warn("ParkZen requestPermissions failed (this is expected on Android simulator):", error);
+        // Don't crash the app if permissions fail
       }
     };
 
     const fetchParkZenLots = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/lots', {
+        console.log("Fetching parking lots from backend...");
+        const response = await fetch(`${BACKEND_URL}/api/lots`, {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json'}
+          headers: { 'Content-Type': 'application/json'},
+          timeout: 5000
         });
         if (!response.ok) 
-          throw new Error("Backend server rejected the request")
+          throw new Error(`Backend returned ${response.status}: ${response.statusText}`);
 
         const data = await response.json();
+        console.log("Raw backend data:", data);
+        
+        if (!Array.isArray(data)) {
+          console.warn("Backend data is not an array:", data);
+          setLiveLots([]);
+          return;
+        }
+
         const formattedLots = data.map((lot: any, index: number) => {
           const mappedCoords = (lot.vertices || []).map((v: any) => ({
-            latitude: v.latitude || v.lat,
-            longitude: v.longitude || v.lng || v.lon
-          }));
+            latitude: parseFloat(v.latitude) || parseFloat(v.lat),
+            longitude: parseFloat(v.longitude) || parseFloat(v.lng) || parseFloat(v.lon)
+          }))
+          .filter((v: any) => !isNaN(v.latitude) && !isNaN(v.longitude));
+
+          if (mappedCoords.length === 0) {
+            console.warn(`Lot ${index} has no valid coordinates:`, lot.vertices);
+            return null;
+          }
 
           // Determine colors based on occupancy status
           let fillColor = 'rgba(53, 53, 53, 0.4)'; // Default: Unknown (Grey)
@@ -106,7 +129,7 @@ export default function MapScreen() {
           }
 
           return {
-            ...lot, // Keep all raw data for debugging
+            ...lot,
             id: lot.id || index.toString(),
             name: lot.lot_name || lot.name || lot.lotName || lot.title || (lot.id ? `Lot ${lot.id}` : `Lot ${index}`),
             fillColor,
@@ -116,31 +139,43 @@ export default function MapScreen() {
             isFull: lot.isFull || lot.status === 'Full',
             permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
           };
-        });
+        }).filter((lot: any) => lot !== null);
+
         setLiveLots(formattedLots);
-        console.log("Successfully fetched lots from backend:", formattedLots);
+        console.log("Successfully fetched and formatted lots:", formattedLots.length);
       } catch (error) {
-        console.log("Could not fetch lots from backend", error);
+        console.error("Error fetching lots from backend:", error);
+        setLiveLots([]); // Set empty array to prevent render errors
       }
     };
 
+    // Run both setup tasks
     setupParkZen();
     fetchParkZenLots();
   }, []);
 
+
   const handleFindMyCar = async () => {
     try {
+      console.log("Finding parked car location...");
       const loc = await getParkedLocation();
-      if (loc && loc.latitude) {
+      console.log("Got location:", loc);
+      
+      if (loc && loc.latitude && loc.longitude) {
         setParkedLocation(loc);
-        Alert.alert("Car Found!", "Dropping a pin at your location.");
+        Alert.alert("Car Found!", `Lat: ${loc.latitude.toFixed(4)}, Lon: ${loc.longitude.toFixed(4)}`);
       } else if (parkedLocation) {
         Alert.alert("Simulated Car Found!", "Showing the manually dropped pin.");
       } else {
-        Alert.alert("No Parking Detected", "ParkZen hasn't detected a parking event.");
+        Alert.alert("No Parking Detected", "Long-press the map to simulate parking, or ParkZen hasn't detected a parking event yet.");
       }
     } catch (error) {
-      Alert.alert("Bridge Error", "Could not reach the native SDK.");
+      console.warn("Error in getParkedLocation:", error);
+      if (parkedLocation) {
+        Alert.alert("Using Simulated Location", "Showing manually dropped pin.");
+      } else {
+        Alert.alert("Location Unavailable", "Tap the map to mark a location.");
+      }
     }
   };
 
@@ -231,7 +266,7 @@ export default function MapScreen() {
         showsUserLocation={true}
         onLongPress={handleLongPress}
       >
-        {liveLots.map((lot) => (
+        {liveLots.length > 0 && liveLots.map((lot) => (
           <Polygon
             key={lot.id}
             coordinates={lot.coordinates}
