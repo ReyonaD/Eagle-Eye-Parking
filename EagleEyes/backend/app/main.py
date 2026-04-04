@@ -1,5 +1,6 @@
 import requests
 import os
+import random
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
@@ -47,6 +48,26 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     
     return user
+
+permit_cache = {}
+def get_permit_name(permit_id: str, token: str):
+    """fetch the real name of permit from Parkzen, using a cache to be fast"""
+    if permit_id in permit_cache:
+        return permit_cache[permit_id]
+    url = f"https://api.parkzenapp.com/api/permits/{permit_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            name = data.get("name") or data.get("title") or data.get("type") or "Unknown"
+            permit_cache[permit_id] = name
+            return name
+    except requests.RequestException as e:
+        print(f"Error fetching permit name for {permit_id}: {e}")
+    return "Unknown"
+
 @app.post("/register", status_code=status.HTTP_201_CREATED)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
     """Registers new user and save them to the database"""
@@ -185,8 +206,44 @@ def get_parking_lots():
         if not isinstance(actual_lots_array, list):
             raise HTTPException(status_code=500, detail="Unexpected response format from ParkZen API")
         
-        #return raw array to the frontend
+        for lot in actual_lots_array:
+            raw_permit_id = lot.get("permits", [])
+            readable_permits = []
+            for permit_id in raw_permit_id:
+                #use helper function and pass the token 
+                permit_name = get_permit_name(permit_id, token)
+                readable_permits.append(permit_name)
+
+            #replace the raw permit ids with the readable names in the lot data
+            lot["permits"] = readable_permits
+
+            #DEMO MODE: fake the data for testing the frontend. You can remove this part when you have real data from ParkZen.
+            if "occupancy" not in lot or not lot["occupancy"]:
+                #generate random occupancy data for testing between 10% and 100%
+                fake_occupancy = round(random.uniform(0.1,1.0), 2)
+                
+                if fake_occupancy >= 0.95:
+                    fill = '#E74C3C'  # Red for full
+                    status = "Full"
+                elif fake_occupancy >= 0.85:
+                    fill = '#F39C12'  # Yellow for medium
+                    status = "Medium"
+                else:
+                    fill = '#2ECC71'  # Green for low
+                    status = "Available"
+
+                lot["fillColor"] = fill
+                lot["infoSheetTitle"] = status
+                lot["occupancy"] = {
+                    "lastUpdatedVia": "capstone_simulation",
+                    "capstone_simulation": {
+                        "estimate": fake_occupancy
+                    }
+                }
+                lot["numParkedUsers"] = int(fake_occupancy * random.randint(100,300))   #also generate a random number of parked users based on the occupancy for testing     
+        #return clean array to the frontend
         return actual_lots_array
     except Exception as e:
         print(f"Server error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
+    

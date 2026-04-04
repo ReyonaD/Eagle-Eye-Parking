@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { requestPermissions, getParkedLocation } from '../../modules/parkzen-core';
 const BACKEND_URL = Platform.OS === 'android' 
-  ? 'http://192.168.0.99:8000' 
+  ? 'http://10.0.2.2:8000' 
   : 'http://localhost:8000';
 
   //console.log("DEBUG: Current Backend URL is:", BACKEND_URL);
@@ -78,8 +78,7 @@ export default function MapScreen() {
         console.log("Fetching parking lots from backend...");
         const response = await fetch(`${BACKEND_URL}/api/lots`, {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json'},
-          timeout: 5000
+          headers: { 'Content-Type': 'application/json'}
         });
         if (!response.ok) 
           throw new Error(`Backend returned ${response.status}: ${response.statusText}`);
@@ -108,25 +107,32 @@ export default function MapScreen() {
           // Determine colors based on occupancy status
           let fillColor = 'rgba(53, 53, 53, 0.4)'; // Default: Unknown (Grey)
           let strokeColor = '#6c6b6b';
+          let capacityStatus = "Unknown";
+          let percentFull = "N/A";
 
-          const hasOccupancyData = lot.isFull !== undefined || lot.status !== undefined || lot.percentEmpty !== undefined;
-
-          if (hasOccupancyData) {
-            const isFull = lot.isFull === true || lot.status === 'Full';
-            const percentEmpty = lot.percentEmpty !== undefined ? lot.percentEmpty : 100;
-            const percentFull = 100 - percentEmpty;
-
-            if (isFull || percentFull >= 95) {
-              fillColor = 'rgba(231, 76, 60, 0.4)'; // Full (Red)
-              strokeColor = '#E74C3C';
-            } else if (percentFull >= 85 && percentFull < 95) {
-              fillColor = 'rgba(243, 156, 18, 0.4)'; // Near Capacity (Orange)
-              strokeColor = '#F39C12';
-            } else {
-              fillColor = 'rgba(46, 204, 113, 0.4)'; // Available (Green)
-              strokeColor = '#2ECC71';
-            }
+          // Use ParkZen's Native Fill Color if available
+          if (lot.fillColor) {
+             fillColor = lot.fillColor; 
+             strokeColor = lot.fillColor === '#2ECC71' ? '#27AE60' : 
+                           lot.fillColor === '#F39C12' ? '#D68910' : 
+                           lot.fillColor === '#E74C3C' ? '#C0392B' : strokeColor;
           }
+
+          // Grab the UI Status Title
+          if (lot.infoSheetTitle) {
+             capacityStatus = lot.infoSheetTitle;
+          }
+
+          // Dig into the 0-1 Occupancy Object
+          if (lot.occupancy && lot.occupancy.lastUpdatedVia) {
+             const method = lot.occupancy.lastUpdatedVia;
+             if (lot.occupancy[method] && lot.occupancy[method].estimate !== undefined) {
+                 percentFull = Math.round(lot.occupancy[method].estimate * 100) + '%';
+             }
+          }
+          const readablePermits = lot.permits && Array.isArray(lot.permits)
+            ? lot.permits.join(', ') 
+            : 'Unknown';
 
           return {
             ...lot,
