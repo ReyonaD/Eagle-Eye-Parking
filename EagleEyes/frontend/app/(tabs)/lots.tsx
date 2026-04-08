@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
 
@@ -50,7 +51,7 @@ function TopBar() {
       </View>
       <Text style={styles.appName}>EagleEyes</Text>
       <View style={styles.topBarSide}>
-        <TouchableOpacity style={styles.bellWrapper}>
+        <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
           <Ionicons name="notifications-outline" size={28} color="#333" />
         </TouchableOpacity>
       </View>

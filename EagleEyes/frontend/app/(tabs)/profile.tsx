@@ -1,9 +1,12 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+
 
 // ─── Top Bar ───────────────────────────────────────────────────────────
 function TopBar() {
+  const router = useRouter();
   return (
     <View style={styles.topBar}>
 
@@ -20,7 +23,7 @@ function TopBar() {
 
       {/* Right: Bell - fixed width, same as left */}
       <View style={styles.topBarSide}>
-        <TouchableOpacity style={styles.bellWrapper}>
+        <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
           <Ionicons name="notifications-outline" size={28} color="#333" />
         </TouchableOpacity>
       </View>
