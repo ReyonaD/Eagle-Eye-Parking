@@ -17,7 +17,7 @@ Bash
 `pip install -r requirements.txt`
 
 ### 5. Start the development server
-`uvicorn app.main:app --reload --port 5000`
+`uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
 
 ## 2. System Architecture Overview
 The app uses a Three-Tier Architecture to keep API keys secure and handle native hardware communication.
