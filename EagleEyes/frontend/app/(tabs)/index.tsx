@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Alert, Image, ScrollView, Platform } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,6 +35,8 @@ function TopBar() {
 }
 
 export default function MapScreen() {
+  const mapRef = useRef<MapView>(null);
+
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [liveLots, setLiveLots] = useState<any[]>([]);
   const [selectedCampus, setSelectedCampus] = useState("Main campus");
@@ -191,6 +193,20 @@ export default function MapScreen() {
     Alert.alert("Test Pin Dropped", "Simulating that you parked here.");
   };
 
+  const handleZoomIn = async () => {
+    if (!mapRef.current) return;
+    const camera = await mapRef.current.getCamera();
+    if (camera && camera.zoom !== undefined) {
+      mapRef.current.animateCamera({ zoom: camera.zoom + 1 }, { duration: 300 });
+    }
+  };
+  const handleZoomOut = async () => {
+    if (!mapRef.current) return;
+    const camera = await mapRef.current.getCamera();
+    if (camera && camera.zoom !== undefined) {
+      mapRef.current.animateCamera({ zoom: camera.zoom - 1 }, { duration: 300 });
+    }
+  };
   return (
     <View style={styles.container}>
       <TopBar />
@@ -266,6 +282,7 @@ export default function MapScreen() {
 
       {/* MAP */}
       <MapView 
+        ref={mapRef}
         style={styles.map} 
         provider={PROVIDER_GOOGLE} 
         initialRegion={untRegion}
@@ -299,6 +316,16 @@ export default function MapScreen() {
           <Marker coordinate={parkedLocation} title="My Car" pinColor="#0000FF" />
         )}
       </MapView>
+      {/*ZOOM Control*/}
+      <View style={styles.zoomControls}>
+        <TouchableOpacity style={styles.zoomButton} onPress={handleZoomIn}>
+          <Ionicons name="add" size={24} color="#333" />
+        </TouchableOpacity>
+        <View style={styles.zoomDivider} />
+        <TouchableOpacity style={styles.zoomButton} onPress={handleZoomOut}>
+          <Ionicons name="remove" size={24} color="#333" />
+        </TouchableOpacity>
+      </View>
 
       {/* FIND MY CAR BUTTON */}
       <TouchableOpacity style={styles.findCarButton} onPress={handleFindMyCar}>
@@ -331,6 +358,29 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9f9f9' },
   map: { flex: 1, width: '100%' },
+  zoomControls: {
+    position: 'absolute',
+    right: 16,
+    bottom: 150, // Placed just above the capacity bar
+    backgroundColor: 'white',
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  zoomButton: {
+    padding: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomDivider: {
+    height: 1,
+    backgroundColor: '#eee',
+    width: '70%',
+    alignSelf: 'center',
+  },
   findCarButton: {
     position: 'absolute', bottom: 100, alignSelf: 'center', backgroundColor: '#00853E',
     flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 24,
