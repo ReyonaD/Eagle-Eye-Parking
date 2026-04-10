@@ -46,6 +46,12 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={32} name="person.crop.circle" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="alerts"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

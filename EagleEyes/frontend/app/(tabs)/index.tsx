@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Alert, Image, ScrollView, Platform } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import { requestPermissions, getParkedLocation } from '../../modules/parkzen-core';
 const BACKEND_URL = Platform.OS === 'android' 
@@ -11,6 +12,7 @@ const BACKEND_URL = Platform.OS === 'android'
   //console.log("DEBUG: Current Backend URL is:", BACKEND_URL);
 // Top Bar Component
 function TopBar() {
+  const router = useRouter();
   return (
     <View style={styles.topBar}>
       {/* Left: Logo - fixed width */}
@@ -26,7 +28,7 @@ function TopBar() {
 
       {/* Right: Bell - fixed width */}
       <View style={styles.topBarSide}>
-        <TouchableOpacity style={styles.bellWrapper}>
+        <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
           <Ionicons name="notifications-outline" size={28} color="#333" />
         </TouchableOpacity>
       </View>
