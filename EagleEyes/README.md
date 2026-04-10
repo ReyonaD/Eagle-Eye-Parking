@@ -60,3 +60,13 @@ Please keep the following in mind when modifying `app/(tabs)/index.tsx`:\
 **[ ] Auth Tokens**: The `handleLogout` function in the Profile/Map screens must ensure `AsyncStorage.removeItem('token')` is called to clear the session.
 
 Written by: Monica Vu(Team lead)
+
+## 🛠️ Android Build Setup
+This project strictly requires **Java 17**. 
+If your Android build fails, ensure your terminal is using Java 17:
+1. `brew install openjdk@17`
+2. `export JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"`
+
+## 🔄 Switching Branches?
+If you switch branches or pull new code and the app won't build, run:
+`npm run reset-android`
