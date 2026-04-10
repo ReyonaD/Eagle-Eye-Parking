@@ -1,0 +1,75 @@
+import React, {useState} from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { router } from 'expo-router';
+import { login } from '../api/auth';
+
+export default function LoginScreen() {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleLogin = async () => {
+        if (!email || !password) {
+            Alert.alert("Error", "Both fields are required");
+            return;
+        }
+        setIsLoading(true);
+        try {
+            await login(email, password);
+            // Navigate to the main app screen after successful login
+            router.replace('/(tabs)');
+        } catch (error) {
+            Alert.alert('Login Failed', error.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+    <View style={styles.container}>
+      <Text style={styles.title}>EagleEyes</Text>
+      <Text style={styles.subtitle}>UNT Campus Parking, Simplified.</Text>
+
+      <TextInput
+        style={styles.input}
+        placeholder="UNT Email"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="Password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+      />
+
+      <TouchableOpacity style={styles.primaryButton} onPress={handleLogin} disabled={isLoading}>
+        {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Log In</Text>}
+      </TouchableOpacity>
+
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>Don't have an account? </Text>
+        {/* Route to the Register screen */}
+        <TouchableOpacity onPress={() => router.push('/register')}>
+          <Text style={styles.linkText}>Sign Up</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#f9f9f9' },
+  title: { fontSize: 36, fontWeight: 'bold', color: '#00853E', textAlign: 'center', marginBottom: 8 },
+  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 40 },
+  input: { height: 52, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, marginBottom: 16, fontSize: 16 },
+  primaryButton: { backgroundColor: '#00853E', height: 52, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+  buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
+  footerText: { fontSize: 15, color: '#666' },
+  linkText: { fontSize: 15, color: '#00853E', fontWeight: 'bold' }
+});
