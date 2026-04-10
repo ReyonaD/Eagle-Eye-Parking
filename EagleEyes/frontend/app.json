@@ -4,22 +4,50 @@
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/EagleEyeLogo.png",
     "scheme": "frontend",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.frontend",
+      "config": {
+        "googleMapsApiKey": "AIzaSyAeKFvAPWQat4h6U_sMDIxERr8Oy2b4t8U"
+      },
+      "infoPlist": {
+        "UIBackgroundModes": ["location", "fetch", "processing"],
+        "BGTaskSchedulerPermittedIdentifiers": ["com.parkzen.refresh"],
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "EagleEyes needs your location to detect when you park on campus.",
+        "NSLocationWhenInUseUsageDescription": "EagleEyes needs your location to show lots near you.",
+        "NSLocationAlwaysUsageDescription": "EagleEyes needs background location to remember your parking spot.",
+        "NSMotionUsageDescription": "EagleEyes uses motion data to detect when you stop driving."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "foregroundImage": "./assets/images/EagleEyeLogo.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.frontend",
+      "config": {
+        "googleMaps": "AIzaSyAeKFvAPWQat4h6U_sMDIxERr8Oy2b4t8U"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "BLUETOOTH",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "ACTIVITY_RECOGNITION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "output": "static",

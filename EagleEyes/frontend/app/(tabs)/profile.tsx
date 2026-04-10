@@ -1,61 +1,34 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-
-// ─── Top Bar ───────────────────────────────────────────────────────────
-function TopBar() {
+export default function ProfileScreen() {
   const router = useRouter();
-  return (
-    <View style={styles.topBar}>
 
-      {/* Left: Logo - fixed width */}
-      <View style={styles.topBarSide}>
-        <Image
-          source={require('../../assets/images/Logo_EagleEye.png')}
-          style={styles.logo}
-        />
-      </View>
+  const handleLogout = async () => {
+    // Destroy the token
+    await AsyncStorage.removeItem('token');
+    // Send them back to the login screen
+    router.replace('/login');
+  };
 
-      {/* Center: App Name */}
-      <Text style={styles.appName}>EagleEyes</Text>
-
-      {/* Right: Bell - fixed width, same as left */}
-      <View style={styles.topBarSide}>
-        <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-          <Ionicons name="notifications-outline" size={28} color="#333" />
-        </TouchableOpacity>
-      </View>
-
-    </View>
-  );
-}
-
-// ─── Map Screen ────────────────────────────────────────────────────────
-export default function MapScreen() {
   return (
     <View style={styles.container}>
-      <TopBar />
-      <View style={styles.content}>
-        <Text style={styles.title}>EagleEyes Map</Text>
-        <Text style={styles.subtitle}>UNT Parking map will go here!</Text>
-      </View>
+      <Text style={styles.title}>Profile</Text>
+      <Text style={styles.subtitle}>Manage your EagleEyes account.</Text>
+
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <Text style={styles.logoutText}>Log Out</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container:  { flex: 1, backgroundColor: '#f9f9f9' },
-  content:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  title:      { fontSize: 32, fontWeight: 'bold', color: '#00853E', marginBottom: 10 },
-  subtitle:   { fontSize: 16, color: '#666' },
-
-  // Top Bar
-topBar:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8, paddingTop: 40, borderBottomWidth: 1, borderBottomColor: '#eee' },
-topBarSide:  { width: 50, justifyContent: 'center' },
-bellWrapper: { alignItems: 'flex-end' },
-logo:        { width: 100, height: 55, resizeMode: 'contain' },
-appName:     { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: '#00853E' },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f9f9f9' },
+  title: { fontSize: 32, fontWeight: 'bold', color: '#00853E', marginBottom: 10 },
+  subtitle: { fontSize: 16, color: '#666', marginBottom: 40 },
+  logoutButton: { backgroundColor: '#d9534f', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 8 },
+  logoutText: { color: 'white', fontSize: 16, fontWeight: 'bold' }
 });
