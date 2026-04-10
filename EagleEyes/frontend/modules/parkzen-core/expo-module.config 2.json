@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["ParkzenCoreModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.parkzencore.ParkzenCoreModule"]
+  }
+}
