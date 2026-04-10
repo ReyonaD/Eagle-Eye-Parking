@@ -1,11 +1,11 @@
 import { requireNativeView } from 'expo';
 import * as React from 'react';
 
-import { parkzen-coreViewProps } from './parkzen-core.types';
+import { ParkzenCoreViewProps } from './parkzen-core.types';
 
-const NativeView: React.ComponentType<parkzen-coreViewProps> =
+const NativeView: React.ComponentType<ParkzenCoreViewProps> =
   requireNativeView('parkzen-core');
 
-export default function parkzen-coreView(props: parkzen-coreViewProps) {
+export default function ParkzenCoreView(props: ParkzenCoreViewProps) {
   return <NativeView {...props} />;
 }

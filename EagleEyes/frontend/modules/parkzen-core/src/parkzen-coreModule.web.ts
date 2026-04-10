@@ -2,11 +2,11 @@ import { registerWebModule, NativeModule } from 'expo';
 
 import { ChangeEventPayload } from './parkzen-core.types';
 
-type parkzen-coreModuleEvents = {
+type ParkzenCoreModuleEvents = {
   onChange: (params: ChangeEventPayload) => void;
 }
 
-class parkzen-coreModule extends NativeModule<parkzen-coreModuleEvents> {
+class ParkzenCoreModule extends NativeModule<ParkzenCoreModuleEvents> {
   PI = Math.PI;
   async setValueAsync(value: string): Promise<void> {
     this.emit('onChange', { value });
@@ -16,4 +16,4 @@ class parkzen-coreModule extends NativeModule<parkzen-coreModuleEvents> {
   }
 };
 
-export default registerWebModule(parkzen-coreModule, 'parkzen-coreModule');
+export default registerWebModule(ParkzenCoreModule, 'parkzen-coreModule');

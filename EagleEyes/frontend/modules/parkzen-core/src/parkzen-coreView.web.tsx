@@ -1,8 +1,8 @@
 import * as React from 'react';
 
-import { parkzen-coreViewProps } from './parkzen-core.types';
+import { ParkzenCoreViewProps } from './parkzen-core.types';
 
-export default function parkzen-coreView(props: parkzen-coreViewProps) {
+export default function ParkzenCoreView(props: ParkzenCoreViewProps) {
   return (
     <div>
       <iframe
