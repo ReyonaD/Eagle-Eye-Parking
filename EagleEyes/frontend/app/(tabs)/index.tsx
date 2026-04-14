@@ -6,9 +6,10 @@ import { useRouter } from 'expo-router';
 import EagleMap from '../../components/EagleMap';
 //import { requestPermissions } from '../../modules/parkzen-core';
 
-const BACKEND_URL = Platform.OS === 'android' 
-  ? 'http://10.0.2.2:8000' 
-  : 'http://localhost:8000';
+// const BACKEND_URL = Platform.OS === 'android' 
+//   ? 'http://10.0.2.2:8000' 
+//   : 'http://localhost:8000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 // Top Bar Component
 function TopBar() {
@@ -59,7 +60,7 @@ export default function MapScreen() {
       try {
         const response = await fetch(`${BACKEND_URL}/api/lots`, {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json'}
+          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'}
         });
         if (!response.ok) throw new Error(`Backend returned ${response.status}`);
 

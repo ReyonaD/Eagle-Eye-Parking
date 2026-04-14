@@ -19,7 +19,7 @@ app = FastAPI(title = "EagleEyes API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, specify allowed origins instead of "*"
-    allow_credentials=True,
+    allow_credentials=True,  # Set to True if you need to allow cookies or authentication headers
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
 )
