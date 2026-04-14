@@ -7,6 +7,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,11 +61,15 @@ function TopBar() {
   );
 }
 
-function LotCard({ lot }: { lot: ParkingLot }) {
+function LotCard({ lot, onPress }: { lot: ParkingLot; onPress: (lot: ParkingLot) => void }) {
   const dotColor = STATUS_COLOR[lot.status];
 
   return (
-    <View style={styles.card}>
+    <TouchableOpacity 
+      style={styles.card}
+      onPress={() => onPress(lot)}
+      activeOpacity={0.7}
+    >
       <View style={styles.cardLeft}>
         <Text style={styles.lotName}>{lot.name}</Text>
         <Text style={styles.permitLabel}>Permit: {lot.permitType}</Text>
@@ -77,7 +83,7 @@ function LotCard({ lot }: { lot: ParkingLot }) {
           <Text style={styles.percentText}>{lot.percentEmpty}% open</Text>
         )}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -113,6 +119,8 @@ function ListHeader({ query, onChangeQuery }: { query: string; onChangeQuery: (t
 
 export default function LotsScreen() {
   const [query, setQuery] = useState('');
+  const [selectedLot, setSelectedLot] = useState<ParkingLot | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
   const filtered = DUMMY_LOTS.filter((lot) => {
     const q = query.toLowerCase();
@@ -122,13 +130,28 @@ export default function LotsScreen() {
     );
   });
 
+  const handleLotPress = (lot: ParkingLot) => {
+    try {
+      setSelectedLot(lot);
+      setModalVisible(true);
+    } catch (error) {
+      console.error('Error opening lot details:', error);
+      Alert.alert('Error', 'Failed to open lot details. Please try again.');
+    }
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setSelectedLot(null);
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <TopBar />
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <LotCard lot={item} />}
+        renderItem={({ item }) => <LotCard lot={item} onPress={handleLotPress} />}
         ListHeaderComponent={<ListHeader query={query} onChangeQuery={setQuery} />}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
@@ -136,6 +159,60 @@ export default function LotsScreen() {
         }
         keyboardShouldPersistTaps="handled"
       />
+
+      {/* Lot Details Modal */}
+      <Modal
+        animationType="slide"
+        transparent={false}
+        visible={modalVisible}
+        onRequestClose={closeModal}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={closeModal}>
+              <Ionicons name="chevron-back" size={28} color="#00853E" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Lot Details</Text>
+            <View style={{ width: 28 }} />
+          </View>
+
+          {selectedLot && (
+            <View style={styles.modalContent}>
+              <View style={styles.detailCard}>
+                <Text style={styles.detailLotName}>{selectedLot.name}</Text>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Permit Type:</Text>
+                  <Text style={styles.detailValue}>{selectedLot.permitType}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Status:</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[selectedLot.status] + '1A' }]}>
+                    <View style={[styles.statusDot, { backgroundColor: STATUS_COLOR[selectedLot.status] }]} />
+                    <Text style={[styles.statusText, { color: STATUS_COLOR[selectedLot.status] }]}>
+                      {selectedLot.status}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Available Spaces:</Text>
+                  <Text style={styles.detailValue}>{selectedLot.percentEmpty}%</Text>
+                </View>
+              </View>
+
+              {/* Action Buttons */}
+              <TouchableOpacity style={styles.actionButton}>
+                <Ionicons name="navigate" size={20} color="#fff" />
+                <Text style={styles.actionButtonText}>Get Directions</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#f0f0f0', marginTop: 12 }]}>
+                <Ionicons name="information-circle-outline" size={20} color="#00853E" />
+                <Text style={[styles.actionButtonText, { color: '#00853E' }]}>More Info</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -302,5 +379,80 @@ const styles = StyleSheet.create({
   percentText: {
     fontSize: 12,
     color: '#999',
+  },
+
+  // Modal
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#f9f9f9',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e8e8e8',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  modalContent: {
+    flex: 1,
+    padding: 20,
+  },
+  detailCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  detailLotName: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#00853E',
+    marginBottom: 20,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  detailLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#666',
+  },
+  detailValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  actionButton: {
+    backgroundColor: '#00853E',
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
