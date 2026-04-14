@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import { getParkedLocation, requestPermissions } from '../modules/parkzen-core';
+// import { getParkedLocation, requestPermissions } from '../modules/parkzen-core';
 
 interface EagleMapProps {
   liveLots: any[];
@@ -12,16 +12,16 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
 
-  useEffect(() => {
-    const setupParkZen = async () => {
-      try {
-        await requestPermissions();
-      } catch (error) {
-        console.warn("ParkZen permissions failed.");
-      }
-    };
-    setupParkZen();
-  }, []);
+  // useEffect(() => {
+  //   const setupParkZen = async () => {
+  //     try {
+  //       await requestPermissions();
+  //     } catch (error) {
+  //       console.warn("ParkZen permissions failed.");
+  //     }
+  //   };
+  //   setupParkZen();
+  // }, []);
   const untRegion = {
     latitude: 33.2140,
     longitude: -97.1475,
@@ -32,28 +32,19 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
   const handleFindMyCar = async () => {
     try {
       console.log("Finding parked car location...");
-      const loc = await getParkedLocation();
-      console.log("Got location:", loc);
+      // Commented out ParkzenCore call for dev server compatibility
+      // For native build, uncomment and use: const loc = await getParkedLocation();
       
-      if (loc && loc.latitude && loc.longitude) {
-        setParkedLocation(loc);
-        // Animate the camera to the car
-        mapRef.current?.animateCamera({ center: loc, zoom: 17 }, { duration: 1000 });
-        Alert.alert("Car Found!", `Lat: ${loc.latitude.toFixed(4)}, Lon: ${loc.longitude.toFixed(4)}`);
-      } else if (parkedLocation) {
-        mapRef.current?.animateCamera({ center: parkedLocation, zoom: 17 }, { duration: 1000 });
-        Alert.alert("Simulated Car Found!", "Showing the manually dropped pin.");
-      } else {
-        Alert.alert("No Parking Detected", "Long-press the map to simulate parking, or ParkZen hasn't detected a parking event yet.");
-      }
-    } catch (error) {
-      console.warn("Error in getParkedLocation:", error);
+      // Dev server fallback: use the manually dropped pin if available
       if (parkedLocation) {
         mapRef.current?.animateCamera({ center: parkedLocation, zoom: 17 }, { duration: 1000 });
-        Alert.alert("Using Simulated Location", "Showing manually dropped pin.");
+        Alert.alert("Simulated Car Found!", "Showing the manually dropped pin.\n\nTip: Long-press the map to simulate parking");
       } else {
-        Alert.alert("Location Unavailable", "Tap the map to mark a location.");
+        Alert.alert("No Parking Detected", "Long-press the map to simulate parking a car");
       }
+    } catch (error) {
+      console.warn("Error finding car:", error);
+      Alert.alert("Error", "Could not find parked car location");
     }
   };
 
