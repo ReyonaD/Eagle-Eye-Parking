@@ -21,7 +21,7 @@ interface ParkingLot {
   name: string;
   permitType: string;
   status: AvailabilityStatus;
-  percentEmpty: number; // 0–100
+  percentEmpty: number;
 }
 
 // TODO: Replace with real API call (e.g., fetch from ParkZen / AIMS).
@@ -65,7 +65,7 @@ function LotCard({ lot, onPress }: { lot: ParkingLot; onPress: (lot: ParkingLot)
   const dotColor = STATUS_COLOR[lot.status];
 
   return (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={styles.card}
       onPress={() => onPress(lot)}
       activeOpacity={0.7}
@@ -199,7 +199,6 @@ export default function LotsScreen() {
                 </View>
               </View>
 
-              {/* Action Buttons */}
               <TouchableOpacity style={styles.actionButton}>
                 <Ionicons name="navigate" size={20} color="#fff" />
                 <Text style={styles.actionButtonText}>Get Directions</Text>
@@ -253,7 +252,6 @@ const styles = StyleSheet.create({
     color: '#00853E',
   },
 
-  // Header
   header: {
     paddingHorizontal: 20,
     paddingTop: 18,
@@ -273,7 +271,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Search
   searchWrapper: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -290,7 +287,6 @@ const styles = StyleSheet.create({
     color: '#222',
   },
 
-  // Legend
   legend: {
     flexDirection: 'row',
     paddingHorizontal: 16,
@@ -316,7 +312,6 @@ const styles = StyleSheet.create({
     color: '#555',
   },
 
-  // List
   listContent: {
     paddingHorizontal: 16,
     paddingBottom: 16,
@@ -329,7 +324,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  // Card
   card: {
     flexDirection: 'row',
     justifyContent: 'space-between',
