@@ -6,9 +6,16 @@ import { Ionicons } from '@expo/vector-icons';
 
 interface EagleMapProps {
   liveLots: any[];
+  selectedCampus?: string;
 }
 
-export default function EagleMap({ liveLots }: EagleMapProps) {
+const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }> = {
+  "Main campus":     { latitude: 33.2110, longitude: -97.1475, latitudeDelta: 0.018, longitudeDelta: 0.018 },
+  "Discovery Park":  { latitude: 33.2549, longitude: -97.1520, latitudeDelta: 0.018, longitudeDelta: 0.018 },
+  "Frisco Landing":  { latitude: 33.1511, longitude: -96.8238, latitudeDelta: 0.018, longitudeDelta: 0.018 },
+};
+
+export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
 
@@ -22,12 +29,15 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
   //   };
   //   setupParkZen();
   // }, []);
-  const untRegion = {
-    latitude: 33.2140,
-    longitude: -97.1475,
-    latitudeDelta: 0.012, 
-    longitudeDelta: 0.012,
-  };
+
+  useEffect(() => {
+    const region = CAMPUS_REGIONS[selectedCampus];
+    if (region) {
+      mapRef.current?.animateToRegion(region, 800);
+    }
+  }, [selectedCampus]);
+
+  const untRegion = CAMPUS_REGIONS["Main campus"];
 
   const handleFindMyCar = async () => {
     try {
