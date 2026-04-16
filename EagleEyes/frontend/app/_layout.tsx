@@ -2,6 +2,7 @@ import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-rout
 import { useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LotsProvider } from '../context/LotsContext';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -42,12 +43,14 @@ export default function RootLayout() {
   }, [segments, navigationState?.key]);
 //automatically re-check auth status whenever the route changes or when navigation state initializes
   return (
-    <LotsProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="login" />
-        <Stack.Screen name="register" options={{ presentation: 'modal' }} />
-      </Stack>
-    </LotsProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <LotsProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="login" />
+          <Stack.Screen name="register" options={{ presentation: 'modal' }} />
+        </Stack>
+      </LotsProvider>
+    </GestureHandlerRootView>
   );
 }
