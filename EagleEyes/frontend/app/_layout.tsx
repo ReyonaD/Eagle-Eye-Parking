@@ -1,59 +1,56 @@
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
+import { useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LotsProvider } from '../context/LotsContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
-  const hasInitialized = useRef(false);
+  
+  // This tells us if Expo's internal navigation system has fully booted up
+  const navigationState = useRootNavigationState();
 
   useEffect(() => {
-    // Only run once on app initialization
-    if (hasInitialized.current) return;
-    hasInitialized.current = true;
-
-    const initAuth = async () => {
+    // If the router isn't fully mounted yet, do absolutely nothing.
+    if (!navigationState?.key) return;
+     const checkAuth = async () => {
       try {
-        // Small delay to ensure navigation is ready
-        await new Promise(resolve => setTimeout(resolve, 50));
-
         const token = await AsyncStorage.getItem('token');
         const firstSegment = segments[0];
 
-        // Don't redirect if we don't know where we are yet
-        if (firstSegment === undefined) {
-          return;
-        }
-
         console.log('[Router] Current segment:', firstSegment, '| Has token:', !!token);
 
-        // Only redirect if absolutely necessary
-        if (!token && firstSegment === '(tabs)') {
-          // User has no token but is in the main app - redirect to login
-          console.log('[Router] No token in tabs, redirecting to login');
+        // Check which "zone" the user is currently in
+        const inTabsGroup = firstSegment === '(tabs)';
+        const inAuthGroup = firstSegment === 'login' || firstSegment === 'register';
+
+        if (!token && inTabsGroup) {
+          // No token, but trying to access the main app -> Kick to login
+          console.log('[Router] No token! Kicking to login...');
           router.replace('/login');
-        } else if (token && firstSegment === 'login') {
-          // User has token but is on login screen - redirect to tabs
-          console.log('[Router] Has token on login, redirecting to tabs');
+        } else if (token && inAuthGroup) {
+          // Has token, but sitting on the login screen -> Push to main app
+          console.log('[Router] Token found! Sending to map...');
           router.replace('/(tabs)');
         }
-        // All other cases are fine - just let the app load naturally
       } catch (error) {
         console.error('[Router] Auth initialization error:', error);
       }
     };
 
-    initAuth();
-  }, []); // Only run once on component mount
-
+    checkAuth();
+  }, [segments, navigationState?.key]);
+//automatically re-check auth status whenever the route changes or when navigation state initializes
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="login" />
-        <Stack.Screen name="register" options={{ presentation: 'modal' }} />
-      </Stack>
+      <LotsProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="login" />
+          <Stack.Screen name="register" options={{ presentation: 'modal' }} />
+        </Stack>
+      </LotsProvider>
     </GestureHandlerRootView>
   );
 }

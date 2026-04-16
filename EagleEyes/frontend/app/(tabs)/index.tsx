@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Image, FlatList, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Image, ScrollView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-
+import { useLots } from '../../context/LotsContext';
 import EagleMap from '../../components/EagleMap';
 //import { requestPermissions } from '../../modules/parkzen-core';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL ?? (Platform.OS === 'android'
-  ? 'http://10.0.2.2:8000'
-  : 'http://localhost:8000');
+//const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 // Top Bar Component
 function TopBar() {
@@ -32,7 +30,8 @@ function TopBar() {
 }
 
 export default function MapScreen() {
-  const [liveLots, setLiveLots] = useState<any[]>([]);
+  //consume the global data
+  const { lots, isLoading } = useLots();
   
   // Dropdown States
   const [selectedCampus, setSelectedCampus] = useState("Main campus");
@@ -49,81 +48,79 @@ export default function MapScreen() {
     "HSG", "Premium Parking", "Zip Car"
   ];
 
-  useEffect(() => {
-    // const setupParkZen = async () => {
-    //   try {
-    //     await requestPermissions();
-    //   } catch (error) {
-    //     console.warn("ParkZen requestPermissions failed.");
-    //   }
-    // };
+  // useEffect(() => {
+  //   // const setupParkZen = async () => {
+  //   //   try {
+  //   //     await requestPermissions();
+  //   //   } catch (error) {
+  //   //     console.warn("ParkZen requestPermissions failed.");
+  //   //   }
+  //   // };
 
-    const fetchParkZenLots = async () => {
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/lots`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'}
-        });
-        if (!response.ok) throw new Error(`Backend returned ${response.status}`);
+  //   const fetchParkZenLots = async () => {
+  //     try {
+  //       const response = await fetch(`${BACKEND_URL}/api/lots`, {
+  //         method: 'GET',
+  //         headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'}
+  //       });
+  //       if (!response.ok) throw new Error(`Backend returned ${response.status}`);
 
-        const data = await response.json();
+  //       const data = await response.json();
         
-        if (!Array.isArray(data)) {
-          setLiveLots([]);
-          return;
-        }
+  //       if (!Array.isArray(data)) {
+  //         setLiveLots([]);
+  //         return;
+  //       }
 
-        const formattedLots = data.map((lot: any, index: number) => {
-          const mappedCoords = (lot.vertices || []).map((v: any) => ({
-            latitude: parseFloat(v.latitude) || parseFloat(v.lat),
-            longitude: parseFloat(v.longitude) || parseFloat(v.lng) || parseFloat(v.lon)
-          })).filter((v: any) => !isNaN(v.latitude) && !isNaN(v.longitude));
+  //       const formattedLots = data.map((lot: any, index: number) => {
+  //         const mappedCoords = (lot.vertices || []).map((v: any) => ({
+  //           latitude: parseFloat(v.latitude) || parseFloat(v.lat),
+  //           longitude: parseFloat(v.longitude) || parseFloat(v.lng) || parseFloat(v.lon)
+  //         })).filter((v: any) => !isNaN(v.latitude) && !isNaN(v.longitude));
 
-          if (mappedCoords.length === 0) return null;
+  //         if (mappedCoords.length === 0) return null;
 
-          let fillColor = 'rgba(53, 53, 53, 0.4)';
-          let strokeColor = '#6c6b6b';
+  //         let fillColor = 'rgba(53, 53, 53, 0.4)';
+  //         let strokeColor = '#6c6b6b';
 
-          if (lot.fillColor) {
-             fillColor = lot.fillColor; 
-             strokeColor = lot.fillColor === '#2ECC71' ? '#27AE60' : 
-                           lot.fillColor === '#F39C12' ? '#D68910' : 
-                           lot.fillColor === '#E74C3C' ? '#C0392B' : strokeColor;
-          }
+  //         if (lot.fillColor) {
+  //            fillColor = lot.fillColor; 
+  //            strokeColor = lot.fillColor === '#2ECC71' ? '#27AE60' : 
+  //                          lot.fillColor === '#F39C12' ? '#D68910' : 
+  //                          lot.fillColor === '#E74C3C' ? '#C0392B' : strokeColor;
+  //         }
 
-          let percentFull = "N/A";
-          if (lot.occupancy && lot.occupancy.lastUpdatedVia) {
-             const method = lot.occupancy.lastUpdatedVia;
-             if (lot.occupancy[method] && lot.occupancy[method].estimate !== undefined) {
-                 percentFull = Math.round(lot.occupancy[method].estimate * 100) + '%';
-             }
-          }
+  //         let percentFull = "N/A";
+  //         if (lot.occupancy && lot.occupancy.lastUpdatedVia) {
+  //            const method = lot.occupancy.lastUpdatedVia;
+  //            if (lot.occupancy[method] && lot.occupancy[method].estimate !== undefined) {
+  //                percentFull = Math.round(lot.occupancy[method].estimate * 100) + '%';
+  //            }
+  //         }
 
-          const permitList = lot.permits && Array.isArray(lot.permits) ? lot.permits : [];
-          return {
-            ...lot,
-            id: lot.id || index.toString(),
-            name: lot.lot_name || lot.name || `Lot ${index}`,
-            fillColor,
-            strokeColor,
-            coordinates: mappedCoords,
-            percentEmpty: lot.percentEmpty,
-            isFull: lot.isFull || lot.status === 'Full',
-            permitList,
-            permits: permitList.length ? permitList.join(', ') : 'Unknown'
-          };
-        }).filter((lot: any) => lot !== null);
+  //         return {
+  //           ...lot,
+  //           id: lot.id || index.toString(),
+  //           name: lot.lot_name || lot.name || `Lot ${index}`,
+  //           fillColor,
+  //           strokeColor,
+  //           coordinates: mappedCoords,
+  //           percentEmpty: lot.percentEmpty,
+  //           isFull: lot.isFull || lot.status === 'Full',
+  //           permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
+  //         };
+  //       }).filter((lot: any) => lot !== null);
 
-        setLiveLots(formattedLots);
-      } catch (error) {
-        console.error("Error fetching lots:", error);
-        setLiveLots([]); 
-      }
-    };
+  //       setLiveLots(formattedLots);
+  //     } catch (error) {
+  //       console.error("Error fetching lots:", error);
+  //       setLiveLots([]); 
+  //     }
+  //   };
 
-    //setupParkZen();
-    fetchParkZenLots();
-  }, []);
+  //   //setupParkZen();
+  //   fetchParkZenLots();
+  // }, []);
 
   return (
     <View style={styles.container}>
@@ -131,83 +128,57 @@ export default function MapScreen() {
 
       {/* ROW: CAMPUS (left) + PERMIT (right) */}
       <View style={styles.dropdownRow}>
-        {/* CAMPUS TRIGGER */}
+        {/* CAMPUS DROPDOWN */}
         <View style={[styles.dropdownWrapper, { marginRight: 8 }]}>
           <Text style={styles.dropdownLabel}>CAMPUS</Text>
-          <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenCampus(!openCampus); setOpenPermit(false); }}>
+          <TouchableOpacity style={styles.dropdownBox} onPress={() => setOpenCampus(!openCampus)}>
             <Text style={styles.dropdownText}>{selectedCampus}</Text>
             <Ionicons name={openCampus ? "chevron-up" : "chevron-down"} size={20} color="#333" />
           </TouchableOpacity>
+          {openCampus && (
+            <View style={styles.dropdownList}>
+              {campuses.map((campus) => (
+                <TouchableOpacity
+                  key={campus}
+                  style={styles.dropdownItem}
+                  onPress={() => { setSelectedCampus(campus); setOpenCampus(false); }}
+                >
+                  <Text style={styles.dropdownItemText}>{campus}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
-        {/* PERMIT TRIGGER */}
+        {/* PERMIT DROPDOWN */}
         <View style={[styles.dropdownWrapper, { marginLeft: 8 }]}>
           <Text style={styles.dropdownLabel}>PERMIT</Text>
-          <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenPermit(!openPermit); setOpenCampus(false); }}>
+          <TouchableOpacity style={styles.dropdownBox} onPress={() => setOpenPermit(!openPermit)}>
             <Text style={styles.dropdownText}>{selectedPermit}</Text>
             <Ionicons name={openPermit ? "chevron-up" : "chevron-down"} size={20} color="#333" />
           </TouchableOpacity>
+          {openPermit && (
+            <View style={styles.dropdownList}>
+              <ScrollView nestedScrollEnabled={true}>
+                {permits.map((permit) => (
+                  <TouchableOpacity
+                    key={permit}
+                    style={styles.dropdownItem}
+                    onPress={() => { setSelectedPermit(permit); setOpenPermit(false); }}
+                  >
+                    <Text style={styles.dropdownItemText}>{permit}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </View>
       </View>
 
       {/* THE MAP AREA */}
-      <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
-        <EagleMap
-          liveLots={selectedPermit === "All Permits"
-            ? liveLots
-            : liveLots.filter((lot: any) => {
-                if (!Array.isArray(lot.permitList)) return false;
-                // Strip (D)/(N) time-of-day suffix, then remove spaces/dashes/slashes
-                const normalize = (s: string) => s.toLowerCase().replace(/\([dn]\)\s*$/i, '').replace(/[\s\-/]/g, '');
-                const target = normalize(selectedPermit);
-                return lot.permitList.some((p: string) => {
-                  const norm = normalize(p);
-                  if (selectedPermit === "Faculty") return norm === "fs";
-                  if (selectedPermit === "Visitor") return norm === "visitor" || norm === "visitorpaid";
-                  return norm === target;
-                });
-              })}
-          selectedCampus={selectedCampus}
-        />
+      <View style={styles.mapArea}>
+        <EagleMap liveLots={lots} selectedCampus={selectedCampus} />
       </View>
-
-      {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
-      {openCampus && (
-        <FlatList
-          style={[styles.dropdownOverlay, styles.dropdownOverlayLeft]}
-          data={campuses}
-          keyExtractor={(item) => item}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => { setSelectedCampus(item); setOpenCampus(false); }}
-            >
-              <Text style={styles.dropdownItemText}>{item}</Text>
-            </TouchableOpacity>
-          )}
-        />
-      )}
-      {openPermit && (
-        <FlatList
-          style={[styles.dropdownOverlay, styles.dropdownOverlayRight]}
-          data={permits}
-          keyExtractor={(item) => item}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => { setSelectedPermit(item); setOpenPermit(false); }}
-            >
-              <Text style={styles.dropdownItemText}>{item}</Text>
-            </TouchableOpacity>
-          )}
-        />
-      )}
 
     </View>
   );
@@ -308,5 +279,6 @@ const styles = StyleSheet.create({
     flex: 1,
     zIndex: 1,
     elevation: 1,
-  }
+  },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' }
 });
