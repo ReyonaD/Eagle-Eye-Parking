@@ -37,13 +37,16 @@ export default function MapScreen() {
   // Dropdown States
   const [selectedCampus, setSelectedCampus] = useState("Main campus");
   const [openCampus, setOpenCampus] = useState(false);
-  const [selectedPermit, setSelectedPermit] = useState("Eagle");
+  const [selectedPermit, setSelectedPermit] = useState("All Permits");
   const [openPermit, setOpenPermit] = useState(false);
 
   const campuses = ["Main campus", "Discovery Park", "Frisco Landing"];
   const permits = [
-    "Eagle", "Remote", "Faculty", "A-Reserved", 
-    "Visitor", "Hall Director", "Resident Reserved", "Motorcycle"
+    "All Permits",
+    "Eagle", "Remote", "Faculty", "A-Reserved",
+    "Resident", "Resident Reserved", "Hall Director",
+    "Visitor", "Motorcycle", "Evening", "Night",
+    "HSG", "Premium Parking", "Zip Car"
   ];
 
   useEffect(() => {
@@ -96,6 +99,7 @@ export default function MapScreen() {
              }
           }
 
+          const permitList = lot.permits && Array.isArray(lot.permits) ? lot.permits : [];
           return {
             ...lot,
             id: lot.id || index.toString(),
@@ -105,7 +109,8 @@ export default function MapScreen() {
             coordinates: mappedCoords,
             percentEmpty: lot.percentEmpty,
             isFull: lot.isFull || lot.status === 'Full',
-            permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
+            permitList,
+            permits: permitList.length ? permitList.join(', ') : 'Unknown'
           };
         }).filter((lot: any) => lot !== null);
 
@@ -147,7 +152,23 @@ export default function MapScreen() {
 
       {/* THE MAP AREA */}
       <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
-        <EagleMap liveLots={liveLots} selectedCampus={selectedCampus} />
+        <EagleMap
+          liveLots={selectedPermit === "All Permits"
+            ? liveLots
+            : liveLots.filter((lot: any) => {
+                if (!Array.isArray(lot.permitList)) return false;
+                // Strip (D)/(N) time-of-day suffix, then remove spaces/dashes/slashes
+                const normalize = (s: string) => s.toLowerCase().replace(/\([dn]\)\s*$/i, '').replace(/[\s\-/]/g, '');
+                const target = normalize(selectedPermit);
+                return lot.permitList.some((p: string) => {
+                  const norm = normalize(p);
+                  if (selectedPermit === "Faculty") return norm === "fs";
+                  if (selectedPermit === "Visitor") return norm === "visitor" || norm === "visitorpaid";
+                  return norm === target;
+                });
+              })}
+          selectedCampus={selectedCampus}
+        />
       </View>
 
       {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
@@ -257,7 +278,7 @@ const styles = StyleSheet.create({
     borderColor: "#ccc",
     borderRadius: 8,
     backgroundColor: "#fff",
-    maxHeight: 135,
+    maxHeight: 280,
     zIndex: 1000,
     elevation: 1000,
   },
