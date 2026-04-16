@@ -9,38 +9,21 @@ import {
   Image,
   Modal,
   Alert,
+  ActivityIndicator
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useLots } from '../../context/LotsContext';
 
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
-
-interface ParkingLot {
-  id: string;
-  name: string;
-  permitType: string;
-  status: AvailabilityStatus;
-  percentEmpty: number; // 0–100
-}
-
-// TODO: Replace with real API call (e.g., fetch from ParkZen / AIMS).
-const DUMMY_LOTS: ParkingLot[] = [
-  { id: '1', name: 'Lot 20', permitType: 'E', status: 'Available', percentEmpty: 85 },
-  { id: '2', name: 'Lot 11', permitType: 'F/S', status: 'Near Capacity', percentEmpty: 28 },
-  { id: '3', name: 'Lot 1', permitType: 'A', status: 'Full', percentEmpty: 0 },
-  { id: '4', name: 'Lot 5', permitType: 'F/S', status: 'Available', percentEmpty: 62 },
-  { id: '5', name: 'Lot 7', permitType: 'E', status: 'Near Capacity', percentEmpty: 35 },
-  { id: '6', name: 'Lot 14', permitType: 'A', status: 'Available', percentEmpty: 91 },
-  { id: '7', name: 'Lot 3', permitType: 'F/S', status: 'Full', percentEmpty: 0 },
-  { id: '8', name: 'Lot 22', permitType: 'E', status: 'Available', percentEmpty: 74 },
-];
 
 const STATUS_COLOR: Record<AvailabilityStatus, string> = {
   'Available': '#00853E',
   'Near Capacity': '#F5A623',
   'Full': '#D0021B',
 };
+
 
 function TopBar() {
   return (
@@ -61,9 +44,9 @@ function TopBar() {
   );
 }
 
-function LotCard({ lot, onPress }: { lot: ParkingLot; onPress: (lot: ParkingLot) => void }) {
-  const dotColor = STATUS_COLOR[lot.status];
-
+function LotCard({ lot, onPress }: { lot: any; onPress: (lot: any) => void }) {
+  const dotColor = STATUS_COLOR[lot.status as AvailabilityStatus] || STATUS_COLOR['Available'];
+  const displayPercent = typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% open` : 'Live';
   return (
     <TouchableOpacity 
       style={styles.card}
@@ -72,16 +55,13 @@ function LotCard({ lot, onPress }: { lot: ParkingLot; onPress: (lot: ParkingLot)
     >
       <View style={styles.cardLeft}>
         <Text style={styles.lotName}>{lot.name}</Text>
-        <Text style={styles.permitLabel}>Permit: {lot.permitType}</Text>
       </View>
       <View style={styles.cardRight}>
         <View style={[styles.statusBadge, { backgroundColor: dotColor + '1A' }]}>
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={[styles.statusText, { color: dotColor }]}>{lot.status}</Text>
         </View>
-        {lot.percentEmpty > 0 && (
-          <Text style={styles.percentText}>{lot.percentEmpty}% open</Text>
-        )}
+        <Text style={styles.percentText}>{displayPercent}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -97,7 +77,7 @@ function ListHeader({ query, onChangeQuery }: { query: string; onChangeQuery: (t
       <View style={styles.searchWrapper}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Lot Search (e.g. Lot 20, E, F/S)"
+          placeholder="Search lots (e.g. Lot 20)"
           placeholderTextColor="#aaa"
           value={query}
           onChangeText={onChangeQuery}
@@ -119,18 +99,18 @@ function ListHeader({ query, onChangeQuery }: { query: string; onChangeQuery: (t
 
 export default function LotsScreen() {
   const [query, setQuery] = useState('');
-  const [selectedLot, setSelectedLot] = useState<ParkingLot | null>(null);
+  const [selectedLot, setSelectedLot] = useState<any | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-
-  const filtered = DUMMY_LOTS.filter((lot) => {
+  const insets = useSafeAreaInsets();
+  const { lots, isLoading } = useLots();
+  const filtered = lots.filter((lot) => {
     const q = query.toLowerCase();
-    return (
-      lot.name.toLowerCase().includes(q) ||
-      lot.permitType.toLowerCase().includes(q)
-    );
+    const lotName = lot.name?.toLowerCase() || '';
+    const lotPermits = lot.permits?.toLowerCase() || '';
+    return lotName.includes(q) || lotPermits.includes(q);
   });
 
-  const handleLotPress = (lot: ParkingLot) => {
+  const handleLotPress = (lot: any) => {
     try {
       setSelectedLot(lot);
       setModalVisible(true);
@@ -144,7 +124,15 @@ export default function LotsScreen() {
     setModalVisible(false);
     setSelectedLot(null);
   };
-
+  //loading state while fetching
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#00853E" />
+        <Text style={{ marginTop: 12, color: '#666', fontSize: 16 }}>Loading Parking Data...</Text>
+      </SafeAreaView>
+    );
+  }
   return (
     <SafeAreaView style={styles.screen}>
       <TopBar />
@@ -167,39 +155,49 @@ export default function LotsScreen() {
         visible={modalVisible}
         onRequestClose={closeModal}
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={closeModal}>
+        <View style={styles.modalContainer}> 
+          
+          <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 20) }]}>
+            <TouchableOpacity onPress={closeModal} style={{ padding: 10 }}>
               <Ionicons name="chevron-back" size={28} color="#00853E" />
             </TouchableOpacity>
+            
             <Text style={styles.modalTitle}>Lot Details</Text>
-            <View style={{ width: 28 }} />
+            <View style={{ width: 48 }} />
           </View>
 
-          {selectedLot && (
+          {selectedLot ? (
             <View style={styles.modalContent}>
               <View style={styles.detailCard}>
                 <Text style={styles.detailLotName}>{selectedLot.name}</Text>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Permit Type:</Text>
-                  <Text style={styles.detailValue}>{selectedLot.permitType}</Text>
-                </View>
+                
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Status:</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[selectedLot.status] + '1A' }]}>
-                    <View style={[styles.statusDot, { backgroundColor: STATUS_COLOR[selectedLot.status] }]} />
-                    <Text style={[styles.statusText, { color: STATUS_COLOR[selectedLot.status] }]}>
+                  <View style={[
+                    styles.statusBadge, 
+                    { backgroundColor: (STATUS_COLOR[selectedLot.status as AvailabilityStatus] || STATUS_COLOR['Available']) + '1A' }
+                  ]}>
+                    <View style={[
+                      styles.statusDot, 
+                      { backgroundColor: STATUS_COLOR[selectedLot.status as AvailabilityStatus] || STATUS_COLOR['Available'] }
+                    ]} />
+                    <Text style={[
+                      styles.statusText, 
+                      { color: STATUS_COLOR[selectedLot.status as AvailabilityStatus] || STATUS_COLOR['Available'] }
+                    ]}>
                       {selectedLot.status}
                     </Text>
                   </View>
                 </View>
+
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Available Spaces:</Text>
-                  <Text style={styles.detailValue}>{selectedLot.percentEmpty}%</Text>
+                  <Text style={styles.detailValue}>
+                    {typeof selectedLot.percentEmpty === 'number' ? `${selectedLot.percentEmpty}%` : 'Unknown'}
+                  </Text>
                 </View>
               </View>
 
-              {/* Action Buttons */}
               <TouchableOpacity style={styles.actionButton}>
                 <Ionicons name="navigate" size={20} color="#fff" />
                 <Text style={styles.actionButtonText}>Get Directions</Text>
@@ -210,8 +208,8 @@ export default function LotsScreen() {
                 <Text style={[styles.actionButtonText, { color: '#00853E' }]}>More Info</Text>
               </TouchableOpacity>
             </View>
-          )}
-        </SafeAreaView>
+          ) : null}
+        </View>
       </Modal>
     </SafeAreaView>
   );

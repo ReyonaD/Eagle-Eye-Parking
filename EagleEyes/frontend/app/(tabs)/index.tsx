@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Image, ScrollView, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Image, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-
+import { useLots } from '../../context/LotsContext';
 import EagleMap from '../../components/EagleMap';
 //import { requestPermissions } from '../../modules/parkzen-core';
 
@@ -33,7 +33,8 @@ function TopBar() {
 }
 
 export default function MapScreen() {
-  const [liveLots, setLiveLots] = useState<any[]>([]);
+  //consume the global data
+  const { lots, isLoading } = useLots();
   
   // Dropdown States
   const [selectedCampus, setSelectedCampus] = useState("Main campus");
@@ -47,79 +48,79 @@ export default function MapScreen() {
     "Visitor", "Hall Director", "Resident Reserved", "Motorcycle"
   ];
 
-  useEffect(() => {
-    // const setupParkZen = async () => {
-    //   try {
-    //     await requestPermissions();
-    //   } catch (error) {
-    //     console.warn("ParkZen requestPermissions failed.");
-    //   }
-    // };
+  // useEffect(() => {
+  //   // const setupParkZen = async () => {
+  //   //   try {
+  //   //     await requestPermissions();
+  //   //   } catch (error) {
+  //   //     console.warn("ParkZen requestPermissions failed.");
+  //   //   }
+  //   // };
 
-    const fetchParkZenLots = async () => {
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/lots`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'}
-        });
-        if (!response.ok) throw new Error(`Backend returned ${response.status}`);
+  //   const fetchParkZenLots = async () => {
+  //     try {
+  //       const response = await fetch(`${BACKEND_URL}/api/lots`, {
+  //         method: 'GET',
+  //         headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'}
+  //       });
+  //       if (!response.ok) throw new Error(`Backend returned ${response.status}`);
 
-        const data = await response.json();
+  //       const data = await response.json();
         
-        if (!Array.isArray(data)) {
-          setLiveLots([]);
-          return;
-        }
+  //       if (!Array.isArray(data)) {
+  //         setLiveLots([]);
+  //         return;
+  //       }
 
-        const formattedLots = data.map((lot: any, index: number) => {
-          const mappedCoords = (lot.vertices || []).map((v: any) => ({
-            latitude: parseFloat(v.latitude) || parseFloat(v.lat),
-            longitude: parseFloat(v.longitude) || parseFloat(v.lng) || parseFloat(v.lon)
-          })).filter((v: any) => !isNaN(v.latitude) && !isNaN(v.longitude));
+  //       const formattedLots = data.map((lot: any, index: number) => {
+  //         const mappedCoords = (lot.vertices || []).map((v: any) => ({
+  //           latitude: parseFloat(v.latitude) || parseFloat(v.lat),
+  //           longitude: parseFloat(v.longitude) || parseFloat(v.lng) || parseFloat(v.lon)
+  //         })).filter((v: any) => !isNaN(v.latitude) && !isNaN(v.longitude));
 
-          if (mappedCoords.length === 0) return null;
+  //         if (mappedCoords.length === 0) return null;
 
-          let fillColor = 'rgba(53, 53, 53, 0.4)';
-          let strokeColor = '#6c6b6b';
+  //         let fillColor = 'rgba(53, 53, 53, 0.4)';
+  //         let strokeColor = '#6c6b6b';
 
-          if (lot.fillColor) {
-             fillColor = lot.fillColor; 
-             strokeColor = lot.fillColor === '#2ECC71' ? '#27AE60' : 
-                           lot.fillColor === '#F39C12' ? '#D68910' : 
-                           lot.fillColor === '#E74C3C' ? '#C0392B' : strokeColor;
-          }
+  //         if (lot.fillColor) {
+  //            fillColor = lot.fillColor; 
+  //            strokeColor = lot.fillColor === '#2ECC71' ? '#27AE60' : 
+  //                          lot.fillColor === '#F39C12' ? '#D68910' : 
+  //                          lot.fillColor === '#E74C3C' ? '#C0392B' : strokeColor;
+  //         }
 
-          let percentFull = "N/A";
-          if (lot.occupancy && lot.occupancy.lastUpdatedVia) {
-             const method = lot.occupancy.lastUpdatedVia;
-             if (lot.occupancy[method] && lot.occupancy[method].estimate !== undefined) {
-                 percentFull = Math.round(lot.occupancy[method].estimate * 100) + '%';
-             }
-          }
+  //         let percentFull = "N/A";
+  //         if (lot.occupancy && lot.occupancy.lastUpdatedVia) {
+  //            const method = lot.occupancy.lastUpdatedVia;
+  //            if (lot.occupancy[method] && lot.occupancy[method].estimate !== undefined) {
+  //                percentFull = Math.round(lot.occupancy[method].estimate * 100) + '%';
+  //            }
+  //         }
 
-          return {
-            ...lot,
-            id: lot.id || index.toString(),
-            name: lot.lot_name || lot.name || `Lot ${index}`,
-            fillColor,
-            strokeColor,
-            coordinates: mappedCoords,
-            percentEmpty: lot.percentEmpty,
-            isFull: lot.isFull || lot.status === 'Full',
-            permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
-          };
-        }).filter((lot: any) => lot !== null);
+  //         return {
+  //           ...lot,
+  //           id: lot.id || index.toString(),
+  //           name: lot.lot_name || lot.name || `Lot ${index}`,
+  //           fillColor,
+  //           strokeColor,
+  //           coordinates: mappedCoords,
+  //           percentEmpty: lot.percentEmpty,
+  //           isFull: lot.isFull || lot.status === 'Full',
+  //           permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
+  //         };
+  //       }).filter((lot: any) => lot !== null);
 
-        setLiveLots(formattedLots);
-      } catch (error) {
-        console.error("Error fetching lots:", error);
-        setLiveLots([]); 
-      }
-    };
+  //       setLiveLots(formattedLots);
+  //     } catch (error) {
+  //       console.error("Error fetching lots:", error);
+  //       setLiveLots([]); 
+  //     }
+  //   };
 
-    //setupParkZen();
-    fetchParkZenLots();
-  }, []);
+  //   //setupParkZen();
+  //   fetchParkZenLots();
+  // }, []);
 
   return (
     <View style={styles.container}>
@@ -177,9 +178,15 @@ export default function MapScreen() {
 
       {/* THE MAP AREA */}
       <View style={styles.mapArea}>
-        <EagleMap liveLots={liveLots} />
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#00853E" />
+            <Text style={{ marginTop: 10, color: '#666' }}>Loading Campus Lots...</Text>
+          </View>
+        ) : (
+          <EagleMap liveLots={lots} /> 
+        )}
       </View>
-
     </View>
   );
 }
@@ -259,5 +266,6 @@ const styles = StyleSheet.create({
     flex: 1,
     zIndex: 1,
     elevation: 1,
-  }
+  },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' }
 });
