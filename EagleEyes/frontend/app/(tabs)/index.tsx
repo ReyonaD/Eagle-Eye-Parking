@@ -154,10 +154,16 @@ export default function MapScreen() {
       <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
         <EagleMap
           liveLots={selectedPermit === "All Permits"
+<<<<<<< Updated upstream
             ? liveLots
             : liveLots.filter((lot: any) => {
                 if (!Array.isArray(lot.permitList)) return false;
                 // Strip (D)/(N) time-of-day suffix, then remove spaces/dashes/slashes
+=======
+            ? lots
+            : lots.filter((lot: any) => {
+                if (!Array.isArray(lot.permitList)) return false;
+>>>>>>> Stashed changes
                 const normalize = (s: string) => s.toLowerCase().replace(/\([dn]\)\s*$/i, '').replace(/[\s\-/]/g, '');
                 const target = normalize(selectedPermit);
                 return lot.permitList.some((p: string) => {
