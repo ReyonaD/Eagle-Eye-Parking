@@ -33,7 +33,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
 
       const data = await response.json();
       //console.log("RAW LOT DATA:", JSON.stringify(data[0].occupancy, null, 2));
-      
+      //console.log("DEBUG - FIRST LOT DATA:", JSON.stringify(data[0], null, 2));
       if (!Array.isArray(data)) {
         setLots([]);
         return;
@@ -78,7 +78,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
           percentEmpty: emptyPercentage, // Now the UI has the exact number!
           status: uiStatus,              // Now the UI has the exact string!
           permitList: lot.permits && Array.isArray(lot.permits) ? lot.permits : [],
-          permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
+          permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(',') : 'Unknown'
         };
       }).filter((lot: any) => lot !== null);
 

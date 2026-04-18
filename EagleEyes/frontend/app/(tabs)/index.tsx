@@ -28,100 +28,77 @@ function TopBar() {
     </View>
   );
 }
-
 export default function MapScreen() {
   //consume the global data
   const { lots, isLoading } = useLots();
-  
+  console.log("MapScreen Render - isLoading:", isLoading, "Lots count:", lots?.length);
   // Dropdown States
   const [selectedCampus, setSelectedCampus] = useState("Main campus");
   const [openCampus, setOpenCampus] = useState(false);
   const [selectedPermit, setSelectedPermit] = useState("All Permits");
   const [openPermit, setOpenPermit] = useState(false);
-
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text>Loading EagleEyes Maps...</Text>
+      </View>
+    );
+  }
   const campuses = ["Main campus", "Discovery Park", "Frisco Landing"];
   const permits = [
     "All Permits",
-    "Eagle", "Remote", "Faculty", "A-Reserved",
+    "Eagle", "Remote", "Faculty and Staff", "A-Reserved",
     "Resident", "Resident Reserved", "Hall Director",
     "Visitor", "Motorcycle", "Evening", "Night",
     "HSG", "Premium Parking", "Zip Car"
   ];
+  const filteredLots = (lots || []).filter((lot: any) => {
+    if (selectedPermit === "All Permits") return true;
+    
+    // 1. Guard against empty data, but REMOVE the Array.isArray strict check
+    if (!lot?.permits) return false;
 
-  // useEffect(() => {
-  //   // const setupParkZen = async () => {
-  //   //   try {
-  //   //     await requestPermissions();
-  //   //   } catch (error) {
-  //   //     console.warn("ParkZen requestPermissions failed.");
-  //   //   }
-  //   // };
+    // FIXED: Handle both Arrays AND Comma-Separated Strings
+    let permitsArray = [];
+    if (Array.isArray(lot.permits)) {
+      permitsArray = lot.permits;
+    } else if (typeof lot.permits === 'string') {
+      permitsArray = lot.permits.split(','); // Split "Eagle, Faculty" into ["Eagle", " Faculty"]
+    } else {
+      return false; 
+    }
 
-  //   const fetchParkZenLots = async () => {
-  //     try {
-  //       const response = await fetch(`${BACKEND_URL}/api/lots`, {
-  //         method: 'GET',
-  //         headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'}
-  //       });
-  //       if (!response.ok) throw new Error(`Backend returned ${response.status}`);
+    const permitMap: { [key: string]: string[] } = {
+      "Faculty and Staff": ["fs", "f/s", "faculty", "staff"],
+      "A-Reserved": ["areserved", "a"],
+      "Eagle": ["eagle", "e"],
+      "Resident": ["resident", "res"],
+      "Resident Reserved": ["residentreserved"],
+      "Remote": ["remote"],
+    };
 
-  //       const data = await response.json();
-        
-  //       if (!Array.isArray(data)) {
-  //         setLiveLots([]);
-  //         return;
-  //       }
+    const clean = (s: any) => {
+      if (typeof s !== 'string') return '';
+      return s.toLowerCase()
+              .replace(/\s+/g, '')             // Remove spaces
+              .replace(/\([a-z0-9]\)/g, '')    // Remove (N), (D)
+              .replace(/[^a-z0-9]/g, '')       // Remove symbols
+              .trim();
+    };
 
-  //       const formattedLots = data.map((lot: any, index: number) => {
-  //         const mappedCoords = (lot.vertices || []).map((v: any) => ({
-  //           latitude: parseFloat(v.latitude) || parseFloat(v.lat),
-  //           longitude: parseFloat(v.longitude) || parseFloat(v.lng) || parseFloat(v.lon)
-  //         })).filter((v: any) => !isNaN(v.latitude) && !isNaN(v.longitude));
+    const target = clean(selectedPermit);
+    const allowedCodes = permitMap[selectedPermit] 
+      ? permitMap[selectedPermit].map(c => clean(c)) 
+      : [target];
 
-  //         if (mappedCoords.length === 0) return null;
-
-  //         let fillColor = 'rgba(53, 53, 53, 0.4)';
-  //         let strokeColor = '#6c6b6b';
-
-  //         if (lot.fillColor) {
-  //            fillColor = lot.fillColor; 
-  //            strokeColor = lot.fillColor === '#2ECC71' ? '#27AE60' : 
-  //                          lot.fillColor === '#F39C12' ? '#D68910' : 
-  //                          lot.fillColor === '#E74C3C' ? '#C0392B' : strokeColor;
-  //         }
-
-  //         let percentFull = "N/A";
-  //         if (lot.occupancy && lot.occupancy.lastUpdatedVia) {
-  //            const method = lot.occupancy.lastUpdatedVia;
-  //            if (lot.occupancy[method] && lot.occupancy[method].estimate !== undefined) {
-  //                percentFull = Math.round(lot.occupancy[method].estimate * 100) + '%';
-  //            }
-  //         }
-
-  //         return {
-  //           ...lot,
-  //           id: lot.id || index.toString(),
-  //           name: lot.lot_name || lot.name || `Lot ${index}`,
-  //           fillColor,
-  //           strokeColor,
-  //           coordinates: mappedCoords,
-  //           percentEmpty: lot.percentEmpty,
-  //           isFull: lot.isFull || lot.status === 'Full',
-  //           permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
-  //         };
-  //       }).filter((lot: any) => lot !== null);
-
-  //       setLiveLots(formattedLots);
-  //     } catch (error) {
-  //       console.error("Error fetching lots:", error);
-  //       setLiveLots([]); 
-  //     }
-  //   };
-
-  //   //setupParkZen();
-  //   fetchParkZenLots();
-  // }, []);
-
+    // Loop over our new safe permitsArray
+    return permitsArray.some((p: any) => {
+      const lotPermitCleaned = clean(p);
+      
+      // Match if exact or if the backend string contains our target
+      return allowedCodes.includes(lotPermitCleaned) || lotPermitCleaned.includes(target);
+    });
+  });
   return (
     <View style={styles.container}>
       <TopBar />
@@ -150,19 +127,7 @@ export default function MapScreen() {
       {/* THE MAP AREA */}
       <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
         <EagleMap
-          liveLots={selectedPermit === "All Permits"
-            ? lots
-            : lots.filter((lot: any) => {
-                if (!Array.isArray(lot.permitList)) return false;
-                const normalize = (s: string) => s.toLowerCase().replace(/\([dn]\)\s*$/i, '').replace(/[\s\-/]/g, '');
-                const target = normalize(selectedPermit);
-                return lot.permitList.some((p: string) => {
-                  const norm = normalize(p);
-                  if (selectedPermit === "Faculty") return norm === "fs";
-                  if (selectedPermit === "Visitor") return norm === "visitor" || norm === "visitorpaid";
-                  return norm === target;
-                });
-              })}
+          liveLots={filteredLots}
           selectedCampus={selectedCampus}
         />
       </View>
@@ -276,7 +241,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     maxHeight: 280,
     zIndex: 1000,
-    elevation: 1000,
+    elevation: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   dropdownOverlayLeft: {
     left: 16,
