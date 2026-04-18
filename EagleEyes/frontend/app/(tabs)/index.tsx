@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Image, ScrollView, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Image, FlatList, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
@@ -128,57 +128,82 @@ export default function MapScreen() {
 
       {/* ROW: CAMPUS (left) + PERMIT (right) */}
       <View style={styles.dropdownRow}>
-        {/* CAMPUS DROPDOWN */}
+        {/* CAMPUS TRIGGER */}
         <View style={[styles.dropdownWrapper, { marginRight: 8 }]}>
           <Text style={styles.dropdownLabel}>CAMPUS</Text>
-          <TouchableOpacity style={styles.dropdownBox} onPress={() => setOpenCampus(!openCampus)}>
+          <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenCampus(!openCampus); setOpenPermit(false); }}>
             <Text style={styles.dropdownText}>{selectedCampus}</Text>
             <Ionicons name={openCampus ? "chevron-up" : "chevron-down"} size={20} color="#333" />
           </TouchableOpacity>
-          {openCampus && (
-            <View style={styles.dropdownList}>
-              {campuses.map((campus) => (
-                <TouchableOpacity
-                  key={campus}
-                  style={styles.dropdownItem}
-                  onPress={() => { setSelectedCampus(campus); setOpenCampus(false); }}
-                >
-                  <Text style={styles.dropdownItemText}>{campus}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
         </View>
 
-        {/* PERMIT DROPDOWN */}
+        {/* PERMIT TRIGGER */}
         <View style={[styles.dropdownWrapper, { marginLeft: 8 }]}>
           <Text style={styles.dropdownLabel}>PERMIT</Text>
-          <TouchableOpacity style={styles.dropdownBox} onPress={() => setOpenPermit(!openPermit)}>
+          <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenPermit(!openPermit); setOpenCampus(false); }}>
             <Text style={styles.dropdownText}>{selectedPermit}</Text>
             <Ionicons name={openPermit ? "chevron-up" : "chevron-down"} size={20} color="#333" />
           </TouchableOpacity>
-          {openPermit && (
-            <View style={styles.dropdownList}>
-              <ScrollView nestedScrollEnabled={true}>
-                {permits.map((permit) => (
-                  <TouchableOpacity
-                    key={permit}
-                    style={styles.dropdownItem}
-                    onPress={() => { setSelectedPermit(permit); setOpenPermit(false); }}
-                  >
-                    <Text style={styles.dropdownItemText}>{permit}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
         </View>
       </View>
 
       {/* THE MAP AREA */}
-      <View style={styles.mapArea}>
-        <EagleMap liveLots={lots} selectedCampus={selectedCampus} />
+      <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
+        <EagleMap
+          liveLots={selectedPermit === "All Permits"
+            ? lots
+            : lots.filter((lot: any) => {
+                if (!Array.isArray(lot.permitList)) return false;
+                const normalize = (s: string) => s.toLowerCase().replace(/\([dn]\)\s*$/i, '').replace(/[\s\-/]/g, '');
+                const target = normalize(selectedPermit);
+                return lot.permitList.some((p: string) => {
+                  const norm = normalize(p);
+                  if (selectedPermit === "Faculty") return norm === "fs";
+                  if (selectedPermit === "Visitor") return norm === "visitor" || norm === "visitorpaid";
+                  return norm === target;
+                });
+              })}
+          selectedCampus={selectedCampus}
+        />
       </View>
+
+      {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
+      {openCampus && (
+        <FlatList
+          style={[styles.dropdownOverlay, styles.dropdownOverlayLeft]}
+          data={campuses}
+          keyExtractor={(item) => item}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => { setSelectedCampus(item); setOpenCampus(false); }}
+            >
+              <Text style={styles.dropdownItemText}>{item}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+      {openPermit && (
+        <FlatList
+          style={[styles.dropdownOverlay, styles.dropdownOverlayRight]}
+          data={permits}
+          keyExtractor={(item) => item}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => { setSelectedPermit(item); setOpenPermit(false); }}
+            >
+              <Text style={styles.dropdownItemText}>{item}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
 
     </View>
   );

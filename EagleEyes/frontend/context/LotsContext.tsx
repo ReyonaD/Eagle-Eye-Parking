@@ -77,6 +77,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
           coordinates: mappedCoords,
           percentEmpty: emptyPercentage, // Now the UI has the exact number!
           status: uiStatus,              // Now the UI has the exact string!
+          permitList: lot.permits && Array.isArray(lot.permits) ? lot.permits : [],
           permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
         };
       }).filter((lot: any) => lot !== null);
