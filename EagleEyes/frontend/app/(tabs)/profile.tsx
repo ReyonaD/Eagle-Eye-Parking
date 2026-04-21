@@ -22,7 +22,7 @@ const MOCK_USER = {
     type: 'E',
     status: 'Active',
     validUntil: 'May 15, 2026',
-    allowedLots: ['Lot 7', 'Lot 20', 'Lot 22'],
+    allowedLots: [],
   },
   savedLots: [
     { id: '1', name: 'Lot 20', percentOpen: 80 },
