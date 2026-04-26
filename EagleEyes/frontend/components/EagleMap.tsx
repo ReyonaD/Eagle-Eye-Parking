@@ -6,9 +6,16 @@ import { Ionicons } from '@expo/vector-icons';
 
 interface EagleMapProps {
   liveLots: any[];
+  selectedCampus?: string;
 }
 
-export default function EagleMap({ liveLots }: EagleMapProps) {
+const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }> = {
+  "Main campus":     { latitude: 33.2110, longitude: -97.1475, latitudeDelta: 0.018, longitudeDelta: 0.018 },
+  "Discovery Park":  { latitude: 33.2549, longitude: -97.1520, latitudeDelta: 0.018, longitudeDelta: 0.018 },
+  "Frisco Landing":  { latitude: 33.1511, longitude: -96.8238, latitudeDelta: 0.018, longitudeDelta: 0.018 },
+};
+
+export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
 
@@ -22,13 +29,17 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
   //   };
   //   setupParkZen();
   // }, []);
-  const untRegion = {
-    latitude: 33.2140,
-    longitude: -97.1475,
-    latitudeDelta: 0.012, 
-    longitudeDelta: 0.012,
-  };
 
+  useEffect(() => {
+    const region = CAMPUS_REGIONS[selectedCampus];
+    if (region) {
+      mapRef.current?.animateToRegion(region, 800);
+    }
+  }, [selectedCampus]);
+
+  const untRegion = CAMPUS_REGIONS["Main campus"];
+
+  /*
   const handleFindMyCar = async () => {
     try {
       console.log("Finding parked car location...");
@@ -47,6 +58,7 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
       Alert.alert("Error", "Could not find parked car location");
     }
   };
+  */
 
   const handleLongPress = (event: any) => {
     const coords = event.nativeEvent.coordinate;
@@ -85,11 +97,12 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
           <Polygon
             key={lot.id}
             coordinates={lot.coordinates}
-            fillColor={lot.fillColor}
-            strokeColor={lot.strokeColor}
-            strokeWidth={2}
-            tappable={true}
+            fillColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.fillColor}
+            strokeColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.strokeColor}
+            strokeWidth={lot.isVisible === false ? 0 : 2}
+            tappable={lot.isVisible !== false}
             onPress={() => {
+              if (lot.isVisible === false) return;
               Alert.alert(
                 lot.name,
                 `Permits: ${lot.permits}\n` +
@@ -116,10 +129,10 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
       </View>
 
       {/* FIND MY CAR BUTTON */}
-      <TouchableOpacity style={styles.findCarButton} onPress={handleFindMyCar}>
+      {/* <TouchableOpacity style={styles.findCarButton} onPress={handleFindMyCar}>
         <Ionicons name="car" size={24} color="white" />
         <Text style={styles.findCarText}>Find My Car</Text>
-      </TouchableOpacity>
+      </TouchableOpacity> */}
 
       {/* CAPACITY INDICATOR AT BOTTOM */}
       <View style={styles.capacityContainer}>

@@ -7,6 +7,7 @@ import {
   ScrollView,
   Switch,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -31,7 +32,26 @@ const MOCK_USER = {
     { id: '4', name: 'Lot 1',  percentOpen: 3  },
   ],
 };
+function TopBar() {
+  const router = useRouter();
+  return (
+    <View style={styles.topBar}>
+      {/* LEFT: Logo + App Name */}
+      <View style={styles.leftGroup}>
+        <Image
+          source={require('../../assets/images/Logo_EagleEye.png')}
+          style={styles.logo}
+        />
+        <Text style={styles.appNameLeft}>EagleEyes</Text>
+      </View>
 
+      {/* RIGHT: Bell */}
+      <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
+        <Ionicons name="notifications-outline" size={28} color="#333" />
+      </TouchableOpacity>
+    </View>
+  );
+}
 // Menu row component
 interface MenuRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -101,6 +121,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
+      <TopBar />
       <ScrollView showsVerticalScrollIndicator={false}>
 
         {/* Header */}
@@ -268,6 +289,34 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#f2f2f7',
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    justifyContent: 'space-between',
+  },
+  leftGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  appNameLeft: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#00853E',
+    marginLeft: 8,
+  },
+  bellWrapper: {
+    alignItems: 'flex-end',
+  },
+  logo: {
+    width: 90,
+    height: 60,
+    resizeMode: 'contain',
   },
 
   // Header

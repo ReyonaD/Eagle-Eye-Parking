@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image} from 'react-native';
 import { router } from 'expo-router';
 import { login } from '../api/auth';
 
@@ -27,8 +27,14 @@ export default function LoginScreen() {
 
     return (
     <View style={styles.container}>
-      <Text style={styles.title}>EagleEyes</Text>
-      <Text style={styles.subtitle}>UNT Campus Parking, Simplified.</Text>
+      <View style={styles.logoContainer}>
+        <Image
+          source={require('../assets/images/Logo_EagleEye.png')}
+          style={styles.logoImage}
+        />
+        <Text style={styles.logoText}>EagleEyes</Text>
+      </View>
+      <Text style={styles.subtitle}>UNT Campus Parking</Text>
 
       <TextInput
         style={styles.input}
@@ -64,7 +70,22 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#f9f9f9' },
-  title: { fontSize: 36, fontWeight: 'bold', color: '#00853E', textAlign: 'center', marginBottom: 8 },
+  logoContainer: { alignItems: 'center', marginBottom: 24 },
+  llogoContainer: {
+    alignItems: 'center',
+    marginBottom: 30, // Pushes the input fields or content down
+  },
+  logoImage: {
+    width: 120, 
+    height: 80,
+    resizeMode: 'contain',
+    marginBottom: 10, // Space between the logo and the text
+  },
+  logoText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#00853E', // UNT Green
+  },
   subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 40 },
   input: { height: 52, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, marginBottom: 16, fontSize: 16 },
   primaryButton: { backgroundColor: '#00853E', height: 52, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },

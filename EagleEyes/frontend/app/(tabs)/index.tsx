@@ -1,15 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Image, ScrollView, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Image, FlatList, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-
+import { useLots } from '../../context/LotsContext';
 import EagleMap from '../../components/EagleMap';
 //import { requestPermissions } from '../../modules/parkzen-core';
 
-// const BACKEND_URL = Platform.OS === 'android' 
-//   ? 'http://10.0.2.2:8000' 
-//   : 'http://localhost:8000';
-const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+//const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 // Top Bar Component
 function TopBar() {
@@ -34,155 +31,149 @@ function TopBar() {
     </View>
   );
 }
-
-
 export default function MapScreen() {
-  const [liveLots, setLiveLots] = useState<any[]>([]);
-  
+  //consume the global data
+  const { lots, isLoading } = useLots();
+  console.log("MapScreen Render - isLoading:", isLoading, "Lots count:", lots?.length);
   // Dropdown States
   const [selectedCampus, setSelectedCampus] = useState("Main campus");
   const [openCampus, setOpenCampus] = useState(false);
-  const [selectedPermit, setSelectedPermit] = useState("Eagle");
+  const [selectedPermit, setSelectedPermit] = useState("All Permits");
   const [openPermit, setOpenPermit] = useState(false);
-
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text>Loading EagleEyes Maps...</Text>
+      </View>
+    );
+  }
   const campuses = ["Main campus", "Discovery Park", "Frisco Landing"];
   const permits = [
-    "Eagle", "Remote", "Faculty", "A-Reserved", 
-    "Visitor", "Hall Director", "Resident Reserved", "Motorcycle"
+    "All Permits",
+    "Eagle", "Remote", "Faculty and Staff", "A-Reserved",
+    "Resident", "Resident Reserved", "Hall Director",
+    "Visitor", "Motorcycle", "Evening", "Night",
+    "HSG", "Premium Parking", "Zip Car"
   ];
+  const filteredLots = (lots || []).map((lot: any) => {
+    if (selectedPermit === "All Permits") return { ...lot, isVisible: true };
+    
+    // 1. Guard against empty data, but REMOVE the Array.isArray strict check
+    if (!lot?.permits) return { ...lot, isVisible: false };
 
-  useEffect(() => {
-    // const setupParkZen = async () => {
-    //   try {
-    //     await requestPermissions();
-    //   } catch (error) {
-    //     console.warn("ParkZen requestPermissions failed.");
-    //   }
-    // };
+    // FIXED: Handle both Arrays AND Comma-Separated Strings
+    let permitsArray = [];
+    if (Array.isArray(lot.permits)) {
+      permitsArray = lot.permits;
+    } else if (typeof lot.permits === 'string') {
+      permitsArray = lot.permits.split(','); // Split "Eagle, Faculty" into ["Eagle", " Faculty"]
+    } else {
+      return { ...lot, isVisible: false }; 
+    }
 
-    const fetchParkZenLots = async () => {
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/lots`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'}
-        });
-        if (!response.ok) throw new Error(`Backend returned ${response.status}`);
-
-        const data = await response.json();
-        
-        if (!Array.isArray(data)) {
-          setLiveLots([]);
-          return;
-        }
-
-        const formattedLots = data.map((lot: any, index: number) => {
-          const mappedCoords = (lot.vertices || []).map((v: any) => ({
-            latitude: parseFloat(v.latitude) || parseFloat(v.lat),
-            longitude: parseFloat(v.longitude) || parseFloat(v.lng) || parseFloat(v.lon)
-          })).filter((v: any) => !isNaN(v.latitude) && !isNaN(v.longitude));
-
-          if (mappedCoords.length === 0) return null;
-
-          let fillColor = 'rgba(53, 53, 53, 0.4)';
-          let strokeColor = '#6c6b6b';
-
-          if (lot.fillColor) {
-             fillColor = lot.fillColor; 
-             strokeColor = lot.fillColor === '#2ECC71' ? '#27AE60' : 
-                           lot.fillColor === '#F39C12' ? '#D68910' : 
-                           lot.fillColor === '#E74C3C' ? '#C0392B' : strokeColor;
-          }
-
-          let percentFull = "N/A";
-          if (lot.occupancy && lot.occupancy.lastUpdatedVia) {
-             const method = lot.occupancy.lastUpdatedVia;
-             if (lot.occupancy[method] && lot.occupancy[method].estimate !== undefined) {
-                 percentFull = Math.round(lot.occupancy[method].estimate * 100) + '%';
-             }
-          }
-
-          return {
-            ...lot,
-            id: lot.id || index.toString(),
-            name: lot.lot_name || lot.name || `Lot ${index}`,
-            fillColor,
-            strokeColor,
-            coordinates: mappedCoords,
-            percentEmpty: lot.percentEmpty,
-            isFull: lot.isFull || lot.status === 'Full',
-            permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
-          };
-        }).filter((lot: any) => lot !== null);
-
-        setLiveLots(formattedLots);
-      } catch (error) {
-        console.error("Error fetching lots:", error);
-        setLiveLots([]); 
-      }
+    const permitMap: { [key: string]: string[] } = {
+      "Faculty and Staff": ["fs", "f/s", "faculty", "staff"],
+      "A-Reserved": ["areserved", "a"],
+      "Eagle": ["eagle", "e"],
+      "Resident": ["resident", "res"],
+      "Resident Reserved": ["residentreserved"],
+      "Remote": ["remote"],
     };
 
-    //setupParkZen();
-    fetchParkZenLots();
-  }, []);
+    const clean = (s: any) => {
+      if (typeof s !== 'string') return '';
+      return s.toLowerCase()
+              .replace(/\s+/g, '')             // Remove spaces
+              .replace(/\([a-z0-9]\)/g, '')    // Remove (N), (D)
+              .replace(/[^a-z0-9]/g, '')       // Remove symbols
+              .trim();
+    };
 
+    const target = clean(selectedPermit);
+    const allowedCodes = permitMap[selectedPermit] 
+      ? permitMap[selectedPermit].map(c => clean(c)) 
+      : [target];
+
+    // Loop over our new safe permitsArray
+    const isVisible = permitsArray.some((p: any) => {
+      const lotPermitCleaned = clean(p);
+      
+      // Match if exact or if the backend string contains our target
+      return allowedCodes.includes(lotPermitCleaned) || lotPermitCleaned.includes(target);
+    });
+
+    return { ...lot, isVisible };
+  });
   return (
     <View style={styles.container}>
       <TopBar />
 
       {/* ROW: CAMPUS (left) + PERMIT (right) */}
       <View style={styles.dropdownRow}>
-        
-        {/* CAMPUS DROPDOWN */}
+        {/* CAMPUS TRIGGER */}
         <View style={[styles.dropdownWrapper, { marginRight: 8 }]}>
           <Text style={styles.dropdownLabel}>CAMPUS</Text>
-          <TouchableOpacity style={styles.dropdownBox} onPress={() => setOpenCampus(!openCampus)}>
+          <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenCampus(!openCampus); setOpenPermit(false); }}>
             <Text style={styles.dropdownText}>{selectedCampus}</Text>
             <Ionicons name={openCampus ? "chevron-up" : "chevron-down"} size={20} color="#333" />
           </TouchableOpacity>
-          {openCampus && (
-            <View style={styles.dropdownList}>
-              {campuses.map((campus) => (
-                <TouchableOpacity
-                  key={campus}
-                  style={styles.dropdownItem}
-                  onPress={() => { setSelectedCampus(campus); setOpenCampus(false); }}
-                >
-                  <Text style={styles.dropdownItemText}>{campus}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
         </View>
 
-        {/* PERMIT DROPDOWN */}
+        {/* PERMIT TRIGGER */}
         <View style={[styles.dropdownWrapper, { marginLeft: 8 }]}>
           <Text style={styles.dropdownLabel}>PERMIT</Text>
-          <TouchableOpacity style={styles.dropdownBox} onPress={() => setOpenPermit(!openPermit)}>
+          <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenPermit(!openPermit); setOpenCampus(false); }}>
             <Text style={styles.dropdownText}>{selectedPermit}</Text>
             <Ionicons name={openPermit ? "chevron-up" : "chevron-down"} size={20} color="#333" />
           </TouchableOpacity>
-          {openPermit && (
-            <View style={styles.dropdownList}>
-              <ScrollView nestedScrollEnabled={true}>
-                {permits.map((permit) => (
-                  <TouchableOpacity
-                    key={permit}
-                    style={styles.dropdownItem}
-                    onPress={() => { setSelectedPermit(permit); setOpenPermit(false); }}
-                  >
-                    <Text style={styles.dropdownItemText}>{permit}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
         </View>
       </View>
 
       {/* THE MAP AREA */}
-      <View style={styles.mapArea}>
-        <EagleMap liveLots={liveLots} />
+      <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
+        <EagleMap
+          liveLots={filteredLots}
+          selectedCampus={selectedCampus}
+        />
       </View>
+
+      {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
+      {openCampus && (
+        <FlatList
+          style={[styles.dropdownOverlay, styles.dropdownOverlayLeft]}
+          data={campuses}
+          keyExtractor={(item) => item}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => { setSelectedCampus(item); setOpenCampus(false); }}
+            >
+              <Text style={styles.dropdownItemText}>{item}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+      {openPermit && (
+        <FlatList
+          style={[styles.dropdownOverlay, styles.dropdownOverlayRight]}
+          data={permits}
+          keyExtractor={(item) => item}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => { setSelectedPermit(item); setOpenPermit(false); }}
+            >
+              <Text style={styles.dropdownItemText}>{item}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
 
     </View>
   );
@@ -251,9 +242,33 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#fff",
     maxHeight: 135,
-    overflow: "hidden",
-    zIndex: 1000,     // Forces list to render on top of the map below
+    zIndex: 1000,
     elevation: 1000,
+  },
+  dropdownOverlay: {
+    position: 'absolute',
+    top: 170,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    maxHeight: 280,
+    zIndex: 1000,
+    elevation: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  dropdownOverlayLeft: {
+    left: 16,
+    right: '50%',
+    marginRight: 8,
+  },
+  dropdownOverlayRight: {
+    left: '50%',
+    right: 16,
+    marginLeft: 8,
   },
   dropdownItem: {
     paddingVertical: 10,
@@ -284,4 +299,5 @@ const styles = StyleSheet.create({
   marginLeft: 8
   },
 
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' }
 });
