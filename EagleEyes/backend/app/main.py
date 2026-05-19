@@ -6,14 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError 
 from sqlalchemy.orm import Session
-
+from .database import engine, Base
+from . import models
 #imports custom files
 from app.database import get_db
 from app.models import User
 from app.schemas import UserCreate
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM
-
+Base.metadata.create_all(bind=engine)
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
 app.add_middleware(
