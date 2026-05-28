@@ -31,21 +31,21 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'MAP',
-          tabBarIcon: ({ color }) => <Ionicons name="map-outline" size={32} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="map-outline" size={25} color={color} />,
         }}
       />
       <Tabs.Screen
         name="lots"
         options={{
           title: 'LOTS',
-          tabBarIcon: ({ color }) => <Ionicons name="list-outline" size={32} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="list-outline" size={25} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'PROFILE',
-          tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={32} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={25} color={color} />,
         }}
       />
       <Tabs.Screen
