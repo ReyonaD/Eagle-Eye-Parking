@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models import User
 from app.schemas import UserCreate
 from app.core.security import get_password_hash, verify_password, create_access_token
-from app.core.security import SECRET_KEY, ALGORITHM
+from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -108,13 +108,14 @@ def login(
             headers={"WWW-Authenticate": "Bearer"} ,
         )
     #create a JWT token with user's id as the payload
-    access_token = create_access_token(data={"sub": str(user.email)})
+    access_token = create_access_token(data={"sub": str(user.email), "role": user.role})
 
     #hand the token to the mobile app
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user_id": user.id
+        "user_id": user.id,
+        "role": user.role
         }
 
 @app.get("/")
@@ -247,4 +248,12 @@ def get_parking_lots():
     except Exception as e:
         print(f"Server error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
-    
+#TEST ROUTE
+@app.get("/admin/test")
+def admin_only_dashboard(role: str = Depends(require_admin)):
+    # Because of Depends(require_admin), standard commuters will get a 403 error 
+    # before this code even runs!
+    return {
+        "message": "Welcome to the EagleEyes Admin Dashboard!", 
+        "your_role": role
+    }
