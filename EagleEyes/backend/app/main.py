@@ -81,7 +81,8 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     #create a new User object with the email and hashed password
     new_user = User(
         email=user.email,
-        hashed_password=hashedPW
+        hashed_password=hashedPW,
+        role="commuter"
     )
     #save to database
     db.add(new_user)
@@ -257,3 +258,20 @@ def admin_only_dashboard(role: str = Depends(require_admin)):
         "message": "Welcome to the EagleEyes Admin Dashboard!", 
         "your_role": role
     }
+
+@app.put("/admin/users/{target_email}/promote")
+def promote_to_admin(
+    target_email: str,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    #find target user
+    target_user = db.query(User).filter(User.email == target_email).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    #promote
+    target_user.role = "admin"
+    db.commit()
+
+    return {"message": f"User {target_email} has been successfully promoted to admin."}
