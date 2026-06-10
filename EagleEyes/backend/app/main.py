@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models import User
 from app.schemas import UserCreate
 from app.core.security import get_password_hash, verify_password, create_access_token
-from app.core.security import SECRET_KEY, ALGORITHM
+from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -81,7 +81,8 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     #create a new User object with the email and hashed password
     new_user = User(
         email=user.email,
-        hashed_password=hashedPW
+        hashed_password=hashedPW,
+        role="commuter"
     )
     #save to database
     db.add(new_user)
@@ -108,13 +109,14 @@ def login(
             headers={"WWW-Authenticate": "Bearer"} ,
         )
     #create a JWT token with user's id as the payload
-    access_token = create_access_token(data={"sub": str(user.email)})
+    access_token = create_access_token(data={"sub": str(user.email), "role": user.role})
 
     #hand the token to the mobile app
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user_id": user.id
+        "user_id": user.id,
+        "role": user.role
         }
 
 @app.get("/")
@@ -247,4 +249,29 @@ def get_parking_lots():
     except Exception as e:
         print(f"Server error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
+#TEST ROUTE
+@app.get("/admin/test")
+def admin_only_dashboard(role: str = Depends(require_admin)):
+    # Because of Depends(require_admin), standard commuters will get a 403 error 
+    # before this code even runs!
+    return {
+        "message": "Welcome to the EagleEyes Admin Dashboard!", 
+        "your_role": role
+    }
+
+@app.put("/admin/users/{target_email}/promote")
+def promote_to_admin(
+    target_email: str,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    #find target user
+    target_user = db.query(User).filter(User.email == target_email).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
     
+    #promote
+    target_user.role = "admin"
+    db.commit()
+
+    return {"message": f"User {target_email} has been successfully promoted to admin."}

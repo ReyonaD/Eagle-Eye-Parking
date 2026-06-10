@@ -13,6 +13,6 @@ class User(Base):
     #store the scrambled hash, not the plaintext password   
     hashed_password = Column(String, nullable=False)
 
-    role = Column(String, default="student")
+    role = Column(String, default="commuter")
 
     is_active = Column(Boolean, default=True)
