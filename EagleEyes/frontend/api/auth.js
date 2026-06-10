@@ -45,8 +45,9 @@ export const login = async (email, password) => {
         console.log("BACKEND REJECTION:", JSON.stringify(data, null, 2));
         throw new Error(errorMessage);
         } 
-        //save token to AsyncStorage
+        //save token and role to AsyncStorage
         await AsyncStorage.setItem('token', data.access_token);
+        await AsyncStorage.setItem('role', data.role);
         return data;
     } catch (error){
         throw error;
@@ -54,6 +55,22 @@ export const login = async (email, password) => {
 };
 //LOGOUT
 export const logout = async () => {
-    //destroy token to logout
+    //destroy token and role to logout
     await AsyncStorage.removeItem('token');
+    await AsyncStorage.removeItem('role');
 };
+//ADMIN TOOLS
+export const promoteToAdmin = async (targetEmail) => {
+    //get admin's token
+    const token = await AsyncStorage.getItem('token');
+    if (!token) { throw new Error("No authorization token found"); }
+
+    const response = await fetch(`${BASE_URL}/admin/users/${encodeURIComponent(targetEmail)}/promote')`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+    });
+
+}
