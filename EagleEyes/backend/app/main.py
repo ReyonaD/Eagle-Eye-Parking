@@ -1,19 +1,21 @@
 import requests
 import os
 import random
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError 
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
-from app.models import User
-from app.schemas import UserCreate
+from app.models import User, Alert
+from app.schemas import UserCreate, AlertResponse, AlertCreate
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin
+from typing import List
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -275,3 +277,64 @@ def promote_to_admin(
     db.commit()
 
     return {"message": f"User {target_email} has been successfully promoted to admin."}
+
+@app.get("/alerts", response_model=List[AlertResponse])
+def get_alerts(
+    alert_type: str=Query(..., description="Must be 'hazard' or 'event'"),
+    db: Session= Depends(get_db)
+):
+    """
+    Fetches the list for the tabs. 
+    Orders them by newest first!
+    """
+    alerts = db.query(Alert)\
+            .filter(Alert.alert_type == alert_type)\
+            .order_by(desc(Alert.created_at))\
+            .all()
+    return alerts
+    
+@app.post("/alerts", response_model=AlertResponse)
+def create_alert(
+    alert_data: AlertCreate,
+    db: Session= Depends(get_db)
+):
+    new_alert = Alert(
+        title=alert_data.title.upper(), 
+        alert_type=alert_data.alert_type.lower(),
+        category=alert_data.category,
+        description=alert_data.description
+    )
+    db.add(new_alert)
+    db.commit()
+    db.refresh(new_alert)
+    return new_alert
+
+@app.put("/alerts/{alert_id}/upvote", response_model=AlertResponse)
+def upvote_alert(
+    alert_id: int,
+    db: Session = Depends(get_db)
+):
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code= 404, detail="Alert not found or already resolved.")
+    
+    alert.upvotes+=1
+    db.commit()
+    db.refresh(alert)
+
+    return alert
+
+@app.delete("/alerts/{alert_id}")
+def remove_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code= 404, detail="Alert not found or already resolved.")
+    db.delete(alert)
+    db.commit()
+
+    return {"message": "Alert successfully resolved and removed from the feed."}
+
