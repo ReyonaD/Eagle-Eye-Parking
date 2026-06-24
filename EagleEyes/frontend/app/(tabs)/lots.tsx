@@ -89,7 +89,7 @@ function TopBar() {
         <Text style={styles.appNameLeft}>EagleEyes</Text>
       </View>
       <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-        <Ionicons name="notifications-outline" size={26} color="#333" />
+        <Ionicons name="notifications-outline" size={27} color="#333" />
         <Text style={styles.alertsLabel}>ALERTS</Text>
       </TouchableOpacity>
     </View>
@@ -150,7 +150,7 @@ function FilterHeader({
     <View style={styles.filterHeader}>
       {/* Search Bar */}
       <View style={styles.searchWrapper}>
-        <Ionicons name="search-outline" size={18} color="#aaa" style={styles.searchIcon} />
+        <Ionicons name="search-outline" size={27} color="#aaa" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Lot Search"
@@ -161,7 +161,7 @@ function FilterHeader({
         />
         {query.length > 0 && (
           <TouchableOpacity onPress={() => onChangeQuery('')} style={styles.clearButton}>
-            <Ionicons name="close-circle" size={18} color="#aaa" />
+            <Ionicons name="close-circle" size={27} color="#aaa" />
           </TouchableOpacity>
         )}
       </View>
@@ -303,12 +303,12 @@ export default function LotsScreen() {
             <Text style={styles.pickerTitle}>Filter by Permit</Text>
             <TouchableOpacity style={styles.pickerOption} onPress={() => { setPermitFilter('all'); setPermitPickerVisible(false); }}>
               <Text style={[styles.pickerOptionText, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
-              {permitFilter === 'all' && <Ionicons name="checkmark" size={18} color="#00853E" />}
+              {permitFilter === 'all' && <Ionicons name="checkmark" size={27} color="#00853E" />}
             </TouchableOpacity>
             {uniquePermits.map((p) => (
               <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitPickerVisible(false); }}>
                 <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
-                {permitFilter === p && <Ionicons name="checkmark" size={18} color="#00853E" />}
+                {permitFilter === p && <Ionicons name="checkmark" size={27} color="#00853E" />}
               </TouchableOpacity>
             ))}
           </View>
@@ -325,7 +325,7 @@ export default function LotsScreen() {
                 <Text style={[styles.pickerOptionText, availabilityFilter === opt && styles.pickerOptionActive]}>
                   {opt === 'all' ? 'All' : opt}
                 </Text>
-                {availabilityFilter === opt && <Ionicons name="checkmark" size={18} color="#00853E" />}
+                {availabilityFilter === opt && <Ionicons name="checkmark" size={27} color="#00853E" />}
               </TouchableOpacity>
             ))}
           </View>
@@ -342,7 +342,7 @@ export default function LotsScreen() {
         <View style={styles.modalContainer}>
           <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 20) }]}>
             <TouchableOpacity onPress={closeModal} style={{ padding: 10 }}>
-              <Ionicons name="chevron-back" size={28} color="#00853E" />
+              <Ionicons name="chevron-back" size={27} color="#00853E" />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Lot Details</Text>
             <View style={{ width: 48 }} />
@@ -381,12 +381,12 @@ export default function LotsScreen() {
               </View>
 
               <TouchableOpacity style={styles.actionButton}>
-                <Ionicons name="navigate" size={20} color="#fff" />
+                <Ionicons name="navigate" size={27} color="#fff" />
                 <Text style={styles.actionButtonText}>Get Directions</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#f0f0f0', marginTop: 12 }]}>
-                <Ionicons name="information-circle-outline" size={20} color="#00853E" />
+                <Ionicons name="information-circle-outline" size={27} color="#00853E" />
                 <Text style={[styles.actionButtonText, { color: '#00853E' }]}>More Info</Text>
               </TouchableOpacity>
             </View>

@@ -109,7 +109,7 @@ const TYPE_STYLES = {
 //           style={styles.bellWrapper}
 //           onPress={() => router.push('/(tabs)/alerts')}
 //         >
-//           <Ionicons name="notifications-outline" size={28} color="#333" />
+//           <Ionicons name="notifications-outline" size={27} color="#333" />
 //         </TouchableOpacity>
 //       </View>
 //     </View>
@@ -170,7 +170,7 @@ function AlertCard({ alert }: { alert: AlertItem }) {
   return (
     <View style={styles.card}>
       <View style={[styles.iconWrap, { backgroundColor: visual.bg }]}>
-        <Ionicons name={visual.icon} size={18} color={visual.color} />
+        <Ionicons name={visual.icon} size={27} color={visual.color} />
       </View>
 
       <View style={styles.cardBody}>

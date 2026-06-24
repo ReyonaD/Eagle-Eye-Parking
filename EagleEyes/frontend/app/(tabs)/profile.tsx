@@ -47,7 +47,7 @@ function TopBar() {
 
       {/* RIGHT: Bell */}
       <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-        <Ionicons name="notifications-outline" size={28} color="#333" />
+        <Ionicons name="notifications-outline" size={27} color="#333" />
       </TouchableOpacity>
     </View>
   );
@@ -65,12 +65,12 @@ function MenuRow({ icon, label, value, onPress, danger = false }: MenuRowProps) 
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.5}>
       <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
-        <Ionicons name={icon} size={20} color={danger ? '#D0021B' : '#00853E'} />
+        <Ionicons name={icon} size={27} color={danger ? '#D0021B' : '#00853E'} />
       </View>
       <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
       <View style={styles.rowRight}>
         {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        {!danger && <Ionicons name="chevron-forward" size={16} color="#ccc" />}
+        {!danger && <Ionicons name="chevron-forward" size={27} color="#ccc" />}
       </View>
     </TouchableOpacity>
   );
@@ -127,7 +127,7 @@ export default function ProfileScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.avatarCircle}>
-            <Ionicons name="person-circle" size={88} color="#00853E" />
+            <Ionicons name="person-circle" size={27} color="#00853E" />
           </View>
           <Text style={styles.name}>{user.name}</Text>
           <Text style={styles.email}>{user.email}</Text>
@@ -136,7 +136,7 @@ export default function ProfileScreen() {
             onPress={() => router.push('/profile/details' as any)}
             activeOpacity={0.7}
           >
-            <Ionicons name="pencil-outline" size={13} color="#fff" />
+            <Ionicons name="pencil-outline" size={27} color="#fff" />
             <Text style={styles.editBtnText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
@@ -184,7 +184,7 @@ export default function ProfileScreen() {
                 activeOpacity={0.5}
               >
                 <View style={styles.rowIcon}>
-                  <Ionicons name="bookmark" size={20} color="#00853E" />
+                  <Ionicons name="bookmark" size={27} color="#00853E" />
                 </View>
                 <Text style={styles.rowLabel}>{lot.name}</Text>
                 <View style={styles.rowRight}>
@@ -192,7 +192,7 @@ export default function ProfileScreen() {
                   <Text style={[styles.rowValue, { color: availabilityColor(lot.percentOpen) }]}>
                     {lot.percentOpen}% open
                   </Text>
-                  <Ionicons name="chevron-forward" size={16} color="#ccc" />
+                  <Ionicons name="chevron-forward" size={27} color="#ccc" />
                 </View>
               </TouchableOpacity>
               {index < user.savedLots.length - 1 && <Divider />}
@@ -244,7 +244,7 @@ export default function ProfileScreen() {
         <Section title="Preferences">
           <View style={styles.row}>
             <View style={styles.rowIcon}>
-              <Ionicons name="notifications-outline" size={20} color="#00853E" />
+              <Ionicons name="notifications-outline" size={27} color="#00853E" />
             </View>
             <Text style={styles.rowLabel}>Notifications</Text>
             <Switch

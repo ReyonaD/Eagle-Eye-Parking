@@ -25,7 +25,7 @@ function TopBar() {
 
       {/* RIGHT: Bell */}
       <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-        <Ionicons name="notifications-outline" size={28} color="#333" />
+        <Ionicons name="notifications-outline" size={27} color="#333" />
       </TouchableOpacity>
 
     </View>
@@ -115,7 +115,7 @@ export default function MapScreen() {
           <Text style={styles.dropdownLabel}>CAMPUS</Text>
           <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenCampus(!openCampus); setOpenPermit(false); }}>
             <Text style={styles.dropdownText}>{selectedCampus}</Text>
-            <Ionicons name={openCampus ? "chevron-up" : "chevron-down"} size={20} color="#333" />
+            <Ionicons name={openCampus ? "chevron-up" : "chevron-down"} size={27} color="#333" />
           </TouchableOpacity>
         </View>
 
@@ -124,7 +124,7 @@ export default function MapScreen() {
           <Text style={styles.dropdownLabel}>PERMIT</Text>
           <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenPermit(!openPermit); setOpenCampus(false); }}>
             <Text style={styles.dropdownText}>{selectedPermit}</Text>
-            <Ionicons name={openPermit ? "chevron-up" : "chevron-down"} size={20} color="#333" />
+            <Ionicons name={openPermit ? "chevron-up" : "chevron-down"} size={27} color="#333" />
           </TouchableOpacity>
         </View>
       </View>
