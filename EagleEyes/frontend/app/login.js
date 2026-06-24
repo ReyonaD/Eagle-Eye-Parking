@@ -15,9 +15,13 @@ export default function LoginScreen() {
         }
         setIsLoading(true);
         try {
-            await login(email, password);
-            // Navigate to the main app screen after successful login
-            router.replace('/(tabs)');
+            const userData = await login(email, password);
+            //route the user based on the role provided in the JWT token
+            if (userData.role === 'admin'){
+              router.replace('/(admin)');
+            }else{
+              router.replace('/(tabs)');
+            }
         } catch (error) {
             Alert.alert('Login Failed', error.message);
         } finally {

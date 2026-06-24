@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   Image,
   Modal,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,11 +24,63 @@ const STATUS_COLOR: Record<AvailabilityStatus, string> = {
   'Full': '#D0021B',
 };
 
+const PERMIT_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
+  'A':    { bg: '#D4C8A8', text: '#5C4A1E' },
+  'B':    { bg: '#B8CBE8', text: '#1E3A6A' },
+  'C':    { bg: '#B8E0C8', text: '#1A5C30' },
+  'E':    { bg: '#EEE0A0', text: '#7A6200' },
+  'F/S':  { bg: '#B4C4DA', text: '#1E3A5F' },
+  'G':    { bg: '#E0B8D0', text: '#5F1E4A' },
+  'T':    { bg: '#E0D0B4', text: '#5F3A1E' },
+  'PP':   { bg: '#F5E6C8', text: '#8B5E00' },
+  'A37':  { bg: '#D4C8A8', text: '#5C4A1E' },
+  'MC':   { bg: '#D8D8D8', text: '#444' },
+  'SV':   { bg: '#C8D8C8', text: '#1A4A1A' },
+  'VIS':  { bg: '#E8D0C8', text: '#6A2A1A' },
+};
+
+const PERMIT_ABBREVIATIONS: Record<string, string> = {
+  'Premium Parking': 'PP',
+  'Motorcycle':      'MC',
+  'Faculty/Staff':   'F/S',
+  'Visitor':         'VIS',
+  'General':         'GEN',
+  'Economy':         'E',
+  'Student':         'STU',
+  'Service Vehicle': 'SV',
+};
+
+function abbreviatePermit(permit: string): string {
+  if (PERMIT_ABBREVIATIONS[permit]) return PERMIT_ABBREVIATIONS[permit];
+  // Strip parenthetical suffix: "PP(Visitor)" → "PP", "Premium Parking (V)" → "Premium Parking"
+  const stripped = permit.replace(/\s*\(.*$/, '').trim();
+  if (stripped && PERMIT_ABBREVIATIONS[stripped]) return PERMIT_ABBREVIATIONS[stripped];
+  const base = stripped || permit;
+  if (base.length <= 4) return base;
+  const words = base.split(/[\s/]+/).filter(Boolean);
+  if (words.length > 1) return words.map((w) => w[0]).join('').toUpperCase().slice(0, 4);
+  return base.slice(0, 3).toUpperCase();
+}
+
+function getPermitBadgeInfo(permitList: string[], lotName?: string) {
+  if (!permitList || permitList.length === 0) {
+    // Try to extract a hint from the lot name (e.g. "Lot 13 - SV" → "SV")
+    const namePart = lotName?.match(/[-–]\s*([A-Z0-9/]{1,6})\s*$/i)?.[1]?.toUpperCase();
+    if (namePart) {
+      const colors = PERMIT_BADGE_COLORS[namePart] || { bg: '#D8D8D8', text: '#555' };
+      return { label: namePart, ...colors };
+    }
+    return { label: '?', bg: '#E0E0E0', text: '#666' };
+  }
+  const raw = permitList[0].trim();
+  const label = abbreviatePermit(raw);
+  const colors = PERMIT_BADGE_COLORS[label] || PERMIT_BADGE_COLORS[raw] || { bg: '#D8D8D8', text: '#555' };
+  return { label, ...colors };
+}
 
 function TopBar() {
   return (
     <View style={styles.topBar}>
-      {/* LEFT: Logo + App Name */}
       <View style={styles.leftGroup}>
         <Image
           source={require('../../assets/images/Logo_EagleEye.png')}
@@ -36,10 +88,9 @@ function TopBar() {
         />
         <Text style={styles.appNameLeft}>EagleEyes</Text>
       </View>
-
-      {/* RIGHT: Bell */}
       <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-        <Ionicons name="notifications-outline" size={28} color="#333" />
+        <Ionicons name="notifications-outline" size={26} color="#333" />
+        <Text style={styles.alertsLabel}>ALERTS</Text>
       </TouchableOpacity>
     </View>
   );
@@ -47,54 +98,116 @@ function TopBar() {
 
 function LotCard({ lot, onPress }: { lot: any; onPress: (lot: any) => void }) {
   const dotColor = STATUS_COLOR[lot.status as AvailabilityStatus] || STATUS_COLOR['Available'];
-  const displayPercent = typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% open` : 'Live';
+  const badge = getPermitBadgeInfo(lot.permitList || [], lot.name);
+  const displayPercent = typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% Empty` : 'Live';
+
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => onPress(lot)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.cardLeft}>
+    <TouchableOpacity style={styles.card} onPress={() => onPress(lot)} activeOpacity={0.7}>
+      <View style={[styles.permitBadge, { backgroundColor: badge.bg }]}>
+        <Text
+          style={[styles.permitBadgeText, { color: badge.text }]}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.6}
+        >
+          {badge.label}
+        </Text>
+      </View>
+      <View style={styles.cardMiddle}>
         <Text style={styles.lotName}>{lot.name}</Text>
+        <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
       </View>
       <View style={styles.cardRight}>
-        <View style={[styles.statusBadge, { backgroundColor: dotColor + '1A' }]}>
-          <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-          <Text style={[styles.statusText, { color: dotColor }]}>{lot.status}</Text>
-        </View>
-        <Text style={styles.percentText}>{displayPercent}</Text>
+        <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+        <Text style={[styles.statusText, { color: dotColor }]}>{lot.status}</Text>
       </View>
     </TouchableOpacity>
   );
 }
 
-function ListHeader({ query, onChangeQuery }: { query: string; onChangeQuery: (text: string) => void }) {
+function FilterHeader({
+  query,
+  onChangeQuery,
+  permitFilter,
+  availabilityFilter,
+  onAllPermits,
+  onPermitPress,
+  onAvailabilityPress,
+}: {
+  query: string;
+  onChangeQuery: (text: string) => void;
+  permitFilter: string;
+  availabilityFilter: string;
+  onAllPermits: () => void;
+  onPermitPress: () => void;
+  onAvailabilityPress: () => void;
+}) {
+  const allActive = permitFilter === 'all' && availabilityFilter === 'all';
+  const permitActive = permitFilter !== 'all';
+  const availabilityActive = availabilityFilter !== 'all';
+
   return (
-    <>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Parking Lots</Text>
-        <Text style={styles.headerSubtitle}>UNT Campus · Live Availability</Text>
-      </View>
+    <View style={styles.filterHeader}>
+      {/* Search Bar */}
       <View style={styles.searchWrapper}>
+        <Ionicons name="search-outline" size={18} color="#aaa" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search lots (e.g. Lot 20)"
+          placeholder="Lot Search"
           placeholderTextColor="#aaa"
           value={query}
           onChangeText={onChangeQuery}
-          clearButtonMode="while-editing"
           autoCorrect={false}
         />
+        {query.length > 0 && (
+          <TouchableOpacity onPress={() => onChangeQuery('')} style={styles.clearButton}>
+            <Ionicons name="close-circle" size={18} color="#aaa" />
+          </TouchableOpacity>
+        )}
       </View>
-      <View style={styles.legend}>
-        {(Object.keys(STATUS_COLOR) as AvailabilityStatus[]).map((status) => (
-          <View key={status} style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: STATUS_COLOR[status] }]} />
-            <Text style={styles.legendLabel}>{status}</Text>
-          </View>
-        ))}
+
+      {/* Filter Buttons */}
+      <View style={styles.filterRow}>
+        <TouchableOpacity
+          style={[styles.filterBtn, allActive && styles.filterBtnActive]}
+          onPress={onAllPermits}
+        >
+          <Text style={[styles.filterBtnText, allActive && styles.filterBtnTextActive]}>
+            ALL PERMITS
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterBtn, permitActive && styles.filterBtnActive]}
+          onPress={onPermitPress}
+        >
+          <Text style={[styles.filterBtnText, permitActive && styles.filterBtnTextActive]}>
+            {permitFilter !== 'all' ? permitFilter : 'PERMIT'}
+          </Text>
+          <Ionicons
+            name="chevron-down"
+            size={12}
+            color={permitActive ? '#fff' : '#555'}
+            style={{ marginLeft: 3 }}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterBtn, availabilityActive && styles.filterBtnActive]}
+          onPress={onAvailabilityPress}
+        >
+          <Text style={[styles.filterBtnText, availabilityActive && styles.filterBtnTextActive]}>
+            {availabilityFilter !== 'all' ? availabilityFilter.toUpperCase() : 'AVAILABILITY'}
+          </Text>
+          <Ionicons
+            name="chevron-down"
+            size={12}
+            color={availabilityActive ? '#fff' : '#555'}
+            style={{ marginLeft: 3 }}
+          />
+        </TouchableOpacity>
       </View>
-    </>
+    </View>
   );
 }
 
@@ -102,14 +215,37 @@ export default function LotsScreen() {
   const [query, setQuery] = useState('');
   const [selectedLot, setSelectedLot] = useState<any | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [permitFilter, setPermitFilter] = useState('all');
+  const [availabilityFilter, setAvailabilityFilter] = useState('all');
+  const [permitPickerVisible, setPermitPickerVisible] = useState(false);
+  const [availabilityPickerVisible, setAvailabilityPickerVisible] = useState(false);
   const insets = useSafeAreaInsets();
   const { lots, isLoading } = useLots();
-  const filtered = lots.filter((lot) => {
-    const q = query.toLowerCase();
-    const lotName = lot.name?.toLowerCase() || '';
-    const lotPermits = lot.permits?.toLowerCase() || '';
-    return lotName.includes(q) || lotPermits.includes(q);
-  });
+
+  const uniquePermits = useMemo(() => {
+    const set = new Set<string>();
+    lots.forEach((lot) => {
+      (lot.permitList || []).forEach((p: string) => set.add(p.trim()));
+    });
+    return Array.from(set).sort();
+  }, [lots]);
+
+  const filtered = useMemo(() => {
+    return lots.filter((lot) => {
+      const q = query.toLowerCase();
+      const nameMatch = (lot.name?.toLowerCase() || '').includes(q);
+      const permitMatch = (lot.permits?.toLowerCase() || '').includes(q);
+      if (!nameMatch && !permitMatch) return false;
+      if (permitFilter !== 'all') {
+        const hasPermit = (lot.permitList || []).some(
+          (p: string) => p.trim() === permitFilter
+        );
+        if (!hasPermit) return false;
+      }
+      if (availabilityFilter !== 'all' && lot.status !== availabilityFilter) return false;
+      return true;
+    });
+  }, [lots, query, permitFilter, availabilityFilter]);
 
   const handleLotPress = (lot: any) => {
     try {
@@ -125,7 +261,7 @@ export default function LotsScreen() {
     setModalVisible(false);
     setSelectedLot(null);
   };
-  //loading state while fetching
+
   if (isLoading) {
     return (
       <SafeAreaView style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -134,6 +270,7 @@ export default function LotsScreen() {
       </SafeAreaView>
     );
   }
+
   return (
     <SafeAreaView style={styles.screen}>
       <TopBar />
@@ -141,13 +278,59 @@ export default function LotsScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <LotCard lot={item} onPress={handleLotPress} />}
-        ListHeaderComponent={<ListHeader query={query} onChangeQuery={setQuery} />}
+        ListHeaderComponent={
+          <FilterHeader
+            query={query}
+            onChangeQuery={setQuery}
+            permitFilter={permitFilter}
+            availabilityFilter={availabilityFilter}
+            onAllPermits={() => { setPermitFilter('all'); setAvailabilityFilter('all'); }}
+            onPermitPress={() => setPermitPickerVisible(true)}
+            onAvailabilityPress={() => setAvailabilityPickerVisible(true)}
+          />
+        }
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <Text style={styles.emptyText}>No lots match your search.</Text>
         }
         keyboardShouldPersistTaps="handled"
       />
+
+      {/* Permit Picker Modal */}
+      <Modal transparent animationType="fade" visible={permitPickerVisible} onRequestClose={() => setPermitPickerVisible(false)}>
+        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setPermitPickerVisible(false)}>
+          <View style={styles.pickerSheet}>
+            <Text style={styles.pickerTitle}>Filter by Permit</Text>
+            <TouchableOpacity style={styles.pickerOption} onPress={() => { setPermitFilter('all'); setPermitPickerVisible(false); }}>
+              <Text style={[styles.pickerOptionText, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
+              {permitFilter === 'all' && <Ionicons name="checkmark" size={18} color="#00853E" />}
+            </TouchableOpacity>
+            {uniquePermits.map((p) => (
+              <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitPickerVisible(false); }}>
+                <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
+                {permitFilter === p && <Ionicons name="checkmark" size={18} color="#00853E" />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Availability Picker Modal */}
+      <Modal transparent animationType="fade" visible={availabilityPickerVisible} onRequestClose={() => setAvailabilityPickerVisible(false)}>
+        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setAvailabilityPickerVisible(false)}>
+          <View style={styles.pickerSheet}>
+            <Text style={styles.pickerTitle}>Filter by Availability</Text>
+            {(['all', 'Available', 'Near Capacity', 'Full'] as const).map((opt) => (
+              <TouchableOpacity key={opt} style={styles.pickerOption} onPress={() => { setAvailabilityFilter(opt); setAvailabilityPickerVisible(false); }}>
+                <Text style={[styles.pickerOptionText, availabilityFilter === opt && styles.pickerOptionActive]}>
+                  {opt === 'all' ? 'All' : opt}
+                </Text>
+                {availabilityFilter === opt && <Ionicons name="checkmark" size={18} color="#00853E" />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Lot Details Modal */}
       <Modal
@@ -156,13 +339,11 @@ export default function LotsScreen() {
         visible={modalVisible}
         onRequestClose={closeModal}
       >
-        <View style={styles.modalContainer}> 
-          
+        <View style={styles.modalContainer}>
           <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 20) }]}>
             <TouchableOpacity onPress={closeModal} style={{ padding: 10 }}>
               <Ionicons name="chevron-back" size={28} color="#00853E" />
             </TouchableOpacity>
-            
             <Text style={styles.modalTitle}>Lot Details</Text>
             <View style={{ width: 48 }} />
           </View>
@@ -171,19 +352,19 @@ export default function LotsScreen() {
             <View style={styles.modalContent}>
               <View style={styles.detailCard}>
                 <Text style={styles.detailLotName}>{selectedLot.name}</Text>
-                
+
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Status:</Text>
                   <View style={[
-                    styles.statusBadge, 
+                    styles.statusBadgeDetail,
                     { backgroundColor: (STATUS_COLOR[selectedLot.status as AvailabilityStatus] || STATUS_COLOR['Available']) + '1A' }
                   ]}>
                     <View style={[
-                      styles.statusDot, 
+                      styles.statusDot,
                       { backgroundColor: STATUS_COLOR[selectedLot.status as AvailabilityStatus] || STATUS_COLOR['Available'] }
                     ]} />
                     <Text style={[
-                      styles.statusText, 
+                      styles.statusText,
                       { color: STATUS_COLOR[selectedLot.status as AvailabilityStatus] || STATUS_COLOR['Available'] }
                     ]}>
                       {selectedLot.status}
@@ -219,10 +400,9 @@ export default function LotsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#f2f4f3',
   },
 
-  // UPDATED: Top Bar Styles matching MapScreen
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -231,7 +411,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    justifyContent: 'space-between', // Pushes left group and bell to opposite ends
+    justifyContent: 'space-between',
   },
   leftGroup: {
     flexDirection: 'row',
@@ -244,76 +424,82 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   bellWrapper: {
-    alignItems: 'flex-end',
+    alignItems: 'center',
+  },
+  alertsLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#C8860A',
+    marginTop: 2,
+    letterSpacing: 0.5,
   },
   logo: {
-    width: 90, // Updated to match MapScreen dimensions
-    height: 60, // Updated to match MapScreen dimensions
+    width: 90,
+    height: 60,
     resizeMode: 'contain',
   },
 
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
+  // Filter Header
+  filterHeader: {
+    backgroundColor: '#fff',
     paddingBottom: 10,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#e8e8e8',
+    marginBottom: 10,
   },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#00853E',
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 2,
-  },
-
   searchWrapper: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e8e8e8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 12,
+    backgroundColor: '#f2f4f3',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
+  },
+  searchIcon: {
+    marginRight: 8,
   },
   searchInput: {
-    height: 44,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 10,
-    paddingHorizontal: 14,
+    flex: 1,
     fontSize: 15,
     color: '#222',
   },
-
-  legend: {
+  clearButton: {
+    padding: 2,
+  },
+  filterRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e8e8e8',
-    marginBottom: 6,
+    gap: 8,
   },
-  legendItem: {
+  filterBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#ccc',
+    backgroundColor: '#fff',
   },
-  legendDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
+  filterBtnActive: {
+    backgroundColor: '#00853E',
+    borderColor: '#00853E',
   },
-  legendLabel: {
-    fontSize: 12,
+  filterBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#555',
+    letterSpacing: 0.3,
+  },
+  filterBtnTextActive: {
+    color: '#fff',
   },
 
   listContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingBottom: 16,
     gap: 10,
   },
@@ -324,58 +510,99 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
+  // Lot Card
   card: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.07,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
+    gap: 12,
   },
-  cardLeft: {
-    gap: 4,
+  permitBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  permitBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  cardMiddle: {
+    flex: 1,
+    gap: 3,
   },
   lotName: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
     color: '#1a1a1a',
   },
-  permitLabel: {
+  percentText: {
     fontSize: 13,
-    color: '#777',
+    fontWeight: '500',
   },
   cardRight: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  statusBadge: {
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    gap: 6,
+    gap: 5,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   statusText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
-  },
-  percentText: {
-    fontSize: 12,
-    color: '#999',
+    textAlign: 'center',
+    maxWidth: 70,
   },
 
-  // Modal
+  // Picker Modal
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  pickerSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 36,
+  },
+  pickerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    marginBottom: 14,
+  },
+  pickerOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  pickerOptionText: {
+    fontSize: 15,
+    color: '#333',
+  },
+  pickerOptionActive: {
+    color: '#00853E',
+    fontWeight: '600',
+  },
+
+  // Lot Details Modal
   modalContainer: {
     flex: 1,
     backgroundColor: '#f9f9f9',
@@ -433,6 +660,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#1a1a1a',
+  },
+  statusBadgeDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    gap: 6,
   },
   actionButton: {
     backgroundColor: '#00853E',
