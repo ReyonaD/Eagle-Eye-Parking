@@ -22,6 +22,7 @@ export default function TabLayout() {
         tabBarButton: HapticTab,
         tabBarStyle: {
           paddingBottom: 5, 
+          paddingTop: 5,
         },
         tabBarLabelStyle: {
           fontWeight: 'bold', 
@@ -34,7 +35,7 @@ export default function TabLayout() {
           title: 'MAP',
           tabBarIcon: ({ color }) => (
             <View style={{ transform: [{ translateY: 4 }] }}>
-              <Ionicons name="map-outline" size={25} color={color} />
+              <Ionicons name="map-outline" size={27} color={color} />
             </View>
           ),
         }}
@@ -45,7 +46,7 @@ export default function TabLayout() {
           title: 'LOTS',
           tabBarIcon: ({ color }) => (
             <View style={{ transform: [{ translateY: 4 }] }}>
-              <Ionicons name="list-outline" size={25} color={color} />
+              <Ionicons name="list-outline" size={27} color={color} />
             </View>
           ),
         }}
@@ -56,7 +57,7 @@ export default function TabLayout() {
           title: 'PROFILE',
           tabBarIcon: ({ color }) => (
             <View style={{ transform: [{ translateY: 4 }] }}>
-              <Ionicons name="person-outline" size={25} color={color} />
+              <Ionicons name="person-outline" size={27} color={color} />
             </View>
           ),
         }}

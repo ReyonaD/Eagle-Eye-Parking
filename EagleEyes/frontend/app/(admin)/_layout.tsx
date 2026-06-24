@@ -29,6 +29,7 @@ export default function AdminLayout() {
           tabBarActiveTintColor: '#00853E',
           tabBarInactiveTintColor: '#A3D1B6',
           tabBarLabelStyle: { fontWeight: 'bold', fontSize: 12 },
+          tabBarStyle: { paddingTop: 5 },
         }}
       >
         <Tabs.Screen
