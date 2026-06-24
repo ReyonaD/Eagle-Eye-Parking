@@ -1,4 +1,4 @@
-import requests
+import httpx
 import os
 import random
 from fastapi import FastAPI, Depends, HTTPException, status
@@ -59,13 +59,13 @@ def get_permit_name(permit_id: str, token: str):
     headers = {"Authorization": f"Bearer {token}"}
 
     try:
-        response = requests.get(url, headers=headers)
+        response = httpx.get(url, headers=headers)
         if response.status_code == 200:
             data = response.json()
             name = data.get("name") or data.get("title") or data.get("type") or "Unknown"
             permit_cache[permit_id] = name
             return name
-    except requests.RequestException as e:
+    except httpx.RequestError as e:
         print(f"Error fetching permit name for {permit_id}: {e}")
     return "Unknown"
 
@@ -176,7 +176,7 @@ def get_parking_lots():
             "username": username,
             "password": password
         }
-        auth_response = requests.post(auth_url, json = auth_payload)
+        auth_response = httpx.post(auth_url, json = auth_payload)
 
         if auth_response.status_code != 200:
             raise HTTPException(status_code=401, detail="Failed to authenticate with ParkZen")
@@ -194,7 +194,7 @@ def get_parking_lots():
         lots_url = f"https://api.parkzenapp.com/api/lots?clientId={client_id}"
         headers = {"Authorization": f"Bearer {token}"}
 
-        lots_response = requests.get(lots_url, headers=headers)
+        lots_response = httpx.get(lots_url, headers=headers)
 
         if lots_response.status_code != 200:
             raise HTTPException(lots_response.status_code, detail="Fail to fetch lots from ParkZen API")
