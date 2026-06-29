@@ -46,7 +46,7 @@ export default function AdminLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'INDEX',
+            title: 'PROFILE',
             tabBarIcon: ({ color }) => (
               <Ionicons name="home-outline" size={26} color={color} />
             ),
