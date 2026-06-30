@@ -5,32 +5,33 @@ import { useRouter } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
 import EagleMap from '../../components/EagleMap';
 //import { requestPermissions } from '../../modules/parkzen-core';
-
+import { SafeAreaView} from 'react-native-safe-area-context';
 //const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
+
 // Top Bar Component
-function TopBar() {
-  const router = useRouter();
-  return (
-    <View style={styles.topBar}>
+// function TopBar() {
+//   const router = useRouter();
+//   return (
+//     <View style={styles.topBar}>
       
-      {/* LEFT: Logo + App Name */}
-      <View style={styles.leftGroup}>
-        <Image
-          source={require('../../assets/images/Logo_EagleEye.png')}
-          style={styles.logo}
-        />
-        <Text style={styles.appNameLeft}>EagleEyes</Text>
-      </View>
+//       {/* LEFT: Logo + App Name */}
+//       <View style={styles.leftGroup}>
+//         <Image
+//           source={require('../../assets/images/Logo_EagleEye.png')}
+//           style={styles.logo}
+//         />
+//         <Text style={styles.appNameLeft}>EagleEyes</Text>
+//       </View>
 
-      {/* RIGHT: Bell */}
-      <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-        <Ionicons name="notifications-outline" size={27} color="#333" />
-      </TouchableOpacity>
+//       {/* RIGHT: Bell */}
+//       <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
+//         <Ionicons name="notifications-outline" size={27} color="#333" />
+//       </TouchableOpacity>
 
-    </View>
-  );
-}
+//     </View>
+//   );
+// }
 export default function MapScreen() {
   //consume the global data
   const { lots, isLoading } = useLots();
@@ -105,8 +106,7 @@ export default function MapScreen() {
     return { ...lot, isVisible };
   });
   return (
-    <View style={styles.container}>
-      <TopBar />
+     <SafeAreaView style={styles.container} edges={['right', 'bottom', 'left']}>
 
       {/* ROW: CAMPUS (left) + PERMIT (right) */}
       <View style={styles.dropdownRow}>
@@ -175,27 +175,12 @@ export default function MapScreen() {
         />
       )}
 
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9f9f9' },
-  
-  // Top Bar
-  topBar: { flexDirection: 'row', 
-            alignItems: 'center',  
-            backgroundColor: '#fff', 
-            paddingHorizontal: 12, 
-            paddingVertical: 8, 
-            paddingTop: 40, 
-            borderBottomWidth: 1, 
-            borderBottomColor: '#eee', zIndex: 20,
-           justifyContent: 'space-between' },
-  topBarSide: { width: 50, justifyContent: 'center' },
-  bellWrapper: { alignItems: 'flex-end' },
-  logo: { width: 90, height: 60, resizeMode: 'contain' },
-  appName: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: '#00853E' },
 
   // Dropdown Row Layout (Must have high zIndex to float over map)
   dropdownRow: {

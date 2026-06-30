@@ -15,7 +15,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
-
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
 
 const STATUS_COLOR: Record<AvailabilityStatus, string> = {
@@ -76,24 +75,6 @@ function getPermitBadgeInfo(permitList: string[], lotName?: string) {
   const label = abbreviatePermit(raw);
   const colors = PERMIT_BADGE_COLORS[label] || PERMIT_BADGE_COLORS[raw] || { bg: '#D8D8D8', text: '#555' };
   return { label, ...colors };
-}
-
-function TopBar() {
-  return (
-    <View style={styles.topBar}>
-      <View style={styles.leftGroup}>
-        <Image
-          source={require('../../assets/images/Logo_EagleEye.png')}
-          style={styles.logo}
-        />
-        <Text style={styles.appNameLeft}>EagleEyes</Text>
-      </View>
-      <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-        <Ionicons name="notifications-outline" size={27} color="#333" />
-        <Text style={styles.alertsLabel}>ALERTS</Text>
-      </TouchableOpacity>
-    </View>
-  );
 }
 
 function LotCard({ lot, onPress }: { lot: any; onPress: (lot: any) => void }) {
@@ -272,8 +253,7 @@ export default function LotsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <TopBar />
+    <SafeAreaView style={styles.screen} edges={['right', 'bottom', 'left']}>
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
@@ -400,58 +380,29 @@ export default function LotsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f2f4f3',
-  },
-
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    justifyContent: 'space-between',
-  },
-  leftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  appNameLeft: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#00853E',
-    marginLeft: 8,
-  },
-  bellWrapper: {
-    alignItems: 'center',
-  },
-  alertsLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#C8860A',
-    marginTop: 2,
-    letterSpacing: 0.5,
-  },
-  logo: {
-    width: 90,
-    height: 60,
-    resizeMode: 'contain',
   },
 
-  // Filter Header
+  // --- FILTER HEADER ---
   filterHeader: {
     backgroundColor: '#fff',
-    paddingBottom: 10,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e8e8e8',
-    marginBottom: 10,
+    borderBottomColor: '#f0f0f0', 
+    marginBottom: 8,
+    // Added elevation to match the Map Screen's floating effect
+    zIndex: 10,
+    elevation: 4, 
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
   },
   searchWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 16,
-    marginTop: 14,
+    marginTop: 10,
     marginBottom: 12,
     backgroundColor: '#f2f4f3',
     borderRadius: 10,
@@ -481,7 +432,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: '#ccc',
+    borderColor: '#e0e0e0', // Slightly lighter border for inactive pills
     backgroundColor: '#fff',
   },
   filterBtnActive: {
@@ -498,10 +449,11 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 
+  // --- LIST CONTENT ---
   listContent: {
-    paddingHorizontal: 14,
-    paddingBottom: 16,
-    gap: 10,
+    paddingHorizontal: 16, // Matched Map Screen horizontal padding
+    paddingBottom: 24,
+    gap: 12,
   },
   emptyText: {
     textAlign: 'center',
@@ -510,7 +462,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  // Lot Card
+  // --- LOT CARD ---
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -518,8 +470,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 2 }, // Slightly more pronounced shadow
+    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
     gap: 12,
@@ -542,12 +494,12 @@ const styles = StyleSheet.create({
   },
   lotName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700', // Made slightly bolder
     color: '#1a1a1a',
   },
   percentText: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   cardRight: {
     alignItems: 'center',
@@ -560,12 +512,12 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     textAlign: 'center',
     maxWidth: 70,
   },
 
-  // Picker Modal
+  // --- PICKER MODAL ---
   pickerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
@@ -573,15 +525,15 @@ const styles = StyleSheet.create({
   },
   pickerSheet: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    borderTopLeftRadius: 20, // Slightly rounder top edges
+    borderTopRightRadius: 20,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 36,
+    paddingBottom: 40, // Extra bottom padding for newer iPhones
   },
   pickerTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#1a1a1a',
     marginBottom: 14,
   },
@@ -596,16 +548,17 @@ const styles = StyleSheet.create({
   pickerOptionText: {
     fontSize: 15,
     color: '#333',
+    fontWeight: '500',
   },
   pickerOptionActive: {
     color: '#00853E',
-    fontWeight: '600',
+    fontWeight: '700',
   },
 
-  // Lot Details Modal
+  // --- LOT DETAILS MODAL ---
   modalContainer: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#f9f9f9', // Matched to overall app background
   },
   modalHeader: {
     flexDirection: 'row',
@@ -615,11 +568,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e8e8e8',
+    borderBottomColor: '#f0f0f0', // Matched borders
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1a1a1a',
   },
   modalContent: {
@@ -628,18 +581,18 @@ const styles = StyleSheet.create({
   },
   detailCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 20,
     marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.07,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 3,
   },
   detailLotName: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 26,
+    fontWeight: '800',
     color: '#00853E',
     marginBottom: 20,
   },
@@ -647,31 +600,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
   detailLabel: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#666',
   },
   detailValue: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1a1a1a',
   },
   statusBadgeDetail: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 20,
     gap: 6,
   },
   actionButton: {
     backgroundColor: '#00853E',
-    borderRadius: 10,
+    borderRadius: 12, // Slightly rounder buttons
     paddingVertical: 14,
     paddingHorizontal: 16,
     flexDirection: 'row',
@@ -682,6 +635,6 @@ const styles = StyleSheet.create({
   actionButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

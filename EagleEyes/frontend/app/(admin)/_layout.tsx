@@ -1,21 +1,21 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Image, Text, StyleSheet } from 'react-native';
-
-function TopBar() {
-  return (
-    <View style={styles.topBar}>
-      {/* LEFT: Logo + App Name */}
-      <View style={styles.leftGroup}>
-        <Image
-          source={require('../../assets/images/Logo_EagleEye.png')}
-          style={styles.logo}
-        />
-        <Text style={styles.appNameLeft}>EagleEyes</Text>
-      </View>
-    </View>
-  );
-}
+import TopBar from '../../components/TopBar';
+// function TopBar() {
+//   return (
+//     <View style={styles.topBar}>
+//       {/* LEFT: Logo + App Name */}
+//       <View style={styles.leftGroup}>
+//         <Image
+//           source={require('../../assets/images/Logo_EagleEye.png')}
+//           style={styles.logo}
+//         />
+//         <Text style={styles.appNameLeft}>EagleEyes</Text>
+//       </View>
+//     </View>
+//   );
+// }
 
 export default function AdminLayout() {
   return (
@@ -67,31 +67,5 @@ export default function AdminLayout() {
 }
 
 const styles = StyleSheet.create({
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    paddingTop: 40,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    zIndex: 20,
-    justifyContent: 'flex-start',
-  },
-  leftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  logo: {
-    width: 90,
-    height: 60,
-    resizeMode: 'contain',
-  },
-  appNameLeft: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#00853E',
-    marginLeft: 8,
-  },
+  
 });
