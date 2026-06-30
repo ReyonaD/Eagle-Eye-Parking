@@ -16,8 +16,12 @@ if not SQLALCHEMY_DATABASE_URL:
 #engine is the actual connection to the database
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=300
+    pool_pre_ping=True,          # Checks if the connection is alive before using it
+    pool_recycle=3600,           # Recycles connections every hour
+    connect_args={
+        "connect_timeout": 15,    # Increase timeout to 15 seconds to allow for wake-up
+        "sslmode": "require"      # Neon requires SSL
+    }
 )
 
 #temporary session factory for creating database sessions

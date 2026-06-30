@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIn
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { getAlerts } from '../../api/alerts'; 
+import { SafeAreaView} from 'react-native-safe-area-context';
 
 const getIconForCategory = (category: string) => {
   switch (category?.toLowerCase()) {
@@ -24,12 +25,10 @@ export default function EventsScreen() {
   const [selected, setSelected] = useState(getTodayDateString());
   const [events, setEvents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Fetch data for EVENTS instead of hazards
+  
   const fetchEvents = async () => {
     setIsLoading(true);
     try {
-      // This single line change does all the heavy lifting!
       const data = await getAlerts('event');
       setEvents(data);
     } catch (error) {
@@ -102,7 +101,7 @@ export default function EventsScreen() {
   };
 
   return (
-    <View style={styles.mainContainer}>
+    <SafeAreaView style={styles.mainContainer} edges={['right', 'left']}>
       <ScrollView style={styles.scrollContainer} contentContainerStyle={{ paddingBottom: 100 }}>
         <Text style={styles.title}>Campus Events</Text>
         <Text style={styles.subtitle}>Select a date to view upcoming events</Text>
@@ -320,7 +319,7 @@ export default function EventsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 

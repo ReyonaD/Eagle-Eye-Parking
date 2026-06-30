@@ -14,7 +14,7 @@ export default function TabLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-          <TopBar />
+          <TopBar role="commuter" /> 
     <Tabs
       screenOptions={{
         // Hardcoding the exact UNT Green from your mockup for the active tab

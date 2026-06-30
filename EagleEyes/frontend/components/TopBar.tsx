@@ -2,14 +2,14 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-
-export default function TopBar() {
+interface TopBarProps {
+  role?: 'admin' | 'commuter'; 
+}
+export default function TopBar({ role = 'commuter' }: TopBarProps) {
   const router = useRouter();
 
   return (
     <View style={styles.topBar}>
-      
-      {/* LEFT: Logo + App Name Grouped Together */}
       <View style={styles.leftGroup}>
         <Image
           source={require('../assets/images/Logo_EagleEye.png')}
@@ -18,15 +18,18 @@ export default function TopBar() {
         <Text style={styles.appNameLeft}>EagleEyes</Text>
       </View>
 
-      {/* RIGHT: Bell */}
       <TouchableOpacity 
         style={styles.bellWrapper} 
-        onPress={() => router.push('/(tabs)/alerts')}
+        onPress={() => router.push(role === 'admin' ? '/(admin)/hazards' : '/(tabs)/alerts')}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
-        <Ionicons name="notifications-outline" size={27} color="#333" />
+        {/* Switch icon based on role */}
+        <Ionicons 
+          name={role === 'admin' ? "alert-circle-outline" : "notifications-outline"} 
+          size={27} 
+          color={role === 'admin' ? "#D0021B" : "#333"} // Red for hazards
+        />
       </TouchableOpacity>
-
     </View>
   );
 }

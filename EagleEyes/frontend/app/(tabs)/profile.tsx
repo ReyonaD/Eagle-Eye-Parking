@@ -119,7 +119,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['right', 'bottom', 'left']}>
+    <SafeAreaView style={styles.screen} edges={['right', 'left']}>
       <ScrollView showsVerticalScrollIndicator={false}>
 
         {/* Header */}

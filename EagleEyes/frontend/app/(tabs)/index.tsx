@@ -106,7 +106,7 @@ export default function MapScreen() {
     return { ...lot, isVisible };
   });
   return (
-     <SafeAreaView style={styles.container} edges={['right', 'bottom', 'left']}>
+     <SafeAreaView style={styles.container} edges={['right', 'left']}>
 
       {/* ROW: CAMPUS (left) + PERMIT (right) */}
       <View style={styles.dropdownRow}>

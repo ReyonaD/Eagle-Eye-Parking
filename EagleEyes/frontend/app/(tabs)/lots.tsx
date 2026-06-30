@@ -253,7 +253,7 @@ export default function LotsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['right', 'bottom', 'left']}>
+    <SafeAreaView style={styles.screen} edges={['right', 'left']}>
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
