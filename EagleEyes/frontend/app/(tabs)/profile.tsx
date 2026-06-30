@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 // Mock user data
 const MOCK_USER = {
   name: 'Student User',
@@ -32,26 +31,26 @@ const MOCK_USER = {
     { id: '4', name: 'Lot 1',  percentOpen: 3  },
   ],
 };
-function TopBar() {
-  const router = useRouter();
-  return (
-    <View style={styles.topBar}>
-      {/* LEFT: Logo + App Name */}
-      <View style={styles.leftGroup}>
-        <Image
-          source={require('../../assets/images/Logo_EagleEye.png')}
-          style={styles.logo}
-        />
-        <Text style={styles.appNameLeft}>EagleEyes</Text>
-      </View>
+// function TopBar() {
+//   const router = useRouter();
+//   return (
+//     <View style={styles.topBar}>
+//       {/* LEFT: Logo + App Name */}
+//       <View style={styles.leftGroup}>
+//         <Image
+//           source={require('../../assets/images/Logo_EagleEye.png')}
+//           style={styles.logo}
+//         />
+//         <Text style={styles.appNameLeft}>EagleEyes</Text>
+//       </View>
 
-      {/* RIGHT: Bell */}
-      <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-        <Ionicons name="notifications-outline" size={28} color="#333" />
-      </TouchableOpacity>
-    </View>
-  );
-}
+//       {/* RIGHT: Bell */}
+//       <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
+//         <Ionicons name="notifications-outline" size={27} color="#333" />
+//       </TouchableOpacity>
+//     </View>
+//   );
+// }
 // Menu row component
 interface MenuRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -65,12 +64,12 @@ function MenuRow({ icon, label, value, onPress, danger = false }: MenuRowProps) 
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.5}>
       <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
-        <Ionicons name={icon} size={20} color={danger ? '#D0021B' : '#00853E'} />
+        <Ionicons name={icon} size={27} color={danger ? '#D0021B' : '#00853E'} />
       </View>
       <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
       <View style={styles.rowRight}>
         {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        {!danger && <Ionicons name="chevron-forward" size={16} color="#ccc" />}
+        {!danger && <Ionicons name="chevron-forward" size={27} color="#ccc" />}
       </View>
     </TouchableOpacity>
   );
@@ -120,14 +119,13 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <TopBar />
+    <SafeAreaView style={styles.screen} edges={['right', 'left']}>
       <ScrollView showsVerticalScrollIndicator={false}>
 
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.avatarCircle}>
-            <Ionicons name="person-circle" size={88} color="#00853E" />
+            <Ionicons name="person-circle" size={27} color="#00853E" />
           </View>
           <Text style={styles.name}>{user.name}</Text>
           <Text style={styles.email}>{user.email}</Text>
@@ -136,7 +134,7 @@ export default function ProfileScreen() {
             onPress={() => router.push('/profile/details' as any)}
             activeOpacity={0.7}
           >
-            <Ionicons name="pencil-outline" size={13} color="#fff" />
+            <Ionicons name="pencil-outline" size={27} color="#fff" />
             <Text style={styles.editBtnText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
@@ -184,7 +182,7 @@ export default function ProfileScreen() {
                 activeOpacity={0.5}
               >
                 <View style={styles.rowIcon}>
-                  <Ionicons name="bookmark" size={20} color="#00853E" />
+                  <Ionicons name="bookmark" size={27} color="#00853E" />
                 </View>
                 <Text style={styles.rowLabel}>{lot.name}</Text>
                 <View style={styles.rowRight}>
@@ -192,7 +190,7 @@ export default function ProfileScreen() {
                   <Text style={[styles.rowValue, { color: availabilityColor(lot.percentOpen) }]}>
                     {lot.percentOpen}% open
                   </Text>
-                  <Ionicons name="chevron-forward" size={16} color="#ccc" />
+                  <Ionicons name="chevron-forward" size={27} color="#ccc" />
                 </View>
               </TouchableOpacity>
               {index < user.savedLots.length - 1 && <Divider />}
@@ -244,7 +242,7 @@ export default function ProfileScreen() {
         <Section title="Preferences">
           <View style={styles.row}>
             <View style={styles.rowIcon}>
-              <Ionicons name="notifications-outline" size={20} color="#00853E" />
+              <Ionicons name="notifications-outline" size={27} color="#00853E" />
             </View>
             <Text style={styles.rowLabel}>Notifications</Text>
             <Switch
@@ -290,35 +288,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f2f2f7',
   },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    justifyContent: 'space-between',
-  },
-  leftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  appNameLeft: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#00853E',
-    marginLeft: 8,
-  },
-  bellWrapper: {
-    alignItems: 'flex-end',
-  },
-  logo: {
-    width: 90,
-    height: 60,
-    resizeMode: 'contain',
-  },
-
   // Header
   header: {
     alignItems: 'center',

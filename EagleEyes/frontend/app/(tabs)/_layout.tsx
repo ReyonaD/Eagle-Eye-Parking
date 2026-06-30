@@ -1,17 +1,20 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
-
+import TopBar from '../../components/TopBar'
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
 
   return (
+    <View style={{ flex: 1 }}>
+          <TopBar role="commuter" /> 
     <Tabs
       screenOptions={{
         // Hardcoding the exact UNT Green from your mockup for the active tab
@@ -21,6 +24,7 @@ export default function TabLayout() {
         tabBarButton: HapticTab,
         tabBarStyle: {
           paddingBottom: 5, 
+          paddingTop: 5,
         },
         tabBarLabelStyle: {
           fontWeight: 'bold', 
@@ -31,21 +35,33 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'MAP',
-          tabBarIcon: ({ color }) => <Ionicons name="map-outline" size={25} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <View style={{ transform: [{ translateY: 4 }] }}>
+              <Ionicons name="map-outline" size={27} color={color} />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="lots"
         options={{
           title: 'LOTS',
-          tabBarIcon: ({ color }) => <Ionicons name="list-outline" size={25} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <View style={{ transform: [{ translateY: 4 }] }}>
+              <Ionicons name="list-outline" size={27} color={color} />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'PROFILE',
-          tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={25} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <View style={{ transform: [{ translateY: 4 }] }}>
+              <Ionicons name="person-outline" size={27} color={color} />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
@@ -55,5 +71,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </View>
   );
 }

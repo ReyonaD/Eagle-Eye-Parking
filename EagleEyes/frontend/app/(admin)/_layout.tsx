@@ -1,18 +1,12 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Image, Text, StyleSheet } from 'react-native';
+import TopBar from '../../components/TopBar';
 
 export default function AdminLayout() {
   return (
     <View style={{ flex: 1 }}>
-      {/* Logo and App Name Header */}
-      <View style={styles.headerContainer}>
-        <Image
-          source={require('../../assets/images/Logo_EagleEye.png')}
-          style={styles.logoImage}
-        />
-        <Text style={styles.appName}>EagleEyes</Text>
-      </View>
+      <TopBar role="admin" />
 
       {/* Tabs Below */}
       <Tabs
@@ -21,6 +15,7 @@ export default function AdminLayout() {
           tabBarActiveTintColor: '#00853E',
           tabBarInactiveTintColor: '#A3D1B6',
           tabBarLabelStyle: { fontWeight: 'bold', fontSize: 12 },
+          tabBarStyle: { paddingTop: 5 },
         }}
       >
         <Tabs.Screen
@@ -46,7 +41,7 @@ export default function AdminLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'INDEX',
+            title: 'PROFILE',
             tabBarIcon: ({ color }) => (
               <Ionicons name="home-outline" size={26} color={color} />
             ),
@@ -58,24 +53,5 @@ export default function AdminLayout() {
 }
 
 const styles = StyleSheet.create({
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 10,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  logoImage: {
-    width: 40,
-    height: 40,
-    marginRight: 10,
-  },
-  appName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#00853E',
-  },
+  
 });
