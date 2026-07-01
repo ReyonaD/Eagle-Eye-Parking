@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 // GET: Fetch the feed (works for both tabs!)
 export const getAlerts = async (alertType) => {
@@ -23,6 +25,25 @@ export const createAlert = async (alertData) => {
         return await response.json();
     } catch (error){
         console.error("API Error (createAlert):", error);
+        throw error;
+    }
+};
+// DELETE: Admin declines/removes a hazard report (admin-only endpoint)
+export const deleteAlert = async (alertId) => {
+    const token = await AsyncStorage.getItem('token');
+    console.log("deleteAlert — token present:", !!token, "| alertId:", alertId);
+    try {
+        const response = await fetch(`${BASE_URL}/alerts/${alertId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) {
+            const body = await response.text();
+            throw new Error(`HTTP ${response.status}: ${body}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error("API Error (deleteAlert):", error);
         throw error;
     }
 };
