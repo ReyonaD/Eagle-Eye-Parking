@@ -58,6 +58,8 @@ export default function RootLayout() {
           <Stack.Screen name="(admin)" />
           <Stack.Screen name="login" />
           <Stack.Screen name="register" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="reset-password" options={{ presentation: 'modal' }} />
         </Stack>
       </LotsProvider>
     </GestureHandlerRootView>

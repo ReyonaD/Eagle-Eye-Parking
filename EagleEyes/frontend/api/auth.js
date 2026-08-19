@@ -74,3 +74,32 @@ export const promoteToAdmin = async (targetEmail) => {
     });
 
 }
+//FORGOT PASSWORD - request a reset email
+export const requestPasswordReset = async (email) => {
+    const response = await fetch(`${BASE_URL}/forgot-password`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ email }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Request failed');
+    }
+    return data;
+};
+//RESET PASSWORD - submit token + new password
+export const resetPassword = async (token, newPassword) => {
+    const response = await fetch(`${BASE_URL}/reset-password`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ token, new_password: newPassword }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        let errorMessage = "Reset failed.";
+        if (typeof data.detail === 'string') errorMessage = data.detail;
+        else if (Array.isArray(data.detail)) errorMessage = data.detail[0].msg;
+        throw new Error(errorMessage);
+    }
+    return data;
+};
