@@ -39,6 +39,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
 
   const untRegion = CAMPUS_REGIONS["Main campus"];
 
+  /*
   const handleFindMyCar = async () => {
     try {
       console.log("Finding parked car location...");
@@ -57,6 +58,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
       Alert.alert("Error", "Could not find parked car location");
     }
   };
+  */
 
   const handleLongPress = (event: any) => {
     const coords = event.nativeEvent.coordinate;
@@ -95,11 +97,12 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
           <Polygon
             key={lot.id}
             coordinates={lot.coordinates}
-            fillColor={lot.fillColor}
-            strokeColor={lot.strokeColor}
-            strokeWidth={2}
-            tappable={true}
+            fillColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.fillColor}
+            strokeColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.strokeColor}
+            strokeWidth={lot.isVisible === false ? 0 : 2}
+            tappable={lot.isVisible !== false}
             onPress={() => {
+              if (lot.isVisible === false) return;
               Alert.alert(
                 lot.name,
                 `Permits: ${lot.permits}\n` +
@@ -126,10 +129,10 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
       </View>
 
       {/* FIND MY CAR BUTTON */}
-      <TouchableOpacity style={styles.findCarButton} onPress={handleFindMyCar}>
+      {/* <TouchableOpacity style={styles.findCarButton} onPress={handleFindMyCar}>
         <Ionicons name="car" size={24} color="white" />
         <Text style={styles.findCarText}>Find My Car</Text>
-      </TouchableOpacity>
+      </TouchableOpacity> */}
 
       {/* CAPACITY INDICATOR AT BOTTOM */}
       <View style={styles.capacityContainer}>

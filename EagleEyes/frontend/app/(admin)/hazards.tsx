@@ -1,0 +1,438 @@
+import React, { useState, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { Tabs, router, useFocusEffect } from 'expo-router';
+import { getAlerts, deleteAlert } from '../../api/alerts';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const getTodayDateString = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const getYesterdayDateString = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const formatDateTime = (isoString: string) => {
+  const dateStr = isoString.split('T')[0];
+  const time = new Date(isoString)
+    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    .replace(' ', '');
+  if (dateStr === getTodayDateString()) return `TODAY ${time}`;
+  if (dateStr === getYesterdayDateString()) return `YESTERDAY ${time}`;
+  return `${dateStr} ${time}`;
+};
+
+const getCategoryStyle = (category: string) => {
+  switch (category?.toLowerCase()) {
+    case 'snow':         return { icon: 'snow-outline',    bg: '#A8C8E8', iconColor: '#2C5F8A' };
+    case 'flood':        return { icon: 'rainy-outline',   bg: '#4A90D9', iconColor: '#fff' };
+    case 'traffic jam':  return { icon: 'bus-outline',     bg: '#E74C3C', iconColor: '#fff' };
+    case 'tree branch':  return { icon: 'leaf-outline',    bg: '#27AE60', iconColor: '#fff' };
+    case 'item on road': return { icon: 'cube-outline',    bg: '#7F8C8D', iconColor: '#fff' };
+    default:             return { icon: 'warning-outline', bg: '#95A5A6', iconColor: '#fff' };
+  }
+};
+
+// ─── HazardCard ───────────────────────────────────────────────────────────────
+
+function HazardCard({
+  hazard,
+  isNew,
+  onPress,
+}: {
+  hazard: any;
+  isNew: boolean;
+  onPress: () => void;
+}) {
+  const { icon, bg, iconColor } = getCategoryStyle(hazard.category);
+  return (
+    <TouchableOpacity
+      style={[styles.card, !isNew && styles.cardOlder]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
+      {isNew && (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{hazard.upvotes}</Text>
+        </View>
+      )}
+      <View style={styles.cardContent}>
+        <View style={[styles.iconBox, { backgroundColor: bg }]}>
+          <Ionicons name={icon as any} size={22} color={iconColor} />
+        </View>
+        <View style={styles.cardText}>
+          <Text style={[styles.cardTitle, !isNew && styles.olderText]} numberOfLines={1}>
+            {hazard.title}
+          </Text>
+          <Text style={[styles.cardTime, !isNew && styles.olderText]}>
+            {formatDateTime(hazard.created_at)}
+          </Text>
+          <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── HazardDetail ─────────────────────────────────────────────────────────────
+
+function HazardDetail({
+  hazard,
+  onBack,
+  onDecline,
+  onApprove,
+}: {
+  hazard: any;
+  onBack: () => void;
+  onDecline: (h: any) => void;
+  onApprove: (h: any) => void;
+}) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
+      >
+        <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <Ionicons name="chevron-back" size={20} color="#00853E" />
+          <Text style={styles.backText}>Back</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.detailTitle}>{hazard.title}</Text>
+        <Text style={styles.detailTime}>{formatDateTime(hazard.created_at)}</Text>
+
+        <View style={styles.detailCard}>
+          <Text style={styles.locationLabel}>
+            LOCATION:{' '}
+            <Text style={styles.locationValue}>
+              {hazard.description ?? 'No location provided'}
+            </Text>
+          </Text>
+
+          {/* Static placeholder — backend has no coordinate fields */}
+          <View style={styles.mapPlaceholder}>
+            <Ionicons name="map-outline" size={38} color="#bbb" />
+            <Text style={styles.mapPlaceholderText}>Map unavailable</Text>
+            <Text style={styles.mapPlaceholderSub}>No location coordinates in report</Text>
+          </View>
+        </View>
+
+        <Text style={styles.studentCount}>
+          STUDENT REPORT(S): {hazard.upvotes}
+        </Text>
+
+        <View style={styles.pictureRow}>
+          <View style={styles.picturePlaceholder}>
+            <Ionicons name="image-outline" size={30} color="#bbb" />
+            <Text style={styles.pictureLabel}>PICTURE POSTED{'\n'}BY STUDENT</Text>
+          </View>
+          <View style={styles.picturePlaceholder}>
+            <Ionicons name="image-outline" size={30} color="#bbb" />
+            <Text style={styles.pictureLabel}>PICTURE POSTED{'\n'}BY STUDENT</Text>
+          </View>
+        </View>
+      </ScrollView>
+
+      <View style={[styles.actionRow, { paddingBottom: insets.bottom + 12 }]}>
+        <TouchableOpacity style={styles.declineButton} onPress={() => onDecline(hazard)}>
+          <Text style={styles.actionButtonText}>DECLINE</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.approveButton} onPress={() => onApprove(hazard)}>
+          <Text style={styles.actionButtonText}>APPROVE</Text>
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
+export default function HazardsScreen() {
+  const [hazards, setHazards] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedHazard, setSelectedHazard] = useState<any | null>(null);
+
+  const today = getTodayDateString();
+
+  const fetchHazards = async () => {
+    setIsLoading(true);
+    try {
+      const data = await getAlerts('hazard');
+      setHazards(data);
+    } catch {
+      Alert.alert('Error', 'Could not load hazard reports.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => { fetchHazards(); }, [])
+  );
+
+  const newHazards = hazards.filter(h => h.created_at?.startsWith(today));
+  const olderHazards = hazards.filter(h => {
+    if (!h.created_at) return false;
+    return h.created_at.split('T')[0] < today;
+  });
+
+  const handleDecline = (hazard: any) => {
+    Alert.alert(
+      'Decline Report',
+      `Remove "${hazard.title}" from the feed? This resolves the report and cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Decline',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAlert(hazard.id);
+              setSelectedHazard(null);
+              fetchHazards();
+            } catch {
+              Alert.alert('Error', 'Could not remove this report. Check your connection.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleApprove = () => {
+    Alert.alert(
+      'Approve Report',
+      'Approval noted. Broadcasting to commuters requires a backend endpoint not yet available.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={['right', 'left']}>
+      <Tabs.Screen
+        options={{ tabBarBadge: newHazards.length > 0 ? newHazards.length : undefined }}
+      />
+
+      {selectedHazard ? (
+        <HazardDetail
+          hazard={selectedHazard}
+          onBack={() => setSelectedHazard(null)}
+          onDecline={handleDecline}
+          onApprove={handleApprove}
+        />
+      ) : (
+        <>
+          <ScrollView contentContainerStyle={styles.listScroll}>
+            <Text style={styles.screenTitle}>Hazard Reports</Text>
+            <Text style={styles.screenSubtitle}>Review commuter-submitted hazard alerts</Text>
+
+            {isLoading ? (
+              <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 40 }} />
+            ) : (
+              <>
+                {newHazards.length > 0 && (
+                  <>
+                    <Text style={styles.sectionLabel}>NEW</Text>
+                    {newHazards.map(h => (
+                      <HazardCard
+                        key={h.id}
+                        hazard={h}
+                        isNew
+                        onPress={() => setSelectedHazard(h)}
+                      />
+                    ))}
+                  </>
+                )}
+
+                {olderHazards.length > 0 && (
+                  <>
+                    <Text style={[styles.sectionLabel, styles.olderLabel]}>OLDER</Text>
+                    {olderHazards.map(h => (
+                      <HazardCard
+                        key={h.id}
+                        hazard={h}
+                        isNew={false}
+                        onPress={() => setSelectedHazard(h)}
+                      />
+                    ))}
+                  </>
+                )}
+
+                {hazards.length === 0 && (
+                  <Text style={styles.emptyText}>No hazard reports at this time.</Text>
+                )}
+              </>
+            )}
+          </ScrollView>
+
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={() => router.push('/(admin)/post-alert')}
+            accessibilityLabel="Post Alert"
+          >
+            <Ionicons name="add" size={32} color="#fff" />
+          </TouchableOpacity>
+        </>
+      )}
+    </SafeAreaView>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+
+  // List
+  listScroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 100 },
+  screenTitle: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 4 },
+  screenSubtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#E74C3C',
+    letterSpacing: 1.5,
+    marginBottom: 10,
+    marginTop: 8,
+  },
+  olderLabel: { color: '#999' },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    marginBottom: 12,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+    position: 'relative',
+  },
+  cardOlder: { opacity: 0.65 },
+  badge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#E74C3C',
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#f5f5f5',
+  },
+  badgeText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
+  cardContent: { flexDirection: 'row', alignItems: 'center' },
+  iconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  cardText: { flex: 1 },
+  cardTitle: { fontSize: 15, fontWeight: '900', color: '#1a1a1a', marginBottom: 2 },
+  cardTime: { fontSize: 12, color: '#555', fontWeight: '600', marginBottom: 4, textTransform: 'uppercase' },
+  clickDetails: { fontSize: 10, color: '#999', fontStyle: 'italic', fontWeight: 'bold' },
+  olderText: { color: '#999' },
+  emptyText: { fontSize: 14, color: '#999', fontStyle: 'italic', textAlign: 'center', marginTop: 40 },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 30,
+    backgroundColor: '#00853E',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+
+  // Detail
+  backButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  backText: { color: '#00853E', fontSize: 16, fontWeight: '600' },
+  detailTitle: { fontSize: 28, fontWeight: '900', color: '#1a1a1a', marginBottom: 4 },
+  detailTime: {
+    fontSize: 13,
+    color: '#555',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 20,
+  },
+  detailCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  locationLabel: { fontSize: 13, fontWeight: '700', color: '#555', textTransform: 'uppercase', marginBottom: 14 },
+  locationValue: { fontWeight: '400', textTransform: 'none', color: '#333' },
+  mapPlaceholder: {
+    height: 160,
+    backgroundColor: '#e8e8e8',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapPlaceholderText: { fontSize: 13, color: '#aaa', fontWeight: '600', marginTop: 8 },
+  mapPlaceholderSub: { fontSize: 11, color: '#bbb', marginTop: 4 },
+  studentCount: { fontSize: 14, fontWeight: '700', color: '#333', textTransform: 'uppercase', marginBottom: 16 },
+  pictureRow: { flexDirection: 'row', gap: 12 },
+  picturePlaceholder: {
+    flex: 1,
+    height: 130,
+    backgroundColor: '#e8e8e8',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pictureLabel: { fontSize: 11, color: '#999', fontWeight: '700', textAlign: 'center', marginTop: 8 },
+  actionRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 12,
+    backgroundColor: '#f5f5f5',
+    borderTopWidth: 1,
+    borderTopColor: '#e8e8e8',
+  },
+  declineButton: {
+    flex: 1,
+    backgroundColor: '#E74C3C',
+    paddingVertical: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  approveButton: {
+    flex: 1,
+    backgroundColor: '#00853E',
+    paddingVertical: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  actionButtonText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1 },
+});

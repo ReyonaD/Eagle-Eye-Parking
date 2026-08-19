@@ -90,31 +90,31 @@ const TYPE_STYLES = {
   },
 };
 
-function TopBar() {
-  const router = useRouter();
+// function TopBar() {
+//   const router = useRouter();
 
-  return (
-    <View style={styles.topBar}>
-      <View style={styles.topBarSide}>
-        <Image
-          source={require('../../assets/images/Logo_EagleEye.png')}
-          style={styles.logo}
-        />
-      </View>
+//   return (
+//     <View style={styles.topBar}>
+//       <View style={styles.topBarSide}>
+//         <Image
+//           source={require('../../assets/images/Logo_EagleEye.png')}
+//           style={styles.logo}
+//         />
+//       </View>
 
-      <Text style={styles.appName}>EagleEyes</Text>
+//       <Text style={styles.appName}>EagleEyes</Text>
 
-      <View style={styles.topBarSide}>
-        <TouchableOpacity
-          style={styles.bellWrapper}
-          onPress={() => router.push('/(tabs)/alerts')}
-        >
-          <Ionicons name="notifications-outline" size={28} color="#333" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
+//       <View style={styles.topBarSide}>
+//         <TouchableOpacity
+//           style={styles.bellWrapper}
+//           onPress={() => router.push('/(tabs)/alerts')}
+//         >
+//           <Ionicons name="notifications-outline" size={27} color="#333" />
+//         </TouchableOpacity>
+//       </View>
+//     </View>
+//   );
+// }
 
 function AlertsHeader() {
   return (
@@ -170,7 +170,7 @@ function AlertCard({ alert }: { alert: AlertItem }) {
   return (
     <View style={styles.card}>
       <View style={[styles.iconWrap, { backgroundColor: visual.bg }]}>
-        <Ionicons name={visual.icon} size={18} color={visual.color} />
+        <Ionicons name={visual.icon} size={27} color={visual.color} />
       </View>
 
       <View style={styles.cardBody}>
@@ -215,7 +215,7 @@ export default function AlertsScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <TopBar />
+      {/* <TopBar /> */}
 
       <FlatList
         data={listData}

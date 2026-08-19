@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? (Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://127.0.0.1:8000');
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 //REGISTER
 export const register = async (email, password) => {
     const response = await fetch(`${BASE_URL}/register`, {
@@ -45,8 +45,9 @@ export const login = async (email, password) => {
         console.log("BACKEND REJECTION:", JSON.stringify(data, null, 2));
         throw new Error(errorMessage);
         } 
-        //save token to AsyncStorage
+        //save token and role to AsyncStorage
         await AsyncStorage.setItem('token', data.access_token);
+        await AsyncStorage.setItem('role', data.role);
         return data;
     } catch (error){
         throw error;
@@ -54,6 +55,22 @@ export const login = async (email, password) => {
 };
 //LOGOUT
 export const logout = async () => {
-    //destroy token to logout
+    //destroy token and role to logout
     await AsyncStorage.removeItem('token');
+    await AsyncStorage.removeItem('role');
 };
+//ADMIN TOOLS
+export const promoteToAdmin = async (targetEmail) => {
+    //get admin's token
+    const token = await AsyncStorage.getItem('token');
+    if (!token) { throw new Error("No authorization token found"); }
+
+    const response = await fetch(`${BASE_URL}/admin/users/${encodeURIComponent(targetEmail)}/promote')`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+    });
+
+}

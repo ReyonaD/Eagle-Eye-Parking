@@ -1,19 +1,22 @@
-import requests
+import httpx
 import os
 import random
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError 
 from sqlalchemy.orm import Session
-
+from sqlalchemy import desc
+from .database import engine, Base
+from . import models
 #imports custom files
 from app.database import get_db
-from app.models import User
-from app.schemas import UserCreate
+from app.models import User, Alert
+from app.schemas import UserCreate, AlertResponse, AlertCreate
 from app.core.security import get_password_hash, verify_password, create_access_token
-from app.core.security import SECRET_KEY, ALGORITHM
-
+from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin
+from typing import List
+Base.metadata.create_all(bind=engine)
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
 app.add_middleware(
@@ -58,13 +61,13 @@ def get_permit_name(permit_id: str, token: str):
     headers = {"Authorization": f"Bearer {token}"}
 
     try:
-        response = requests.get(url, headers=headers)
+        response = httpx.get(url, headers=headers)
         if response.status_code == 200:
             data = response.json()
             name = data.get("name") or data.get("title") or data.get("type") or "Unknown"
             permit_cache[permit_id] = name
             return name
-    except requests.RequestException as e:
+    except httpx.RequestError as e:
         print(f"Error fetching permit name for {permit_id}: {e}")
     return "Unknown"
 
@@ -80,7 +83,8 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     #create a new User object with the email and hashed password
     new_user = User(
         email=user.email,
-        hashed_password=hashedPW
+        hashed_password=hashedPW,
+        role="commuter"
     )
     #save to database
     db.add(new_user)
@@ -107,13 +111,14 @@ def login(
             headers={"WWW-Authenticate": "Bearer"} ,
         )
     #create a JWT token with user's id as the payload
-    access_token = create_access_token(data={"sub": str(user.email)})
+    access_token = create_access_token(data={"sub": str(user.email), "role": user.role})
 
     #hand the token to the mobile app
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user_id": user.id
+        "user_id": user.id,
+        "role": user.role
         }
 
 @app.get("/")
@@ -175,7 +180,7 @@ def get_parking_lots():
             "username": username,
             "password": password
         }
-        auth_response = requests.post(auth_url, json = auth_payload)
+        auth_response = httpx.post(auth_url, json = auth_payload)
 
         if auth_response.status_code != 200:
             raise HTTPException(status_code=401, detail="Failed to authenticate with ParkZen")
@@ -193,7 +198,7 @@ def get_parking_lots():
         lots_url = f"https://api.parkzenapp.com/api/lots?clientId={client_id}"
         headers = {"Authorization": f"Bearer {token}"}
 
-        lots_response = requests.get(lots_url, headers=headers)
+        lots_response = httpx.get(lots_url, headers=headers)
 
         if lots_response.status_code != 200:
             raise HTTPException(lots_response.status_code, detail="Fail to fetch lots from ParkZen API")
@@ -246,4 +251,90 @@ def get_parking_lots():
     except Exception as e:
         print(f"Server error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
+#TEST ROUTE
+@app.get("/admin/test")
+def admin_only_dashboard(role: str = Depends(require_admin)):
+    # Because of Depends(require_admin), standard commuters will get a 403 error 
+    # before this code even runs!
+    return {
+        "message": "Welcome to the EagleEyes Admin Dashboard!", 
+        "your_role": role
+    }
+
+@app.put("/admin/users/{target_email}/promote")
+def promote_to_admin(
+    target_email: str,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    #find target user
+    target_user = db.query(User).filter(User.email == target_email).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
     
+    #promote
+    target_user.role = "admin"
+    db.commit()
+
+    return {"message": f"User {target_email} has been successfully promoted to admin."}
+
+@app.get("/alerts", response_model=List[AlertResponse])
+def get_alerts(
+    alert_type: str=Query(..., description="Must be 'hazard' or 'event'"),
+    db: Session= Depends(get_db)
+):
+    """
+    Fetches the list for the tabs. 
+    Orders them by newest first!
+    """
+    alerts = db.query(Alert)\
+            .filter(Alert.alert_type == alert_type)\
+            .order_by(desc(Alert.created_at))\
+            .all()
+    return alerts
+    
+@app.post("/alerts", response_model=AlertResponse)
+def create_alert(
+    alert_data: AlertCreate,
+    db: Session= Depends(get_db)
+):
+    new_alert = Alert(
+        title=alert_data.title.upper(), 
+        alert_type=alert_data.alert_type.lower(),
+        category=alert_data.category,
+        description=alert_data.description
+    )
+    db.add(new_alert)
+    db.commit()
+    db.refresh(new_alert)
+    return new_alert
+
+@app.put("/alerts/{alert_id}/upvote", response_model=AlertResponse)
+def upvote_alert(
+    alert_id: int,
+    db: Session = Depends(get_db)
+):
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code= 404, detail="Alert not found or already resolved.")
+    
+    alert.upvotes+=1
+    db.commit()
+    db.refresh(alert)
+
+    return alert
+
+@app.delete("/alerts/{alert_id}")
+def remove_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code= 404, detail="Alert not found or already resolved.")
+    db.delete(alert)
+    db.commit()
+
+    return {"message": "Alert successfully resolved and removed from the feed."}
+

@@ -33,7 +33,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
 
       const data = await response.json();
       //console.log("RAW LOT DATA:", JSON.stringify(data[0].occupancy, null, 2));
-      
+      //console.log("DEBUG - FIRST LOT DATA:", JSON.stringify(data[0], null, 2));
       if (!Array.isArray(data)) {
         setLots([]);
         return;
@@ -45,7 +45,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
           longitude: parseFloat(v.longitude) || parseFloat(v.lng) || parseFloat(v.lon)
         })).filter((v: any) => !isNaN(v.latitude) && !isNaN(v.longitude));
 
-        if (mappedCoords.length === 0) return null;
+        if (mappedCoords.length < 3) return null;
 
         // Read the Backend's Occupancy Estimate
         let emptyPercentage = null;
@@ -68,7 +68,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
 
         return {
           ...lot,
-          id: lot.id || index.toString(),
+          id: `lot-${index}-${lot.id || 'no-id'}`,
           name: lot.lot_name || lot.name || `Lot ${index}`,
           fillColor: lot.fillColor || 'rgba(53, 53, 53, 0.4)',
           strokeColor: lot.fillColor === '#2ECC71' ? '#27AE60' : 
@@ -78,7 +78,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
           percentEmpty: emptyPercentage, // Now the UI has the exact number!
           status: uiStatus,              // Now the UI has the exact string!
           permitList: lot.permits && Array.isArray(lot.permits) ? lot.permits : [],
-          permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(', ') : 'Unknown'
+          permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(',') : 'Unknown'
         };
       }).filter((lot: any) => lot !== null);
 
