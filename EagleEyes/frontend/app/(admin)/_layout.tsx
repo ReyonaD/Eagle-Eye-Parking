@@ -47,6 +47,12 @@ export default function AdminLayout() {
             ),
           }}
         />
+
+        {/* Hidden screen — navigable via router.push but not shown in tab bar */}
+        <Tabs.Screen
+          name="post-alert"
+          options={{ href: null }}
+        />
       </Tabs>
     </View>
   );
