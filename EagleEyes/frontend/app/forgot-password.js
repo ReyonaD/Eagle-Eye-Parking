@@ -17,8 +17,8 @@ export default function ForgotPasswordScreen() {
       await requestPasswordReset(email);
       Alert.alert(
         "Check your email",
-        `If an account exists for ${email}, we've sent password reset instructions.`,
-        [{ text: "OK", onPress: () => router.push('/reset-password') }]
+        `If an account exists for ${email}, we've sent a 6-digit verification code.`,
+        [{ text: "OK", onPress: () => router.push({ pathname: '/reset-password', params: { email } }) }]
       );
     } catch (error) {
       Alert.alert("Error", error.message || "Something went wrong");
@@ -31,7 +31,7 @@ export default function ForgotPasswordScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Forgot Password</Text>
       <Text style={styles.subtitle}>
-        Enter your email and we'll send you a link to reset your password.
+        Enter your email and we'll send you a 6-digit code to reset your password.
       </Text>
 
       <TextInput
@@ -44,7 +44,7 @@ export default function ForgotPasswordScreen() {
       />
 
       <TouchableOpacity style={styles.primaryButton} onPress={handleSubmit} disabled={isLoading}>
-        {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send Reset Link</Text>}
+        {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send Code</Text>}
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>

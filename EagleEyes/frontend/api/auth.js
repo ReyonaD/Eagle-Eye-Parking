@@ -87,12 +87,12 @@ export const requestPasswordReset = async (email) => {
     }
     return data;
 };
-//RESET PASSWORD - submit token + new password
-export const resetPassword = async (token, newPassword) => {
+//RESET PASSWORD - submit email + 6-digit code + new password
+export const resetPassword = async (email, code, newPassword) => {
     const response = await fetch(`${BASE_URL}/reset-password`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ token, new_password: newPassword }),
+        body: JSON.stringify({ email, code, new_password: newPassword }),
     });
     const data = await response.json();
     if (!response.ok) {

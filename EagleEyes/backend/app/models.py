@@ -44,3 +44,5 @@ class PasswordResetToken(Base):
     token_hash = Column(String, nullable=False, unique=True, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
+    #how many wrong codes were tried against this token (max 5, then it dies)
+    attempts = Column(Integer, default=0, nullable=False)
