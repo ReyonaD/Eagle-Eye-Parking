@@ -15,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
+import { openDirections } from '../../utils/navigation';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
 
 const STATUS_COLOR: Record<AvailabilityStatus, string> = {
@@ -360,7 +361,7 @@ export default function LotsScreen() {
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.actionButton}>
+              <TouchableOpacity style={styles.actionButton} onPress={() => openDirections(selectedLot)}>
                 <Ionicons name="navigate" size={27} color="#fff" />
                 <Text style={styles.actionButtonText}>Get Directions</Text>
               </TouchableOpacity>

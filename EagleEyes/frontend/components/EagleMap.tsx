@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
+import { openDirections } from '../utils/navigation';
 import { Ionicons } from '@expo/vector-icons';
 // import { getParkedLocation, requestPermissions } from '../modules/parkzen-core';
 
@@ -105,9 +106,17 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
               if (lot.isVisible === false) return;
               Alert.alert(
                 lot.name,
-                `Permits: ${lot.permits}\n` +
-                `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
-                `Is Full: ${lot.isFull ? 'Yes' : 'No'}\n\n`
+                `Permits: ${lot.permits}
+` +
+                `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}
+` +
+                `Is Full: ${lot.isFull ? 'Yes' : 'No'}
+
+`,
+                [
+                  { text: 'Get Directions', onPress: () => openDirections(lot) },
+                  { text: 'Close', style: 'cancel' },
+                ]
               );
             }}
           />
