@@ -35,7 +35,7 @@ export default function ResetPasswordScreen() {
       Alert.alert(
         "Success",
         "Your password has been reset. You can now log in.",
-        [{ text: "OK", onPress: () => router.replace('/login') }]
+        [{ text: "OK", onPress: () => router.back() }]
       );
     } catch (error) {
       Alert.alert("Reset Failed", error.message || "Something went wrong");
@@ -91,7 +91,7 @@ export default function ResetPasswordScreen() {
         {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Reset Password</Text>}
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/login')}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
         <Text style={styles.backButtonText}>Back to Login</Text>
       </TouchableOpacity>
     </View>

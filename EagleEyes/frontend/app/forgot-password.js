@@ -18,7 +18,7 @@ export default function ForgotPasswordScreen() {
       Alert.alert(
         "Check your email",
         `If an account exists for ${email}, we've sent a 6-digit verification code.`,
-        [{ text: "OK", onPress: () => router.push({ pathname: '/reset-password', params: { email } }) }]
+        [{ text: "OK", onPress: () => router.replace({ pathname: '/reset-password', params: { email } }) }]
       );
     } catch (error) {
       Alert.alert("Error", error.message || "Something went wrong");
