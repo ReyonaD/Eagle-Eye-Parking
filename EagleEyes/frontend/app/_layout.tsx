@@ -59,6 +59,7 @@ export default function RootLayout() {
           <Stack.Screen name="login" />
           <Stack.Screen name="register" options={{ presentation: 'modal' }} />
           <Stack.Screen name="forgot-password" />
+          <Stack.Screen name="verify-code" />
           <Stack.Screen name="reset-password" />
         </Stack>
       </LotsProvider>

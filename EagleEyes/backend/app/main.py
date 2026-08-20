@@ -15,7 +15,7 @@ from . import models
 #imports custom files
 from app.database import get_db
 from app.models import User, Alert, PasswordResetToken
-from app.schemas import UserCreate, AlertResponse, AlertCreate, ForgotPasswordRequest, ResetPasswordRequest
+from app.schemas import UserCreate, AlertResponse, AlertCreate, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin
 from app.core.email import send_password_reset_email
@@ -165,15 +165,14 @@ def forgot_password(payload: ForgotPasswordRequest, background_tasks: Background
 
     return generic_response
 
-@app.post("/reset-password")
-def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
-    """Consumes a reset token and updates the user's password"""
+def _validate_reset_code(email: str, code: str, db: Session):
+    """Shared check for the verify and reset endpoints. Returns (user, token record) or raises 400."""
     invalid_error = HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="This code is invalid or has expired. Please request a new one.",
     )
 
-    user = db.query(User).filter(User.email == payload.email).first()
+    user = db.query(User).filter(User.email == email).first()
     if not user:
         raise invalid_error
 
@@ -187,12 +186,25 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
         raise invalid_error
 
     #wrong code -> count the attempt, kill the token after too many tries
-    if record.token_hash != _hash_token(f"{user.email}:{payload.code}"):
+    if record.token_hash != _hash_token(f"{user.email}:{code}"):
         record.attempts += 1
         if record.attempts >= PASSWORD_RESET_MAX_ATTEMPTS:
             record.used_at = datetime.now(timezone.utc)
         db.commit()
         raise invalid_error
+
+    return user, record
+
+@app.post("/verify-reset-code")
+def verify_reset_code(payload: VerifyResetCodeRequest, db: Session = Depends(get_db)):
+    """Checks the 6-digit code WITHOUT consuming it, so the app can move on to the new-password step"""
+    _validate_reset_code(payload.email, payload.code, db)
+    return {"message": "Code verified."}
+
+@app.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Consumes a reset token and updates the user's password"""
+    user, record = _validate_reset_code(payload.email, payload.code, db)
 
     user.hashed_password = get_password_hash(payload.new_password)
     record.used_at = datetime.now(timezone.utc)
