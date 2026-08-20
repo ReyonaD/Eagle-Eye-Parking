@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
-import { openDirections } from '../utils/navigation';
+import LotDetailsSheet from './LotDetailsSheet';
 import { Ionicons } from '@expo/vector-icons';
 // import { getParkedLocation, requestPermissions } from '../modules/parkzen-core';
 
@@ -19,6 +19,7 @@ const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; lati
 export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
+  const [sheetLot, setSheetLot] = useState<any | null>(null);
 
   // useEffect(() => {
   //   const setupParkZen = async () => {
@@ -104,20 +105,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
             tappable={lot.isVisible !== false}
             onPress={() => {
               if (lot.isVisible === false) return;
-              Alert.alert(
-                lot.name,
-                `Permits: ${lot.permits}
-` +
-                `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}
-` +
-                `Is Full: ${lot.isFull ? 'Yes' : 'No'}
-
-`,
-                [
-                  { text: 'Get Directions', onPress: () => openDirections(lot) },
-                  { text: 'Close', style: 'cancel' },
-                ]
-              );
+              setSheetLot(lot);
             }}
           />
         ))}
@@ -125,6 +113,13 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
           <Marker coordinate={parkedLocation} title="My Car" pinColor="#0000FF" />
         )}
       </MapView>
+
+      {/* LOT DETAILS BOTTOM SHEET */}
+      <LotDetailsSheet
+        lot={sheetLot}
+        visible={sheetLot !== null}
+        onClose={() => setSheetLot(null)}
+      />
 
       {/* ZOOM Controls */}
       <View style={styles.zoomControls}>
