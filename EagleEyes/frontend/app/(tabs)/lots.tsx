@@ -10,6 +10,7 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -197,6 +198,7 @@ export default function LotsScreen() {
   const [query, setQuery] = useState('');
   const [selectedLot, setSelectedLot] = useState<any | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [moreInfoVisible, setMoreInfoVisible] = useState(false);
   const [permitFilter, setPermitFilter] = useState('all');
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [permitPickerVisible, setPermitPickerVisible] = useState(false);
@@ -240,6 +242,7 @@ export default function LotsScreen() {
   };
 
   const closeModal = () => {
+    setMoreInfoVisible(false);
     setModalVisible(false);
     setSelectedLot(null);
   };
@@ -330,7 +333,7 @@ export default function LotsScreen() {
           </View>
 
           {selectedLot ? (
-            <View style={styles.modalContent}>
+            <ScrollView style={styles.modalContent}>
               <View style={styles.detailCard}>
                 <Text style={styles.detailLotName}>{selectedLot.name}</Text>
 
@@ -366,11 +369,43 @@ export default function LotsScreen() {
                 <Text style={styles.actionButtonText}>Get Directions</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#f0f0f0', marginTop: 12 }]}>
-                <Ionicons name="information-circle-outline" size={27} color="#00853E" />
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: '#f0f0f0', marginTop: 12 }]}
+                onPress={() => setMoreInfoVisible(!moreInfoVisible)}
+              >
+                <Ionicons name={moreInfoVisible ? "chevron-up-circle-outline" : "information-circle-outline"} size={27} color="#00853E" />
                 <Text style={[styles.actionButtonText, { color: '#00853E' }]}>More Info</Text>
               </TouchableOpacity>
-            </View>
+
+              {moreInfoVisible && (
+                <View style={[styles.detailCard, { marginTop: 12 }]}>
+                  {selectedLot.address ? (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Address:</Text>
+                      <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>{selectedLot.address}</Text>
+                    </View>
+                  ) : null}
+                  {selectedLot.capacity ? (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Capacity:</Text>
+                      <Text style={styles.detailValue}>{selectedLot.capacity} spaces</Text>
+                    </View>
+                  ) : null}
+                  {(selectedLot.permitList || []).length > 0 && (
+                    <View style={{ marginTop: 6 }}>
+                      <Text style={styles.detailLabel}>Permits:</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        {selectedLot.permitList.map((p: string, i: number) => (
+                          <View key={i} style={{ backgroundColor: '#f0f0f0', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
+                            <Text style={{ fontSize: 12, color: '#555', fontWeight: '500' }}>{p.trim()}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
+            </ScrollView>
           ) : null}
         </View>
       </Modal>
