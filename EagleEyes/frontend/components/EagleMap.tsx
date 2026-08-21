@@ -13,7 +13,7 @@ interface EagleMapProps {
 const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }> = {
   "Main campus":     { latitude: 33.2110, longitude: -97.1475, latitudeDelta: 0.018, longitudeDelta: 0.018 },
   "Discovery Park":  { latitude: 33.2549, longitude: -97.1520, latitudeDelta: 0.018, longitudeDelta: 0.018 },
-  "Frisco Landing":  { latitude: 33.1511, longitude: -96.8238, latitudeDelta: 0.018, longitudeDelta: 0.018 },
+  "Frisco Landing":  { latitude: 33.1858, longitude: -96.8055, latitudeDelta: 0.018, longitudeDelta: 0.018 },
 };
 
 export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
