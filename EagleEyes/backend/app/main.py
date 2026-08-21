@@ -1,6 +1,5 @@
 import httpx
 import os
-import random
 import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -313,30 +312,53 @@ def get_parking_lots():
             #replace the raw permit ids with the readable names in the lot data
             lot["permits"] = readable_permits
 
-            #DEMO MODE: fake the data for testing the frontend. You can remove this part when you have real data from ParkZen.
-            if "occupancy" not in lot or not lot["occupancy"]:
-                #generate random occupancy data for testing between 10% and 100%
-                fake_occupancy = round(random.uniform(0.1,1.0), 2)
-                
-                if fake_occupancy >= 0.95:
-                    fill = '#E74C3C'  # Red for full
-                    status = "Full"
-                elif fake_occupancy >= 0.85:
-                    fill = '#F39C12'  # Yellow for medium
-                    status = "Medium"
-                else:
-                    fill = '#2ECC71'  # Green for low
-                    status = "Available"
+            #DEMO MODE (disabled): fakes occupancy for lots with no data. Re-enable by
+            #uncommenting the block below and adding "import random" back at the top.
+            #if "occupancy" not in lot or not lot["occupancy"]:
+            #    #generate random occupancy data for testing between 10% and 100%
+            #    fake_occupancy = round(random.uniform(0.1,1.0), 2)
+            #
+            #    if fake_occupancy >= 0.95:
+            #        fill = '#E74C3C'  # Red for full
+            #        status = "Full"
+            #    elif fake_occupancy >= 0.85:
+            #        fill = '#F39C12'  # Yellow for medium
+            #        status = "Medium"
+            #    else:
+            #        fill = '#2ECC71'  # Green for low
+            #        status = "Available"
+            #
+            #    lot["fillColor"] = fill
+            #    lot["infoSheetTitle"] = status
+            #    lot["occupancy"] = {
+            #        "lastUpdatedVia": "capstone_simulation",
+            #        "capstone_simulation": {
+            #            "estimate": fake_occupancy
+            #        }
+            #    }
+            #    lot["numParkedUsers"] = int(fake_occupancy * random.randint(100,300))
 
-                lot["fillColor"] = fill
-                lot["infoSheetTitle"] = status
-                lot["occupancy"] = {
-                    "lastUpdatedVia": "capstone_simulation",
-                    "capstone_simulation": {
-                        "estimate": fake_occupancy
-                    }
-                }
-                lot["numParkedUsers"] = int(fake_occupancy * random.randint(100,300))   #also generate a random number of parked users based on the occupancy for testing     
+            #Translate real ParkZen occupancy into the fields the frontend reads.
+            #Lots without an estimate are left untouched and render as gray "No Data".
+            occupancy = lot.get("occupancy") or {}
+            estimate = occupancy.get("mlOccupancyEstimate")
+            if estimate is not None:
+                if estimate >= 0.95:
+                    lot["fillColor"] = '#E74C3C'  # Red for full
+                    lot["infoSheetTitle"] = "Full"
+                elif estimate >= 0.85:
+                    lot["fillColor"] = '#F39C12'  # Yellow for medium
+                    lot["infoSheetTitle"] = "Medium"
+                else:
+                    lot["fillColor"] = '#2ECC71'  # Green for low
+                    lot["infoSheetTitle"] = "Available"
+
+                #the frontend reads the estimate from occupancy[lastUpdatedVia].estimate
+                method = occupancy.get("lastUpdatedVia") or "python-fusion"
+                if not isinstance(occupancy.get(method), dict):
+                    occupancy[method] = {}
+                occupancy[method]["estimate"] = estimate
+                lot["occupancy"] = occupancy
         #return clean array to the frontend
         return actual_lots_array
     except Exception as e:
