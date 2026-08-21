@@ -41,6 +41,8 @@ export default function MapScreen() {
   const [openCampus, setOpenCampus] = useState(false);
   const [selectedPermit, setSelectedPermit] = useState("All Permits");
   const [openPermit, setOpenPermit] = useState(false);
+  // Measured bottom edge of the dropdown row; overlays anchor to it on any screen size
+  const [dropdownRowBottom, setDropdownRowBottom] = useState(0);
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -109,7 +111,10 @@ export default function MapScreen() {
      <SafeAreaView style={styles.container} edges={['right', 'left']}>
 
       {/* ROW: CAMPUS (left) + PERMIT (right) */}
-      <View style={styles.dropdownRow}>
+      <View
+        style={styles.dropdownRow}
+        onLayout={(e) => setDropdownRowBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+      >
         {/* CAMPUS TRIGGER */}
         <View style={[styles.dropdownWrapper, { marginRight: 8 }]}>
           <Text style={styles.dropdownLabel}>CAMPUS</Text>
@@ -140,7 +145,7 @@ export default function MapScreen() {
       {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
       {openCampus && (
         <FlatList
-          style={[styles.dropdownOverlay, styles.dropdownOverlayLeft]}
+          style={[styles.dropdownOverlay, styles.dropdownOverlayLeft, { top: dropdownRowBottom - 6 }]}
           data={campuses}
           keyExtractor={(item) => item}
           nestedScrollEnabled
@@ -158,7 +163,7 @@ export default function MapScreen() {
       )}
       {openPermit && (
         <FlatList
-          style={[styles.dropdownOverlay, styles.dropdownOverlayRight]}
+          style={[styles.dropdownOverlay, styles.dropdownOverlayRight, { top: dropdownRowBottom - 6 }]}
           data={permits}
           keyExtractor={(item) => item}
           nestedScrollEnabled
@@ -232,7 +237,6 @@ const styles = StyleSheet.create({
   },
   dropdownOverlay: {
     position: 'absolute',
-    top: 170,
     borderWidth: 1,
     borderColor: "#ccc",
     borderRadius: 8,
