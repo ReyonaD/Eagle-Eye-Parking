@@ -339,9 +339,14 @@ def get_parking_lots():
             #    lot["numParkedUsers"] = int(fake_occupancy * random.randint(100,300))
 
             #Translate real ParkZen occupancy into the fields the frontend reads.
+            #parkzenServerOccupancyEstimate is the actual LPR-based measurement;
+            #mlOccupancyEstimate is skipped because ParkZen's ML model returns a
+            #constant 0.5 prior for nearly every lot (not a real measurement).
             #Lots without an estimate are left untouched and render as gray "No Data".
             occupancy = lot.get("occupancy") or {}
-            estimate = occupancy.get("mlOccupancyEstimate")
+            estimate = occupancy.get("parkzenServerOccupancyEstimate")
+            if estimate is None:
+                estimate = occupancy.get("lprEstimate")
             if estimate is not None:
                 if estimate >= 0.95:
                     lot["fillColor"] = '#E74C3C'  # Red for full
