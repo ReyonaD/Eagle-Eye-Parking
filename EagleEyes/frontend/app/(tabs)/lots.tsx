@@ -355,7 +355,7 @@ export default function LotsScreen() {
                 </View>
 
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Available Spaces:</Text>
+                  <Text style={styles.detailLabel}>Available Occupancy:</Text>
                   <Text style={styles.detailValue}>
                     {typeof selectedLot.percentEmpty === 'number' ? `${selectedLot.percentEmpty}%` : 'Unknown'}
                   </Text>
