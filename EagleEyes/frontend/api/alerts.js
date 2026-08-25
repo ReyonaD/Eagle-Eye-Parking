@@ -1,8 +1,5 @@
-<<<<<<< Updated upstream
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-=======
->>>>>>> Stashed changes
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 // GET: Fetch the feed (works for both tabs!)
 export const getAlerts = async (alertType) => {
@@ -31,7 +28,6 @@ export const createAlert = async (alertData) => {
         throw error;
     }
 };
-<<<<<<< Updated upstream
 // DELETE: Admin declines/removes a hazard report (admin-only endpoint)
 export const deleteAlert = async (alertId) => {
     const token = await AsyncStorage.getItem('token');
@@ -51,8 +47,6 @@ export const deleteAlert = async (alertId) => {
         throw error;
     }
 };
-=======
->>>>>>> Stashed changes
 // PUT: Upvote an existing alert
 export const upvoteAlert = async (alertId) => {
     try{
