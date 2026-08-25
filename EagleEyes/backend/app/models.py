@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey
 from app.database import Base
 from datetime import datetime, timezone
 from app.database import Base
@@ -34,3 +34,15 @@ class Alert(Base):
 
 
 
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    #SHA-256 hash of the token, never store the raw token
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    #how many wrong codes were tried against this token (max 5, then it dies)
+    attempts = Column(Integer, default=0, nullable=False)
