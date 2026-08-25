@@ -99,8 +99,10 @@ function LotCard({ lot, onPress }: { lot: any; onPress: (lot: any) => void }) {
         <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
       </View>
       <View style={styles.cardRight}>
+     <View style={styles.statusContainer}>
         <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-        <Text style={[styles.statusText, { color: dotColor }]}>{lot.status}</Text>
+          <Text style={[styles.statusText, { color: dotColor }]}>{lot.status}</Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -490,7 +492,7 @@ const styles = StyleSheet.create({
   },
   cardMiddle: {
     flex: 1,
-    gap: 3,
+    paddingRight: 10,
   },
   lotName: {
     fontSize: 16,
@@ -502,19 +504,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   cardRight: {
+    width: 100, 
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    justifyContent: 'flex-start',
   },
   statusDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
+    marginRight: 2,
+    alignSelf: 'center',
+    paddingLeft: 10,
   },
   statusText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
-    textAlign: 'center',
-    maxWidth: 70,
+    textAlign: 'left',
+    maxWidth: 80,
+    flexShrink: 1,
+    flexWrap: 'wrap',
+    paddingLeft: 10,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
   },
 
   // --- PICKER MODAL ---
