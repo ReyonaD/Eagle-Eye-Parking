@@ -9,6 +9,13 @@ const STATUS_COLOR = {
   'Full': '#D0021B',
 };
 
+function formatLotTimestamp(value) {
+  if (!value) return 'No time available';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No time available';
+  return date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+}
+
 //one label/value line inside the sheet
 function InfoRow({ icon, label, value }) {
   if (!value) return null;
@@ -29,6 +36,8 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
   const permits = Array.isArray(lot.permitList) && lot.permitList.length > 0
     ? lot.permitList
     : (typeof lot.permits === 'string' ? lot.permits.split(',') : []);
+  const hasParkzenCaptureTime = lot.sourceTimestampProvidedByParkzen === true;
+  const captureTimeValue = hasParkzenCaptureTime ? formatLotTimestamp(lot.lastUpdatedAt) : 'No time available';
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
       {/* dark backdrop, tap to close */}
@@ -49,6 +58,11 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
           icon="speedometer-outline"
           label="Occupancy"
           value={typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% empty` : 'No data'}
+        />
+        <InfoRow
+          icon="time-outline"
+          label="ParkZen capture time"
+          value={captureTimeValue}
         />
         <InfoRow
           icon="car-outline"

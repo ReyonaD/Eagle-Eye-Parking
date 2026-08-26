@@ -204,7 +204,11 @@ export default function LotsScreen() {
   const [permitPickerVisible, setPermitPickerVisible] = useState(false);
   const [availabilityPickerVisible, setAvailabilityPickerVisible] = useState(false);
   const insets = useSafeAreaInsets();
-  const { lots, isLoading } = useLots();
+  const { lots, isLoading, lastRefreshAt } = useLots();
+
+  const refreshLabel = lastRefreshAt
+    ? new Date(lastRefreshAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : 'Waiting for sync';
 
   const uniquePermits = useMemo(() => {
     const set = new Set<string>();
@@ -263,15 +267,21 @@ export default function LotsScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <LotCard lot={item} onPress={handleLotPress} />}
         ListHeaderComponent={
-          <FilterHeader
-            query={query}
-            onChangeQuery={setQuery}
-            permitFilter={permitFilter}
-            availabilityFilter={availabilityFilter}
-            onAllPermits={() => { setPermitFilter('all'); setAvailabilityFilter('all'); }}
-            onPermitPress={() => setPermitPickerVisible(true)}
-            onAvailabilityPress={() => setAvailabilityPickerVisible(true)}
-          />
+          <>
+            <View style={styles.liveStatusBar}>
+              <Ionicons name="time-outline" size={14} color="#5d6d7e" />
+              <Text style={styles.liveStatusText}>Last synced: {refreshLabel}</Text>
+            </View>
+            <FilterHeader
+              query={query}
+              onChangeQuery={setQuery}
+              permitFilter={permitFilter}
+              availabilityFilter={availabilityFilter}
+              onAllPermits={() => { setPermitFilter('all'); setAvailabilityFilter('all'); }}
+              onPermitPress={() => setPermitPickerVisible(true)}
+              onAvailabilityPress={() => setAvailabilityPickerVisible(true)}
+            />
+          </>
         }
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
@@ -362,6 +372,15 @@ export default function LotsScreen() {
                     {typeof selectedLot.percentEmpty === 'number' ? `${selectedLot.percentEmpty}%` : 'Unknown'}
                   </Text>
                 </View>
+
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>ParkZen capture time:</Text>
+                  <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]}>
+                    {selectedLot.sourceTimestampProvidedByParkzen === true && selectedLot.lastUpdatedAt
+                      ? new Date(selectedLot.lastUpdatedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+                      : 'No time available'}
+                  </Text>
+                </View>
               </View>
 
               <TouchableOpacity style={styles.actionButton} onPress={() => openDirections(selectedLot)}>
@@ -417,6 +436,22 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+
+  liveStatusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  liveStatusText: {
+    fontSize: 12,
+    color: '#5d6d7e',
+    fontWeight: '500',
   },
 
   // --- FILTER HEADER ---

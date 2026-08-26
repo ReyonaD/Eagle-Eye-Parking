@@ -34,8 +34,12 @@ import { SafeAreaView} from 'react-native-safe-area-context';
 // }
 export default function MapScreen() {
   //consume the global data
-  const { lots, isLoading } = useLots();
+  const { lots, isLoading, lastRefreshAt } = useLots();
   console.log("MapScreen Render - isLoading:", isLoading, "Lots count:", lots?.length);
+
+  const refreshLabel = lastRefreshAt
+    ? new Date(lastRefreshAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : 'Waiting for sync';
   // Dropdown States
   const [selectedCampus, setSelectedCampus] = useState("Main campus");
   const [openCampus, setOpenCampus] = useState(false);
@@ -134,6 +138,11 @@ export default function MapScreen() {
         </View>
       </View>
 
+      <View style={styles.liveStatusBar}>
+        <Ionicons name="time-outline" size={14} color="#5d6d7e" />
+        <Text style={styles.liveStatusText}>Last synced: {refreshLabel}</Text>
+      </View>
+
       {/* THE MAP AREA */}
       <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
         <EagleMap
@@ -186,6 +195,22 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9f9f9' },
+
+  liveStatusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  liveStatusText: {
+    fontSize: 12,
+    color: '#5d6d7e',
+    fontWeight: '500',
+  },
 
   // Dropdown Row Layout (Must have high zIndex to float over map)
   dropdownRow: {

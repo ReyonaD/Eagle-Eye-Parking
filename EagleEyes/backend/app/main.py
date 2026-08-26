@@ -29,7 +29,11 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
 )
-
+parkzen_auth_cache = {
+    "token": None,
+    "expires_at": None
+}
+permit_cache = {}
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -56,20 +60,23 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 permit_cache = {}
-def get_permit_name(permit_id: str, token: str):
+async def get_permit_name(permit_id: str, token: str):
     """fetch the real name of permit from Parkzen, using a cache to be fast"""
     if permit_id in permit_cache:
         return permit_cache[permit_id]
+    
     url = f"https://api.parkzenapp.com/api/permits/{permit_id}"
     headers = {"Authorization": f"Bearer {token}"}
 
     try:
-        response = httpx.get(url, headers=headers)
-        if response.status_code == 200:
-            data = response.json()
-            name = data.get("name") or data.get("title") or data.get("type") or "Unknown"
-            permit_cache[permit_id] = name
-            return name
+        # Use AsyncClient to prevent blocking the server
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                name = data.get("name") or data.get("title") or data.get("type") or "Unknown"
+                permit_cache[permit_id] = name
+                return name
     except httpx.RequestError as e:
         print(f"Error fetching permit name for {permit_id}: {e}")
     return "Unknown"
@@ -229,33 +236,8 @@ def read_current_user(current_user: User = Depends(get_current_user)):
     }
 
 @app.get("/api/lots")
-def get_parking_lots():
-    """mock data representing the unt lots drawn in Parkzen Dashaboard"""
-    # return [
-    #     {
-    #         "id": "lot-20",
-    #         "name": "Lot 20 (Eagle)",
-    #         "isFull": False, 
-    #         "polygonCoordinates": [
-    #             {"latitude": 33.2160, "longitude": -97.1500},
-    #             {"latitude": 33.2160, "longitude": -97.1470},
-    #             {"latitude": 33.2145, "longitude": -97.1470},
-    #             {"latitude": 33.2145, "longitude": -97.1500},
-    #         ]
-    #     },
-    #     {
-    #         "id": "highland-garage",
-    #         "name": "Highland Street Garage",
-    #         "isFull": True, 
-    #         "polygonCoordinates": [
-    #             {"latitude": 33.2130, "longitude": -97.1460},
-    #             {"latitude": 33.2130, "longitude": -97.1440},
-    #             {"latitude": 33.2115, "longitude": -97.1440},
-    #             {"latitude": 33.2115, "longitude": -97.1460},
-    #         ]
-    #     }
-    # ]
-    #load credentials from environment variables
+async def get_parking_lots():
+    """Fetches UNT lots drawn in Parkzen Dashboard"""
     client_id = os.getenv("PARKZEN_CLIENT_ID", "University of North Texas")
     username = os.getenv("PARKZEN_USERNAME")
     password = os.getenv("PARKZEN_PASSWORD")
@@ -264,108 +246,128 @@ def get_parking_lots():
         raise HTTPException(status_code=500, detail="Missing ParkZen credentials in backend .env")
     
     try:
-        #get the access token
-        auth_url = "https://api.parkzenapp.com/api/auth/login"
-        auth_payload = {
-            "username": username,
-            "password": password
-        }
-        auth_response = httpx.post(auth_url, json = auth_payload)
-
-        if auth_response.status_code != 200:
-            raise HTTPException(status_code=401, detail="Failed to authenticate with ParkZen")
-        
-        auth_data = auth_response.json()
-        #keep the token checking flexible since the ParkZen API might return the token in different formats. We will try to find the token in multiple places in the response.
-        token = auth_data.get("accessToken") or auth_data.get("token") 
-        if not token and "data" in auth_data:
-            token = auth_data["data"].get("accessToken") or auth_data["data"].get("token")
+        # CHECK IF WE ALREADY HAVE A VALID TOKEN
+        current_time = datetime.now()
+        if parkzen_auth_cache["token"] is None or parkzen_auth_cache["expires_at"] < current_time:
             
-        if not token:
-            print("Raw Auth Response:", auth_data)
-            raise HTTPException(status_code=500, detail="Could not find token in login response")
-        #fetch the UNT lots using the token
-        lots_url = f"https://api.parkzenapp.com/api/lots?clientId={client_id}"
-        headers = {"Authorization": f"Bearer {token}"}
+            # FETCH A NEW TOKEN ONLY IF WE NEED ONE
+            auth_url = "https://api.parkzenapp.com/api/auth/login"
+            auth_payload = {"username": username, "password": password}
+            
+            async with httpx.AsyncClient() as client:
+                auth_response = await client.post(auth_url, json=auth_payload)
 
-        lots_response = httpx.get(lots_url, headers=headers)
+            if auth_response.status_code != 200:
+                raise HTTPException(status_code=401, detail="Failed to authenticate with ParkZen")
+            
+            auth_data = auth_response.json()
+            token = auth_data.get("accessToken") or auth_data.get("token") 
+            if not token and "data" in auth_data:
+                token = auth_data["data"].get("accessToken") or auth_data["data"].get("token")
+                
+            if not token:
+                raise HTTPException(status_code=500, detail="Could not find token in login response")
+            
+            # Save token to cache and set expiration (e.g., 55 minutes from now)
+            parkzen_auth_cache["token"] = token
+            parkzen_auth_cache["expires_at"] = current_time + timedelta(minutes=55)
+
+        # Retrieve the valid token from our cache
+        active_token = parkzen_auth_cache["token"]
+
+        # FETCH THE LOTS ASYNCHRONOUSLY
+        lots_url = f"https://api.parkzenapp.com/api/lots?clientId={client_id}"
+        headers = {"Authorization": f"Bearer {active_token}"}
+
+        async with httpx.AsyncClient() as client:
+            lots_response = await client.get(lots_url, headers=headers)
 
         if lots_response.status_code != 200:
             raise HTTPException(lots_response.status_code, detail="Fail to fetch lots from ParkZen API")
         
         raws_lots_data = lots_response.json()
-
-        #extract the array
         actual_lots_array = raws_lots_data.get("data") or raws_lots_data.get("lots") or raws_lots_data
 
         if not isinstance(actual_lots_array, list):
             raise HTTPException(status_code=500, detail="Unexpected response format from ParkZen API")
         
+        # 4. PROCESS THE DATA
         for lot in actual_lots_array:
-            raw_permit_id = lot.get("permits", [])
+            raw_permit_ids = lot.get("permits", [])
             readable_permits = []
-            for permit_id in raw_permit_id:
-                #use helper function and pass the token 
-                permit_name = get_permit_name(permit_id, token)
+            for permit_id in raw_permit_ids:
+                # Need to await the async function here
+                permit_name = await get_permit_name(permit_id, active_token)
                 readable_permits.append(permit_name)
 
-            #replace the raw permit ids with the readable names in the lot data
             lot["permits"] = readable_permits
 
-            #DEMO MODE (disabled): fakes occupancy for lots with no data. Re-enable by
-            #uncommenting the block below and adding "import random" back at the top.
-            #if "occupancy" not in lot or not lot["occupancy"]:
-            #    #generate random occupancy data for testing between 10% and 100%
-            #    fake_occupancy = round(random.uniform(0.1,1.0), 2)
-            #
-            #    if fake_occupancy >= 0.95:
-            #        fill = '#E74C3C'  # Red for full
-            #        status = "Full"
-            #    elif fake_occupancy >= 0.85:
-            #        fill = '#F39C12'  # Yellow for medium
-            #        status = "Medium"
-            #    else:
-            #        fill = '#2ECC71'  # Green for low
-            #        status = "Available"
-            #
-            #    lot["fillColor"] = fill
-            #    lot["infoSheetTitle"] = status
-            #    lot["occupancy"] = {
-            #        "lastUpdatedVia": "capstone_simulation",
-            #        "capstone_simulation": {
-            #            "estimate": fake_occupancy
-            #        }
-            #    }
-            #    lot["numParkedUsers"] = int(fake_occupancy * random.randint(100,300))
-
-            #Translate real ParkZen occupancy into the fields the frontend reads.
-            #parkzenServerOccupancyEstimate is the actual LPR-based measurement;
-            #mlOccupancyEstimate is skipped because ParkZen's ML model returns a
-            #constant 0.5 prior for nearly every lot (not a real measurement).
-            #Lots without an estimate are left untouched and render as gray "No Data".
             occupancy = lot.get("occupancy") or {}
+            source_timestamp = (
+                lot.get("lastUpdatedAt")
+                or lot.get("updatedAt")
+                or lot.get("updated_at")
+                or lot.get("timestamp")
+                or lot.get("lastUpdated")
+                or lot.get("capturedAt")
+                or lot.get("observedAt")
+                or occupancy.get("lastUpdatedAt")
+                or occupancy.get("updatedAt")
+                or occupancy.get("updated_at")
+                or occupancy.get("timestamp")
+            )
+
+            fetched_at = datetime.now(timezone.utc).isoformat()
+            lot["backendFetchedAt"] = fetched_at
+
+            if source_timestamp is not None:
+                try:
+                    if isinstance(source_timestamp, (int, float)):
+                        epoch_seconds = source_timestamp / 1000 if source_timestamp > 1_000_000_000_000 else source_timestamp
+                        lot["lastUpdatedAt"] = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).isoformat()
+                    else:
+                        lot["lastUpdatedAt"] = datetime.fromisoformat(str(source_timestamp).replace("Z", "+00:00")).astimezone(timezone.utc).isoformat()
+                except (TypeError, ValueError):
+                    lot["lastUpdatedAt"] = str(source_timestamp)
+            else:
+                lot["lastUpdatedAt"] = None
+
+            lot["sourceTimestampProvidedByParkzen"] = source_timestamp is not None
+            lot["captureTimeSource"] = "parkzen" if source_timestamp is not None else "none"
+
+            # Occupancy Logic 
             estimate = occupancy.get("parkzenServerOccupancyEstimate")
             if estimate is None:
                 estimate = occupancy.get("lprEstimate")
+
             if estimate is not None:
                 if estimate >= 0.95:
-                    lot["fillColor"] = '#E74C3C'  # Red for full
+                    lot["fillColor"] = '#E74C3C'
                     lot["infoSheetTitle"] = "Full"
                 elif estimate >= 0.85:
-                    lot["fillColor"] = '#F39C12'  # Yellow for medium
+                    lot["fillColor"] = '#F39C12'
                     lot["infoSheetTitle"] = "Medium"
                 else:
-                    lot["fillColor"] = '#2ECC71'  # Green for low
+                    lot["fillColor"] = '#2ECC71'
                     lot["infoSheetTitle"] = "Available"
 
-                #the frontend reads the estimate from occupancy[lastUpdatedVia].estimate
                 method = occupancy.get("lastUpdatedVia") or "python-fusion"
+                occupancy["lastUpdatedVia"] = method
                 if not isinstance(occupancy.get(method), dict):
                     occupancy[method] = {}
                 occupancy[method]["estimate"] = estimate
                 lot["occupancy"] = occupancy
-        #return clean array to the frontend
+            else:
+                lot["fillColor"] = '#808080'
+                lot["infoSheetTitle"] = "No Data"
+                if not isinstance(occupancy, dict):
+                    occupancy = {}
+                occupancy.setdefault("lastUpdatedVia", "unknown")
+                occupancy["unknown"] = {"estimate": None}
+                lot["occupancy"] = occupancy
+                
         return actual_lots_array
+
     except Exception as e:
         print(f"Server error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
