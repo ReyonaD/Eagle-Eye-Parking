@@ -235,6 +235,36 @@ def read_current_user(current_user: User = Depends(get_current_user)):
         "is_active": current_user.is_active
     }
 
+async def get_parkzen_token(username: str, password: str, force_refresh: bool = False) -> str:
+    """Return a valid ParkZen token, logging in only when the cached one is
+    missing, expired, or explicitly invalidated (force_refresh)."""
+    current_time = datetime.now()
+    if (not force_refresh
+            and parkzen_auth_cache["token"] is not None
+            and parkzen_auth_cache["expires_at"] is not None
+            and parkzen_auth_cache["expires_at"] > current_time):
+        return parkzen_auth_cache["token"]
+
+    auth_url = "https://api.parkzenapp.com/api/auth/login"
+    auth_payload = {"username": username, "password": password}
+    async with httpx.AsyncClient() as client:
+        auth_response = await client.post(auth_url, json=auth_payload)
+
+    if auth_response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Failed to authenticate with ParkZen")
+
+    auth_data = auth_response.json()
+    token = auth_data.get("accessToken") or auth_data.get("token")
+    if not token and "data" in auth_data:
+        token = auth_data["data"].get("accessToken") or auth_data["data"].get("token")
+
+    if not token:
+        raise HTTPException(status_code=500, detail="Could not find token in login response")
+
+    parkzen_auth_cache["token"] = token
+    parkzen_auth_cache["expires_at"] = current_time + timedelta(minutes=10)
+    return token
+
 @app.get("/api/lots")
 async def get_parking_lots():
     """Fetches UNT lots drawn in Parkzen Dashboard"""
@@ -246,32 +276,7 @@ async def get_parking_lots():
         raise HTTPException(status_code=500, detail="Missing ParkZen credentials in backend .env")
     
     try:
-        # CHECK IF WE ALREADY HAVE A VALID TOKEN
-        current_time = datetime.now()
-        if parkzen_auth_cache["token"] is None or parkzen_auth_cache["expires_at"] < current_time:
-            
-            # FETCH A NEW TOKEN ONLY IF WE NEED ONE
-            auth_url = "https://api.parkzenapp.com/api/auth/login"
-            auth_payload = {"username": username, "password": password}
-            
-            async with httpx.AsyncClient() as client:
-                auth_response = await client.post(auth_url, json=auth_payload)
-
-            if auth_response.status_code != 200:
-                raise HTTPException(status_code=401, detail="Failed to authenticate with ParkZen")
-            
-            auth_data = auth_response.json()
-            token = auth_data.get("accessToken") or auth_data.get("token") 
-            if not token and "data" in auth_data:
-                token = auth_data["data"].get("accessToken") or auth_data["data"].get("token")
-                
-            if not token:
-                raise HTTPException(status_code=500, detail="Could not find token in login response")
-            
-            # Save token to cache and set expiration
-            parkzen_auth_cache["token"] = token
-            parkzen_auth_cache["expires_at"] = current_time + timedelta(minutes=10)
-        active_token = parkzen_auth_cache["token"]
+        active_token = await get_parkzen_token(username, password)
 
         # FETCH THE LOTS ASYNCHRONOUSLY
         lots_url = f"https://api.parkzenapp.com/api/lots?clientId={client_id}"
@@ -279,6 +284,14 @@ async def get_parking_lots():
 
         async with httpx.AsyncClient() as client:
             lots_response = await client.get(lots_url, headers=headers)
+
+        # A 401 here means the cached token was invalidated early (e.g., another
+        # login on the shared ParkZen account) — force one fresh login and retry.
+        if lots_response.status_code == 401:
+            active_token = await get_parkzen_token(username, password, force_refresh=True)
+            headers = {"Authorization": f"Bearer {active_token}"}
+            async with httpx.AsyncClient() as client:
+                lots_response = await client.get(lots_url, headers=headers)
 
         if lots_response.status_code != 200:
             raise HTTPException(lots_response.status_code, detail="Fail to fetch lots from ParkZen API")
