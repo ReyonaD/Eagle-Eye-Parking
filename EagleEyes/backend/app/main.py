@@ -268,11 +268,9 @@ async def get_parking_lots():
             if not token:
                 raise HTTPException(status_code=500, detail="Could not find token in login response")
             
-            # Save token to cache and set expiration (e.g., 55 minutes from now)
+            # Save token to cache and set expiration
             parkzen_auth_cache["token"] = token
-            parkzen_auth_cache["expires_at"] = current_time + timedelta(minutes=55)
-
-        # Retrieve the valid token from our cache
+            parkzen_auth_cache["expires_at"] = current_time + timedelta(minutes=10)
         active_token = parkzen_auth_cache["token"]
 
         # FETCH THE LOTS ASYNCHRONOUSLY
