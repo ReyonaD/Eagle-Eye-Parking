@@ -21,6 +21,13 @@ class AlertResponse(BaseModel):
     description: Optional[str] = None
     upvotes: int
     created_at: datetime
+    status: Optional[str] = "published"
+
+class AlertApprove(BaseModel):
+    #optional edits the admin can make while approving a pending report
+    title: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
 
     class Config:
         from_attributes = True

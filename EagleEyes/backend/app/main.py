@@ -8,18 +8,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError 
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, text
 from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
 from app.models import User, Alert, PasswordResetToken
-from app.schemas import UserCreate, AlertResponse, AlertCreate, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.schemas import UserCreate, AlertResponse, AlertCreate, AlertApprove, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin
 from app.core.email import send_password_reset_email
 from typing import List
 Base.metadata.create_all(bind=engine)
+#create_all does not add new columns to existing tables, so patch them in here.
+#Existing alerts predate the approval flow and stay visible as 'published'.
+with engine.connect() as _conn:
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'published'"))
+    _conn.commit()
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
 app.add_middleware(
@@ -419,21 +424,36 @@ def get_alerts(
     Orders them by newest first!
     """
     alerts = db.query(Alert)\
-            .filter(Alert.alert_type == alert_type)\
+            .filter(Alert.alert_type == alert_type, Alert.status == "published")\
             .order_by(desc(Alert.created_at))\
             .all()
     return alerts
+
+@app.get("/alerts/pending", response_model=List[AlertResponse])
+def get_pending_alerts(
+    alert_type: str = Query(..., description="Must be 'hazard' or 'event'"),
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin review queue: commuter-submitted alerts waiting for approval."""
+    return db.query(Alert)\
+            .filter(Alert.alert_type == alert_type, Alert.status == "pending")\
+            .order_by(desc(Alert.created_at))\
+            .all()
     
 @app.post("/alerts", response_model=AlertResponse)
 def create_alert(
     alert_data: AlertCreate,
-    db: Session= Depends(get_db)
+    db: Session= Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    #admin posts go live immediately; commuter reports wait for admin review
     new_alert = Alert(
         title=alert_data.title.upper(), 
         alert_type=alert_data.alert_type.lower(),
         category=alert_data.category,
-        description=alert_data.description
+        description=alert_data.description,
+        status="published" if current_user.role == "admin" else "pending"
     )
     db.add(new_alert)
     db.commit()
@@ -453,6 +473,30 @@ def upvote_alert(
     db.commit()
     db.refresh(alert)
 
+    return alert
+
+@app.put("/alerts/{alert_id}/approve", response_model=AlertResponse)
+def approve_alert(
+    alert_id: int,
+    edits: AlertApprove,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin approves a pending report (optionally editing it) and publishes it."""
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found or already resolved.")
+
+    if edits.title is not None and edits.title.strip():
+        alert.title = edits.title.strip().upper()
+    if edits.category is not None and edits.category.strip():
+        alert.category = edits.category.strip()
+    if edits.description is not None:
+        alert.description = edits.description.strip() or None
+
+    alert.status = "published"
+    db.commit()
+    db.refresh(alert)
     return alert
 
 @app.delete("/alerts/{alert_id}")

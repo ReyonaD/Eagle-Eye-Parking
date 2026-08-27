@@ -30,6 +30,8 @@ class Alert(Base):
     description = Column(String, nullable=True)
     #red bagde number for frontend display
     upvotes=Column(Integer, default=1)
+    #'published' = visible to commuters; 'pending' = waiting for admin review
+    status = Column(String, default="published", index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
