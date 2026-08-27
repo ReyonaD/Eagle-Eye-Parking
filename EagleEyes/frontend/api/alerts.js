@@ -13,12 +13,17 @@ export const getAlerts = async (alertType) => {
     }
 };
 
-// POST: Report a new hazard/event
+// POST: Report a new hazard/event (requires login).
+// Admin posts publish immediately; commuter reports go to the admin review queue.
 export const createAlert = async (alertData) => {
+    const token = await AsyncStorage.getItem('token');
     try{
         const response = await fetch (`${BASE_URL}/alerts`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
             body: JSON.stringify(alertData),
         });
         if (!response.ok) throw new Error('Failed to submit report');
@@ -27,6 +32,31 @@ export const createAlert = async (alertData) => {
         console.error("API Error (createAlert):", error);
         throw error;
     }
+};
+
+// GET: Admin review queue — commuter reports waiting for approval (admin-only)
+export const getPendingAlerts = async (alertType) => {
+    const token = await AsyncStorage.getItem('token');
+    const response = await fetch(`${BASE_URL}/alerts/pending?alert_type=${alertType}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch pending reports');
+    return await response.json();
+};
+
+// PUT: Admin approves a pending report, optionally with edits (admin-only)
+export const approveAlert = async (alertId, edits = {}) => {
+    const token = await AsyncStorage.getItem('token');
+    const response = await fetch(`${BASE_URL}/alerts/${alertId}/approve`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(edits),
+    });
+    if (!response.ok) throw new Error('Failed to approve report');
+    return await response.json();
 };
 // DELETE: Admin declines/removes a hazard report (admin-only endpoint)
 export const deleteAlert = async (alertId) => {
