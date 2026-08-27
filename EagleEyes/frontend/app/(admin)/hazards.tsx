@@ -81,6 +81,11 @@ function HazardCard({
           <Text style={[styles.cardTime, !isNew && styles.olderText]}>
             {formatDateTime(hazard.created_at)}
           </Text>
+          {!!hazard.lot_name && (
+            <Text style={[styles.cardLot, !isNew && styles.olderText]} numberOfLines={1}>
+              📍 {hazard.lot_name}
+            </Text>
+          )}
           <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
         </View>
       </View>
@@ -329,6 +334,7 @@ export default function HazardsScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  cardLot: { fontSize: 12, color: '#00853E', fontWeight: '600', marginTop: 2 },
   editableField: {
     borderWidth: 1,
     borderColor: '#00853E',

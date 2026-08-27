@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, FlatList,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useLots } from '../context/LotsContext';
@@ -45,6 +45,8 @@ export default function LotPickerModal({
   onSelect: (lotName: string) => void;
 }) {
   const { lots } = useLots();
+  //SafeAreaView is unreliable inside a Modal, so apply the insets manually
+  const insets = useSafeAreaInsets();
   const [selectedName, setSelectedName] = useState<string | null>(null);
   //falls back to campus center until the map reports the user's position
   const [userLoc, setUserLoc] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -68,7 +70,7 @@ export default function LotPickerModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container} edges={['top', 'right', 'left', 'bottom']}>
+      <View style={[styles.container, { paddingTop: insets.top + 4, paddingBottom: insets.bottom }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
             <Ionicons name="close" size={26} color="#333" />
@@ -137,7 +139,7 @@ export default function LotPickerModal({
             {selectedName ? `SELECT ${selectedName.toUpperCase()}` : 'SELECT A LOT'}
           </Text>
         </TouchableOpacity>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }

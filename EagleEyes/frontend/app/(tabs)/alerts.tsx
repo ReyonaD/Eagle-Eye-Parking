@@ -23,6 +23,7 @@ interface AlertItem {
   time: string;
   section: 'Today' | 'Yesterday' | 'Earlier';
   type: AlertType;
+  lotName?: string;
   unread?: boolean;
   important?: boolean;
 }
@@ -62,6 +63,7 @@ function toAlertItem(raw: any): AlertItem {
     time: timeAgo(raw.created_at),
     section: sectionFor(raw.created_at),
     type: raw.alert_type === 'hazard' ? 'warning' : raw.alert_type === 'event' ? 'event' : 'info',
+    lotName: raw.lot_name || undefined,
     unread: sectionFor(raw.created_at) === 'Today',
     important: raw.alert_type === 'hazard' || (raw.upvotes ?? 0) >= 2,
   };
@@ -175,6 +177,12 @@ function AlertCard({ alert }: { alert: AlertItem }) {
           <Text style={styles.cardTime}>{alert.time}</Text>
         </View>
 
+        {!!alert.lotName && (
+          <View style={styles.lotRow}>
+            <Ionicons name="location" size={13} color="#00853E" />
+            <Text style={styles.lotText}>{alert.lotName}</Text>
+          </View>
+        )}
         <Text style={styles.cardDescription}>{alert.description}</Text>
       </View>
     </View>
@@ -284,6 +292,8 @@ export default function AlertsScreen() {
 }
 
 const styles = StyleSheet.create({
+  lotRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
+  lotText: { fontSize: 12.5, fontWeight: '700', color: '#00853E' },
   screen: {
     flex: 1,
     backgroundColor: '#F3F4F6',
