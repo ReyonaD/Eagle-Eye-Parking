@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { createAlert } from '../api/alerts';
+import LotPickerModal from '../components/LotPickerModal';
 
 const ALERT_TYPES = [
   { label: 'Snow',         value: 'snow' },
@@ -20,7 +21,9 @@ export default function ReportHazardScreen() {
   const [title, setTitle]               = useState('');
   const [memo, setMemo]                 = useState('');
   const [selectedType, setSelectedType] = useState<string | null>(null);
+  const [selectedLot, setSelectedLot]   = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showLotPicker, setShowLotPicker] = useState(false);
   const [isPosting, setIsPosting]       = useState(false);
 
   const selectedLabel = ALERT_TYPES.find(t => t.value === selectedType)?.label;
@@ -41,6 +44,7 @@ export default function ReportHazardScreen() {
         alert_type: 'hazard',
         category: selectedType,
         description: memo.trim() || undefined,
+        lot_name: selectedLot || undefined,
       });
       //commuter reports go to the admin review queue, not straight to the feed
       Alert.alert(
@@ -100,6 +104,20 @@ export default function ReportHazardScreen() {
           <Ionicons name="chevron-down" size={18} color="#aaa" />
         </TouchableOpacity>
 
+        {/* Lot selector — opens the map + nearest-lot list picker */}
+        <TouchableOpacity
+          style={styles.lotSelector}
+          onPress={() => setShowLotPicker(true)}
+        >
+          <View style={styles.lotSelectorLeft}>
+            <Ionicons name="location-outline" size={18} color={selectedLot ? '#00853E' : '#aaa'} />
+            <Text style={[styles.typeSelectorText, !!selectedLot && styles.typeSelectorSelected]}>
+              {selectedLot ?? 'SELECT LOT (OPTIONAL)'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#aaa" />
+        </TouchableOpacity>
+
         <View style={styles.postRow}>
           <TouchableOpacity
             style={[styles.postButton, isPosting && styles.postButtonDisabled]}
@@ -114,6 +132,12 @@ export default function ReportHazardScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <LotPickerModal
+        visible={showLotPicker}
+        onClose={() => setShowLotPicker(false)}
+        onSelect={(lotName) => setSelectedLot(lotName)}
+      />
 
       <Modal visible={showDropdown} transparent animationType="fade">
         <TouchableOpacity
@@ -190,6 +214,17 @@ const styles = StyleSheet.create({
   },
   typeSelectorText: { fontSize: 14, fontWeight: '700', color: '#aaa' },
   typeSelectorSelected: { color: '#333' },
+  lotSelector: {
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: -24,
+    marginBottom: 40,
+  },
+  lotSelectorLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 
   postRow: { alignItems: 'flex-end' },
   postButton: {

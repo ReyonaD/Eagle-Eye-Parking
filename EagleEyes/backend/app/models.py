@@ -32,6 +32,8 @@ class Alert(Base):
     upvotes=Column(Integer, default=1)
     #'published' = visible to commuters; 'pending' = waiting for admin review
     status = Column(String, default="published", index=True)
+    #which parking lot the report refers to (picked by the commuter)
+    lot_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 

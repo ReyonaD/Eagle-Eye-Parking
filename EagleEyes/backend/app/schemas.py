@@ -12,6 +12,7 @@ class AlertCreate(BaseModel):
     alert_type: str
     category: str
     description: Optional[str] = None
+    lot_name: Optional[str] = None
 
 class AlertResponse(BaseModel):
     id: int
@@ -22,6 +23,7 @@ class AlertResponse(BaseModel):
     upvotes: int
     created_at: datetime
     status: Optional[str] = "published"
+    lot_name: Optional[str] = None
 
 class AlertApprove(BaseModel):
     #optional edits the admin can make while approving a pending report

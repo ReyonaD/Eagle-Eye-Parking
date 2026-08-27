@@ -132,6 +132,9 @@ function HazardDetail({
         <Text style={styles.detailTime}>{formatDateTime(hazard.created_at)}</Text>
 
         <View style={styles.detailCard}>
+          <Text style={styles.locationLabel}>
+            LOT: <Text style={styles.locationValue}>{hazard.lot_name ?? 'Not specified'}</Text>
+          </Text>
           <Text style={styles.locationLabel}>LOCATION / DESCRIPTION:</Text>
           {isPending ? (
             <TextInput

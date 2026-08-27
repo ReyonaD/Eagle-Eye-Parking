@@ -24,6 +24,7 @@ Base.metadata.create_all(bind=engine)
 #Existing alerts predate the approval flow and stay visible as 'published'.
 with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'published'"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS lot_name VARCHAR"))
     _conn.commit()
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -453,6 +454,7 @@ def create_alert(
         alert_type=alert_data.alert_type.lower(),
         category=alert_data.category,
         description=alert_data.description,
+        lot_name=alert_data.lot_name,
         status="published" if current_user.role == "admin" else "pending"
     )
     db.add(new_alert)
