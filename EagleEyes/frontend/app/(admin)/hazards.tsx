@@ -5,7 +5,9 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, router, useFocusEffect } from 'expo-router';
+import MapView, { Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import { getAlerts, getPendingAlerts, approveAlert, deleteAlert } from '../../api/alerts';
+import { useLots } from '../../context/LotsContext';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -113,6 +115,20 @@ function HazardDetail({
   const [editTitle, setEditTitle] = useState(hazard.title ?? '');
   const [editDescription, setEditDescription] = useState(hazard.description ?? '');
 
+  //find the reported lot's polygon so the detail can show it on a real map
+  const { lots } = useLots();
+  const reportedLot = hazard.lot_name
+    ? lots.find((l: any) => l.name === hazard.lot_name && Array.isArray(l.coordinates) && l.coordinates.length >= 3)
+    : null;
+  const lotRegion = reportedLot
+    ? {
+        latitude: reportedLot.coordinates.reduce((s: number, c: any) => s + c.latitude, 0) / reportedLot.coordinates.length,
+        longitude: reportedLot.coordinates.reduce((s: number, c: any) => s + c.longitude, 0) / reportedLot.coordinates.length,
+        latitudeDelta: 0.004,
+        longitudeDelta: 0.004,
+      }
+    : null;
+
   return (
     <>
       <ScrollView
@@ -155,12 +171,30 @@ function HazardDetail({
             </Text>
           )}
 
-          {/* Static placeholder — backend has no coordinate fields */}
-          <View style={styles.mapPlaceholder}>
-            <Ionicons name="map-outline" size={38} color="#bbb" />
-            <Text style={styles.mapPlaceholderText}>Map unavailable</Text>
-            <Text style={styles.mapPlaceholderSub}>No location coordinates in report</Text>
-          </View>
+          {reportedLot && lotRegion ? (
+            <MapView
+              style={styles.lotMap}
+              provider={PROVIDER_GOOGLE}
+              initialRegion={lotRegion}
+              scrollEnabled={false}
+              zoomEnabled={false}
+              pitchEnabled={false}
+              rotateEnabled={false}
+            >
+              <Polygon
+                coordinates={reportedLot.coordinates}
+                fillColor="rgba(0,133,62,0.45)"
+                strokeColor="#00853E"
+                strokeWidth={3}
+              />
+            </MapView>
+          ) : (
+            <View style={styles.mapPlaceholder}>
+              <Ionicons name="map-outline" size={38} color="#bbb" />
+              <Text style={styles.mapPlaceholderText}>Map unavailable</Text>
+              <Text style={styles.mapPlaceholderSub}>No lot selected in this report</Text>
+            </View>
+          )}
         </View>
 
         <Text style={styles.studentCount}>
@@ -334,6 +368,7 @@ export default function HazardsScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  lotMap: { height: 190, borderRadius: 10, marginTop: 10, overflow: 'hidden' },
   cardLot: { fontSize: 12, color: '#00853E', fontWeight: '600', marginTop: 2 },
   editableField: {
     borderWidth: 1,
