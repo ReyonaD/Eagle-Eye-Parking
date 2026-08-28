@@ -63,15 +63,6 @@ export default function EventsScreen() {
   const activeEvents = events.filter(eventItem => 
     eventItem.created_at && eventItem.created_at.startsWith(selected)
   );
-  // Filter for PAST events (dates strictly before the selected date)
-  // We limit to the 5 most recent past events so the screen doesn't get infinitely long.
-  const pastEvents = events.filter(eventItem => {
-    if (!eventItem.created_at) return false;
-    const eventDate = eventItem.created_at.split('T')[0]; // Grabs just the YYYY-MM-DD
-    return eventDate < selected;
-  }).slice(0, 5);
-
-
   // ADD EVENT 
 
   const handleSaveEvent = () => {
@@ -164,37 +155,6 @@ export default function EventsScreen() {
                   <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
                 </TouchableOpacity>
               ))
-            )}
-
-            {/* --- SECTION 2: PAST / OUTDATED EVENTS --- */}
-            {pastEvents.length > 0 && !isLoading && (
-              <View style={styles.pastEventsWrapper}>
-                <View style={styles.divider} />
-                <Text style={styles.pastFeedTitle}>Previous Events</Text>
-                
-                {pastEvents.map((eventItem) => (
-                  <TouchableOpacity 
-                    key={`past-${eventItem.id}`} 
-                    style={[styles.card, styles.outdatedCard]} 
-                    onPress={() => Alert.alert('Past Event', 'This event has already concluded.')}
-                  >
-                    <View style={styles.cardHeader}>
-                      <View style={styles.titleRow}>
-                        <View style={[styles.iconBox, styles.outdatedIconBox]}>
-                          <Ionicons name={getIconForCategory(eventItem.category)} size={20} color="#666" />
-                        </View>
-                        <Text style={[styles.cardTitle, styles.outdatedText]}>{eventItem.title}</Text>
-                      </View>
-                    </View>
-                    
-                    <Text style={[styles.cardTime, styles.outdatedText]}>
-                      {formatDate(eventItem.created_at.split('T')[0])} • {new Date(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                    
-                    <Text style={[styles.clickDetails, styles.outdatedText]}>CONCLUDED</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
             )}
 
           </View>
@@ -390,18 +350,6 @@ const styles = StyleSheet.create({
   cardDesc: { fontSize: 14, color: '#444', marginBottom: 12, lineHeight: 20 },
   clickDetails: { fontSize: 11, color: '#666', fontStyle: 'italic', textAlign: 'right', fontWeight: 'bold' },
   
-  pastEventsWrapper: { marginTop: 8 },
-  divider: { height: 1, backgroundColor: '#ddd', marginBottom: 16 },
-  pastFeedTitle: { fontSize: 16, fontWeight: 'bold', color: '#888', marginBottom: 12, textTransform: 'uppercase' },
-  outdatedCard: {
-    backgroundColor: '#f9f9f9',
-    borderColor: '#eee',
-    borderWidth: 1,
-    opacity: 0.65,
-    padding: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#00853E',
-  },
   eventsDateContainer: {
     marginTop: 20,
     padding: 16,
@@ -416,9 +364,6 @@ const styles = StyleSheet.create({
     color: '#00853E',
     marginBottom: 8,
   },
-  outdatedIconBox: { backgroundColor: '#e0e0e0' }, 
-  outdatedText: { color: '#888' }, 
-  
   fab: {
     position: 'absolute',
     right: 20,

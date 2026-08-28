@@ -91,7 +91,7 @@ function Divider() {
 }
 
 // Main screen
-export default function ProfileScreen() {
+export function ProfileScreen({ showParking = true }: { showParking?: boolean }) {
   const router = useRouter();
   const [user] = useState(MOCK_USER);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -222,21 +222,22 @@ export default function ProfileScreen() {
           />
         </Section>
 
-        {/* Parking */}
-        <Section title="Parking">
-          <MenuRow
-            icon="card-outline"
-            label="Permit Details"
-            value={`Type ${user.permit.type}`}
-            onPress={() => router.push('/profile/parking' as any)}
-          />
-          <Divider />
-          <MenuRow
-            icon="car-outline"
-            label="My Vehicles"
-            onPress={() => router.push('/profile/parking' as any)}
-          />
-        </Section>
+        {showParking && (
+          <Section title="Parking">
+            <MenuRow
+              icon="card-outline"
+              label="Permit Details"
+              value={`Type ${user.permit.type}`}
+              onPress={() => router.push('/profile/parking' as any)}
+            />
+            <Divider />
+            <MenuRow
+              icon="car-outline"
+              label="My Vehicles"
+              onPress={() => router.push('/profile/parking' as any)}
+            />
+          </Section>
+        )}
 
         {/* Preferences */}
         <Section title="Preferences">
@@ -282,6 +283,8 @@ export default function ProfileScreen() {
     </SafeAreaView>
   );
 }
+
+export default ProfileScreen;
 
 const styles = StyleSheet.create({
   screen: {
