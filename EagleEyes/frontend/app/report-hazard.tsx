@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, ActivityIndicator, Modal,
+  TextInput, ActivityIndicator, Modal, Image, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { createAlert } from '../api/alerts';
+import * as ImagePicker from 'expo-image-picker';
+import { createAlert, uploadAlertImage } from '../api/alerts';
 import LotPickerModal from '../components/LotPickerModal';
+import { Alert } from '../utils/webCompat';
 
 const ALERT_TYPES = [
   { label: 'Snow',         value: 'snow' },
@@ -17,6 +19,12 @@ const ALERT_TYPES = [
   { label: 'Item on Road', value: 'item on road' },
 ];
 
+const MAX_PHOTOS = 3;
+
+//on native, uri alone is enough for RN's fetch polyfill; on web, expo-image-picker
+//also hands back the real browser File, which uploadAlertImage needs (see api/alerts.js)
+type PickedPhoto = { uri: string; file?: File };
+
 export default function ReportHazardScreen() {
   const [title, setTitle]               = useState('');
   const [memo, setMemo]                 = useState('');
@@ -24,9 +32,57 @@ export default function ReportHazardScreen() {
   const [selectedLot, setSelectedLot]   = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showLotPicker, setShowLotPicker] = useState(false);
+  const [photos, setPhotos]             = useState<PickedPhoto[]>([]);
   const [isPosting, setIsPosting]       = useState(false);
 
   const selectedLabel = ALERT_TYPES.find(t => t.value === selectedType)?.label;
+
+  const addPhoto = (photo: PickedPhoto) => setPhotos(prev => [...prev, photo]);
+  const removePhoto = (uri: string) => setPhotos(prev => prev.filter(p => p.uri !== uri));
+
+  const handleTakePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Camera Access Needed', 'Please allow camera access in Settings to take a photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (!result.canceled && result.assets?.[0]) addPhoto(result.assets[0]);
+  };
+
+  const handlePickPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Photo Access Needed', 'Please allow photo library access in Settings to attach a picture.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      quality: 0.7,
+      allowsMultipleSelection: true,
+      selectionLimit: MAX_PHOTOS - photos.length,
+    });
+    if (!result.canceled) {
+      result.assets.slice(0, MAX_PHOTOS - photos.length).forEach(a => addPhoto(a));
+    }
+  };
+
+  const handleAddPhotoPress = () => {
+    if (photos.length >= MAX_PHOTOS) {
+      Alert.alert('Limit Reached', `You can attach up to ${MAX_PHOTOS} photos per report.`);
+      return;
+    }
+    //the web file picker already lets the browser offer camera vs. library, and there's
+    //no 3-option web equivalent of Alert.alert to choose between our two native handlers
+    if (Platform.OS === 'web') {
+      handlePickPhoto();
+      return;
+    }
+    Alert.alert('Add Photo', 'Attach a picture of the hazard', [
+      { text: 'Take Photo', onPress: handleTakePhoto },
+      { text: 'Choose from Library', onPress: handlePickPhoto },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -39,12 +95,20 @@ export default function ReportHazardScreen() {
     }
     setIsPosting(true);
     try {
+      //photos upload one at a time so we can attach the URLs to the report below
+      const imageUrls: string[] = [];
+      for (const photo of photos) {
+        const { image_url } = await uploadAlertImage(photo);
+        imageUrls.push(image_url);
+      }
+
       await createAlert({
         title: title.trim(),
         alert_type: 'hazard',
         category: selectedType,
         description: memo.trim() || undefined,
         lot_name: selectedLot || undefined,
+        image_urls: imageUrls.length ? imageUrls : undefined,
       });
       //commuter reports go to the admin review queue, not straight to the feed
       Alert.alert(
@@ -117,6 +181,25 @@ export default function ReportHazardScreen() {
           </View>
           <Ionicons name="chevron-forward" size={18} color="#aaa" />
         </TouchableOpacity>
+
+        {/* Photos — optional evidence for the report */}
+        <Text style={styles.photosLabel}>PHOTOS (OPTIONAL)</Text>
+        <View style={styles.photosRow}>
+          {photos.map(photo => (
+            <View key={photo.uri} style={styles.photoThumbWrap}>
+              <Image source={{ uri: photo.uri }} style={styles.photoThumb} />
+              <TouchableOpacity style={styles.photoRemove} onPress={() => removePhoto(photo.uri)}>
+                <Ionicons name="close" size={14} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          ))}
+          {photos.length < MAX_PHOTOS && (
+            <TouchableOpacity style={styles.addPhotoButton} onPress={handleAddPhotoPress}>
+              <Ionicons name="camera-outline" size={24} color="#00853E" />
+              <Text style={styles.addPhotoText}>ADD</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         <View style={styles.postRow}>
           <TouchableOpacity
@@ -225,6 +308,34 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   lotSelectorLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+
+  photosLabel: { fontSize: 12, fontWeight: '700', color: '#888', marginBottom: 10, letterSpacing: 0.5 },
+  photosRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 32 },
+  photoThumbWrap: { width: 80, height: 80, borderRadius: 8, overflow: 'visible' },
+  photoThumb: { width: 80, height: 80, borderRadius: 8, backgroundColor: '#e0e0e0' },
+  photoRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#E74C3C',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addPhotoButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#00853E',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  addPhotoText: { fontSize: 11, fontWeight: '800', color: '#00853E' },
 
   postRow: { alignItems: 'flex-end' },
   postButton: {

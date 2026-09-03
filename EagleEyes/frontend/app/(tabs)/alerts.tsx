@@ -8,7 +8,7 @@ import {
   Image,
   RefreshControl,
 } from 'react-native';
-import { getAlerts } from '../../api/alerts';
+import { getAlerts, BASE_URL } from '../../api/alerts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -24,6 +24,7 @@ interface AlertItem {
   section: 'Today' | 'Yesterday' | 'Earlier';
   type: AlertType;
   lotName?: string;
+  imageUrls?: string[];
   unread?: boolean;
   important?: boolean;
 }
@@ -64,6 +65,7 @@ function toAlertItem(raw: any): AlertItem {
     section: sectionFor(raw.created_at),
     type: raw.alert_type === 'hazard' ? 'warning' : raw.alert_type === 'event' ? 'event' : 'info',
     lotName: raw.lot_name || undefined,
+    imageUrls: Array.isArray(raw.image_urls) && raw.image_urls.length ? raw.image_urls : undefined,
     unread: sectionFor(raw.created_at) === 'Today',
     important: raw.alert_type === 'hazard' || (raw.upvotes ?? 0) >= 2,
   };
@@ -184,6 +186,14 @@ function AlertCard({ alert }: { alert: AlertItem }) {
           </View>
         )}
         <Text style={styles.cardDescription}>{alert.description}</Text>
+
+        {!!alert.imageUrls?.length && (
+          <View style={styles.cardPhotoRow}>
+            {alert.imageUrls.map((url) => (
+              <Image key={url} source={{ uri: `${BASE_URL}${url}` }} style={styles.cardPhoto} />
+            ))}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -464,5 +474,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: '#64748B',
+  },
+  cardPhotoRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  cardPhoto: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    backgroundColor: '#E5E7EB',
   },
 });

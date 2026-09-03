@@ -2,10 +2,12 @@ import httpx
 import os
 import secrets
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import FastAPI, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.staticfiles import StaticFiles
 from jose import jwt, JWTError 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, text
@@ -18,13 +20,14 @@ from app.schemas import UserCreate, AlertResponse, AlertCreate, AlertApprove, Fo
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin
 from app.core.email import send_password_reset_email
-from typing import List
+from typing import List, Optional
 Base.metadata.create_all(bind=engine)
 #create_all does not add new columns to existing tables, so patch them in here.
 #Existing alerts predate the approval flow and stay visible as 'published'.
 with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'published'"))
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS lot_name VARCHAR"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS image_urls JSON"))
     _conn.commit()
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -35,6 +38,29 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
 )
+
+# Photos attached to hazard/event reports are saved to disk here and served back at /uploads/<filename>
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+MAX_IMAGE_SIZE = 8 * 1024 * 1024  # 8MB
+MAX_IMAGES_PER_ALERT = 3
+#extension is picked from the sniffed content, never the client-supplied filename
+IMAGE_SIGNATURES = [
+    (b"\xff\xd8\xff", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", ".png"),
+    (b"RIFF", ".webp"),  # confirmed further below (bytes 8-12 must read "WEBP")
+]
+
+def _sniff_image_extension(header: bytes) -> Optional[str]:
+    """Identify JPEG/PNG/WEBP from the actual file bytes, not the client-supplied content-type."""
+    for signature, ext in IMAGE_SIGNATURES:
+        if header.startswith(signature):
+            if ext == ".webp" and header[8:12] != b"WEBP":
+                continue
+            return ext
+    return None
 parkzen_auth_cache = {
     "token": None,
     "expires_at": None
@@ -442,19 +468,45 @@ def get_pending_alerts(
             .order_by(desc(Alert.created_at))\
             .all()
     
+@app.post("/alerts/upload-image")
+async def upload_alert_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """Saves a single photo for a hazard/event report and returns its URL.
+    Called once per selected photo before POST /alerts, which attaches the returned URLs."""
+    contents = await file.read()
+    if len(contents) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="Image must be smaller than 8MB")
+
+    ext = _sniff_image_extension(contents[:12])
+    if ext is None:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WEBP images are allowed")
+
+    #random filename: never trust or reuse the client-supplied name
+    filename = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(UPLOAD_DIR, filename), "wb") as f:
+        f.write(contents)
+
+    return {"image_url": f"/uploads/{filename}"}
+
 @app.post("/alerts", response_model=AlertResponse)
 def create_alert(
     alert_data: AlertCreate,
     db: Session= Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if alert_data.image_urls and len(alert_data.image_urls) > MAX_IMAGES_PER_ALERT:
+        raise HTTPException(status_code=400, detail=f"A report can include at most {MAX_IMAGES_PER_ALERT} photos")
+
     #admin posts go live immediately; commuter reports wait for admin review
     new_alert = Alert(
-        title=alert_data.title.upper(), 
+        title=alert_data.title.upper(),
         alert_type=alert_data.alert_type.lower(),
         category=alert_data.category,
         description=alert_data.description,
         lot_name=alert_data.lot_name,
+        image_urls=alert_data.image_urls or [],
         status="published" if current_user.role == "admin" else "pending"
     )
     db.add(new_alert)

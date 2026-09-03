@@ -33,6 +33,7 @@ pip-log.txt
 .pytest_cache/
 *.db
 *.sqlite3
+backend/static/uploads/
 
 # =========================
 # Frontend: Node.js / React Native / Expo
@@ -44,6 +45,7 @@ yarn-error.log*
 .expo/
 dist/
 build/
+.gradle/
 .next/
 out/
 

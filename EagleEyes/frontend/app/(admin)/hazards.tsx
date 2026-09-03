@@ -1,13 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Image, Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, router, useFocusEffect } from 'expo-router';
-import MapView, { Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
-import { getAlerts, getPendingAlerts, approveAlert, deleteAlert } from '../../api/alerts';
+import { getAlerts, getPendingAlerts, approveAlert, deleteAlert, BASE_URL } from '../../api/alerts';
 import { useLots } from '../../context/LotsContext';
+import LotMiniMap from '../../components/LotMiniMap';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,6 +114,9 @@ function HazardDetail({
   //admins can edit a pending report before publishing it
   const [editTitle, setEditTitle] = useState(hazard.title ?? '');
   const [editDescription, setEditDescription] = useState(hazard.description ?? '');
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+
+  const photoUrls: string[] = Array.isArray(hazard.image_urls) ? hazard.image_urls : [];
 
   //find the reported lot's polygon so the detail can show it on a real map
   const { lots } = useLots();
@@ -172,22 +175,11 @@ function HazardDetail({
           )}
 
           {reportedLot && lotRegion ? (
-            <MapView
+            <LotMiniMap
               style={styles.lotMap}
-              provider={PROVIDER_GOOGLE}
-              initialRegion={lotRegion}
-              scrollEnabled={false}
-              zoomEnabled={false}
-              pitchEnabled={false}
-              rotateEnabled={false}
-            >
-              <Polygon
-                coordinates={reportedLot.coordinates}
-                fillColor="rgba(0,133,62,0.45)"
-                strokeColor="#00853E"
-                strokeWidth={3}
-              />
-            </MapView>
+              coordinates={reportedLot.coordinates}
+              region={lotRegion}
+            />
           ) : (
             <View style={styles.mapPlaceholder}>
               <Ionicons name="map-outline" size={38} color="#bbb" />
@@ -201,16 +193,21 @@ function HazardDetail({
           STUDENT REPORT(S): {hazard.upvotes}
         </Text>
 
-        <View style={styles.pictureRow}>
+        <Text style={styles.locationLabel}>PHOTOS POSTED BY STUDENT:</Text>
+        {photoUrls.length > 0 ? (
+          <View style={styles.pictureRow}>
+            {photoUrls.map(url => (
+              <TouchableOpacity key={url} onPress={() => setPreviewUri(`${BASE_URL}${url}`)} activeOpacity={0.85}>
+                <Image source={{ uri: `${BASE_URL}${url}` }} style={styles.pictureThumb} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
           <View style={styles.picturePlaceholder}>
             <Ionicons name="image-outline" size={30} color="#bbb" />
-            <Text style={styles.pictureLabel}>PICTURE POSTED{'\n'}BY STUDENT</Text>
+            <Text style={styles.pictureLabel}>NO PHOTOS SUBMITTED</Text>
           </View>
-          <View style={styles.picturePlaceholder}>
-            <Ionicons name="image-outline" size={30} color="#bbb" />
-            <Text style={styles.pictureLabel}>PICTURE POSTED{'\n'}BY STUDENT</Text>
-          </View>
-        </View>
+        )}
       </ScrollView>
 
       <View style={[styles.actionRow, { paddingBottom: insets.bottom + 12 }]}>
@@ -226,6 +223,16 @@ function HazardDetail({
           </TouchableOpacity>
         )}
       </View>
+
+      <Modal visible={!!previewUri} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.previewOverlay}
+          activeOpacity={1}
+          onPress={() => setPreviewUri(null)}
+        >
+          {previewUri && <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" />}
+        </TouchableOpacity>
+      </Modal>
     </>
   );
 }
@@ -488,16 +495,23 @@ const styles = StyleSheet.create({
   mapPlaceholderText: { fontSize: 13, color: '#aaa', fontWeight: '600', marginTop: 8 },
   mapPlaceholderSub: { fontSize: 11, color: '#bbb', marginTop: 4 },
   studentCount: { fontSize: 14, fontWeight: '700', color: '#333', textTransform: 'uppercase', marginBottom: 16 },
-  pictureRow: { flexDirection: 'row', gap: 12 },
+  pictureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  pictureThumb: { width: 110, height: 110, borderRadius: 8, backgroundColor: '#e8e8e8' },
   picturePlaceholder: {
-    flex: 1,
-    height: 130,
+    height: 100,
     backgroundColor: '#e8e8e8',
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   pictureLabel: { fontSize: 11, color: '#999', fontWeight: '700', textAlign: 'center', marginTop: 8 },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewImage: { width: '100%', height: '80%' },
   actionRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
