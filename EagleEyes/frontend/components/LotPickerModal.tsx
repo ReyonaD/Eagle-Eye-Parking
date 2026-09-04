@@ -31,8 +31,11 @@ function centroid(coords: { latitude: number; longitude: number }[]) {
   return { latitude: lat, longitude: lon };
 }
 
+//US units: short distances in feet, longer ones in miles
 function formatDistance(m: number) {
-  return m < 950 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
+  const feet = m * 3.28084;
+  if (feet < 1000) return `${Math.round(feet / 10) * 10} ft`;
+  return `${(m / 1609.344).toFixed(1)} mi`;
 }
 
 export default function LotPickerModal({
