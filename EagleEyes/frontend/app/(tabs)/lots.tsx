@@ -95,7 +95,14 @@ function LotCard({ lot, onPress }: { lot: any; onPress: (lot: any) => void }) {
         </Text>
       </View>
       <View style={styles.cardMiddle}>
-        <Text style={styles.lotName}>{lot.name}</Text>
+        {lot.name === 'Highland Street Garage' ? (
+          <View style={styles.lotNameTag}>
+            <Ionicons name="location-outline" size={14} color="#006b32" />
+            <Text style={styles.lotNameTagText} numberOfLines={1}>{lot.name}</Text>
+          </View>
+        ) : (
+          <Text style={styles.lotName}>{lot.name}</Text>
+        )}
         <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
       </View>
       <View style={styles.cardRight}>
@@ -498,6 +505,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700', // Made slightly bolder
     color: '#1a1a1a',
+  },
+  lotNameTag: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    maxWidth: '100%',
+    backgroundColor: '#E6F4EC',
+    borderColor: '#A8D5B8',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    gap: 4,
+  },
+  lotNameTagText: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#006b32',
   },
   percentText: {
     fontSize: 13,

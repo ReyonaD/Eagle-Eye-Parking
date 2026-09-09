@@ -32,6 +32,23 @@ function WebPolygon({paths, options, onClick}: {paths: any, options: any, onClic
 
     return null;
 }
+
+function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
+  if (coordinates.length === 0) return null;
+
+  const totals = coordinates.reduce(
+    (center, coordinate) => ({
+      latitude: center.latitude + coordinate.latitude,
+      longitude: center.longitude + coordinate.longitude,
+    }),
+    { latitude: 0, longitude: 0 },
+  );
+
+  return {
+    lat: totals.latitude / coordinates.length,
+    lng: totals.longitude / coordinates.length,
+  };
+}
 //Main-map component
 interface EagleMapProps {
   liveLots: any[];
@@ -72,25 +89,33 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
               }));
               
               return (
-                <WebPolygon 
-                  key={lot.id} 
-                  paths={webPaths} 
-                  options={{
-                    fillColor: lot.fillColor,
-                    strokeColor: lot.strokeColor,
-                    strokeWeight: 2,
-                    clickable: true,
-                  }}
-                  onClick={() => {
-                    // Match the mobile Alert popup format
-                    window.alert(
-                      `${lot.name}\n` +
-                      `Permits: ${lot.permits}\n` +
-                      `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
-                      `Is Full: ${lot.isFull ? 'Yes' : 'No'}`
-                    );
-                  }}
-                />
+                <React.Fragment key={lot.id}>
+                  <WebPolygon 
+                    paths={webPaths} 
+                    options={{
+                      fillColor: lot.fillColor,
+                      strokeColor: lot.strokeColor,
+                      strokeWeight: 2,
+                      clickable: true,
+                    }}
+                    onClick={() => {
+                      window.alert(
+                        `${lot.name}\n` +
+                        `Permits: ${lot.permits}\n` +
+                        `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
+                        `Is Full: ${lot.isFull ? 'Yes' : 'No'}`
+                      );
+                    }}
+                  />
+                  {lot.isVisible !== false && (() => {
+                    const center = getLotCenter(lot.coordinates);
+                    return center ? (
+                      <Marker position={center}>
+                        <div style={styles.hsgMarker}>{lot.tag}</div>
+                      </Marker>
+                    ) : null;
+                  })()}
+                </React.Fragment>
               );
             })}
           </Map>
@@ -143,6 +168,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#d32f2f',
     fontWeight: 'bold'
+  },
+  hsgMarker: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#BDBDBD',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    color: '#333333',
+    fontSize: 11,
+    fontWeight: '700',
+    boxSizing: 'border-box',
   },
   findCarButton: {
     position: 'absolute', 
