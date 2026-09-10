@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,8 @@ import { router } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
 import { openDirections } from '../../utils/navigation';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
+const PAGE_SIZE = 10; // Number of lots to load per page
+
 
 const STATUS_COLOR: Record<AvailabilityStatus, string> = {
   'Available': '#00853E',
@@ -203,6 +205,8 @@ export default function LotsScreen() {
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [permitPickerVisible, setPermitPickerVisible] = useState(false);
   const [availabilityPickerVisible, setAvailabilityPickerVisible] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const listRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
   const { lots, isLoading, lastRefreshAt } = useLots();
 
@@ -234,6 +238,36 @@ export default function LotsScreen() {
       return true;
     });
   }, [lots, query, permitFilter, availabilityFilter]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginatedLots = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage]);
+  const visiblePageNumbers = useMemo(() => {
+    const maxButtons = 5;
+    const count = Math.min(totalPages, maxButtons);
+    let start = Math.max(1, currentPage - Math.floor(count / 2));
+    if (start + count - 1 > totalPages) {
+      start = Math.max(1, totalPages - count + 1);
+    }
+    return Array.from({ length: count }, (_, index) => start + index);
+  }, [totalPages, currentPage]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, permitFilter, availabilityFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  const handlePageChange = (page: number) => {
+    const nextPage = Math.min(Math.max(1, page), totalPages);
+    setCurrentPage(nextPage);
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  };
+  
 
   const handleLotPress = (lot: any) => {
     try {
@@ -263,7 +297,8 @@ export default function LotsScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={['right', 'left']}>
       <FlatList
-        data={filtered}
+        ref={listRef}
+        data={paginatedLots}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <LotCard lot={item} onPress={handleLotPress} />}
         ListHeaderComponent={
@@ -287,6 +322,92 @@ export default function LotsScreen() {
         ListEmptyComponent={
           <Text style={styles.emptyText}>No lots match your search.</Text>
         }
+ListFooterComponent={// Pagination Controls
+  filtered.length > 0 ? (
+    <View style={styles.paginationContainer}>
+      <Text style={styles.paginationSummary}>
+        Showing {(currentPage - 1) * PAGE_SIZE + 1}-
+        {Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} lots
+      </Text>
+
+      <View style={styles.paginationRow}>
+        <TouchableOpacity
+          style={[
+            styles.pageButton,
+            currentPage === 1 && styles.pageButtonDisabled,
+          ]}
+          onPress={() => handlePageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+        >
+          <Ionicons
+            name="chevron-back"
+            size={18}
+            color={currentPage === 1 ? '#aaa' : '#00853E'}
+          />
+
+          <Text
+            style={[
+              styles.pageButtonText,
+              currentPage === 1 && styles.pageButtonTextDisabled,
+            ]}
+          >
+            Prev
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.pageNumbers}>
+          {visiblePageNumbers.map((page) => (
+            <TouchableOpacity
+              key={page}
+              style={[
+                styles.pageNumberButton,
+                page === currentPage && styles.pageNumberButtonActive,
+              ]}
+              onPress={() => handlePageChange(page)}
+            >
+              <Text
+                style={[
+                  styles.pageNumberText,
+                  page === currentPage && styles.pageNumberTextActive,
+                ]}
+              >
+                {page}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.pageButton,
+            currentPage === totalPages && styles.pageButtonDisabled,
+          ]}
+          onPress={() => handlePageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+        >
+          <Text
+            style={[
+              styles.pageButtonText,
+              currentPage === totalPages && styles.pageButtonTextDisabled,
+            ]}
+          >
+            Next
+          </Text>
+
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color={currentPage === totalPages ? '#aaa' : '#00853E'}
+          />
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.pageIndicator}>
+        Page {currentPage} of {totalPages}
+      </Text>
+    </View>
+  ) : null
+}
         keyboardShouldPersistTaps="handled"
       />
 
@@ -532,6 +653,93 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 15,
   },
+  // --- PAGINATION ---
+paginationContainer: {
+  alignItems: 'center',
+  paddingTop: 10,
+  paddingBottom: 20,
+  gap: 6,
+},
+
+paginationSummary: {
+  fontSize: 12,
+  color: '#777',
+  fontWeight: '500',
+},
+
+paginationRow: {
+  width: '100%',
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 6,
+},
+
+pageButton: {
+  minHeight: 36,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingHorizontal: 10,
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: '#d8e8df',
+  backgroundColor: '#fff',
+},
+
+pageButtonText: {
+  fontSize: 14,
+  color: '#00853E',
+  fontWeight: '600',
+},
+
+pageButtonDisabled: {
+  borderColor: '#e0e0e0',
+  backgroundColor: '#f8f8f8',
+},
+
+pageButtonTextDisabled: {
+  color: '#aaa',
+},
+
+pageNumbers: {
+  flex: 1,
+  flexDirection: 'row',
+  justifyContent: 'center',
+  gap: 6,
+},
+
+pageNumberButton: {
+  minWidth: 32,
+  height: 32,
+  justifyContent: 'center',
+  alignItems: 'center',
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: '#d8e8df',
+  backgroundColor: '#fff',
+},
+
+pageNumberButtonActive: {
+  backgroundColor: '#00853E',
+  borderColor: '#00853E',
+},
+
+pageNumberText: {
+  fontSize: 14,
+  color: '#00853E',
+  fontWeight: '600',
+},
+
+pageNumberTextActive: {
+  color: '#fff',
+},
+
+pageIndicator: {
+  fontSize: 12,
+  color: '#777',
+  marginTop: 4,
+},
 
   // --- LOT CARD ---
   card: {
