@@ -13,24 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Mock user data
-const MOCK_USER = {
-  name: 'Student User',
-  email: 'student@unt.edu',
-  phone: '(000) 000-0000',
-  permit: {
-    type: 'E',
-    status: 'Active',
-    validUntil: 'May 15, 2026',
-    allowedLots: [],
-  },
-  savedLots: [
-    { id: '1', name: 'Lot 20', percentOpen: 80 },
-    { id: '2', name: 'Lot 14', percentOpen: 62 },
-    { id: '3', name: 'Lot 11', percentOpen: 10 },
-    { id: '4', name: 'Lot 1',  percentOpen: 3  },
-  ],
-};
+import { useUser } from '../../context/UserContext';
 // function TopBar() {
 //   const router = useRouter();
 //   return (
@@ -58,9 +41,10 @@ interface MenuRowProps {
   value?: string;
   onPress: () => void;
   danger?: boolean;
+  showChevron?: boolean;
 }
 
-function MenuRow({ icon, label, value, onPress, danger = false }: MenuRowProps) {
+function MenuRow({ icon, label, value, onPress, danger = false, showChevron = true }: MenuRowProps) {
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.5}>
       <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
@@ -69,7 +53,7 @@ function MenuRow({ icon, label, value, onPress, danger = false }: MenuRowProps) 
       <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
       <View style={styles.rowRight}>
         {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        {!danger && <Ionicons name="chevron-forward" size={27} color="#ccc" />}
+        {!danger && showChevron && <Ionicons name="chevron-forward" size={27} color="#ccc" />}
       </View>
     </TouchableOpacity>
   );
@@ -93,7 +77,7 @@ function Divider() {
 // Main screen
 export default function ProfileScreen() {
   const router = useRouter();
-  const [user] = useState(MOCK_USER);
+  const { user } = useUser();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const handleLogout = () => {
@@ -108,14 +92,6 @@ export default function ProfileScreen() {
         },
       },
     ]);
-  };
-
-  // Availability color based on SRS thresholds
-  const availabilityColor = (percentOpen: number) => {
-    const percentFull = 100 - percentOpen;
-    if (percentFull < 85) return '#00853E';
-    if (percentFull < 95) return '#F5A623';
-    return '#D0021B';
   };
 
   return (
@@ -162,7 +138,6 @@ export default function ProfileScreen() {
               </Text>
             </View>
           </View>
-          <Text style={styles.permitExpiry}>Valid until {user.permit.validUntil}</Text>
           <View style={styles.permitLots}>
             {user.permit.allowedLots.map((lot) => (
               <View key={lot} style={styles.lotChip}>
@@ -172,32 +147,6 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Saved lots */}
-        <Section title="Saved Lots">
-          {user.savedLots.map((lot, index) => (
-            <React.Fragment key={lot.id}>
-              <TouchableOpacity
-                style={styles.row}
-                onPress={() => router.push('/profile/parking' as any)}
-                activeOpacity={0.5}
-              >
-                <View style={styles.rowIcon}>
-                  <Ionicons name="bookmark" size={27} color="#00853E" />
-                </View>
-                <Text style={styles.rowLabel}>{lot.name}</Text>
-                <View style={styles.rowRight}>
-                  <View style={[styles.availDot, { backgroundColor: availabilityColor(lot.percentOpen) }]} />
-                  <Text style={[styles.rowValue, { color: availabilityColor(lot.percentOpen) }]}>
-                    {lot.percentOpen}% open
-                  </Text>
-                  <Ionicons name="chevron-forward" size={27} color="#ccc" />
-                </View>
-              </TouchableOpacity>
-              {index < user.savedLots.length - 1 && <Divider />}
-            </React.Fragment>
-          ))}
-        </Section>
-
         {/* Personal information */}
         <Section title="Personal Information">
           <MenuRow
@@ -205,6 +154,7 @@ export default function ProfileScreen() {
             label="Full Name"
             value={user.name}
             onPress={() => router.push('/profile/details' as any)}
+            showChevron={false}
           />
           <Divider />
           <MenuRow
@@ -212,6 +162,7 @@ export default function ProfileScreen() {
             label="Email"
             value={user.email}
             onPress={() => router.push('/profile/details' as any)}
+            showChevron={false}
           />
           <Divider />
           <MenuRow
@@ -219,6 +170,7 @@ export default function ProfileScreen() {
             label="Phone"
             value={user.phone}
             onPress={() => router.push('/profile/details' as any)}
+            showChevron={false}
           />
         </Section>
 
@@ -229,12 +181,14 @@ export default function ProfileScreen() {
             label="Permit Details"
             value={`Type ${user.permit.type}`}
             onPress={() => router.push('/profile/parking' as any)}
+            showChevron={false}
           />
           <Divider />
           <MenuRow
             icon="car-outline"
             label="My Vehicles"
             onPress={() => router.push('/profile/parking' as any)}
+            showChevron={false}
           />
         </Section>
 

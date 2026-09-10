@@ -2,6 +2,7 @@ import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-rout
 import { useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LotsProvider } from '../context/LotsContext';
+import { UserProvider } from '../context/UserContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function RootLayout() {
@@ -53,15 +54,17 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <LotsProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="(admin)" />
-          <Stack.Screen name="login" />
-          <Stack.Screen name="register" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="forgot-password" />
-          <Stack.Screen name="verify-code" />
-          <Stack.Screen name="reset-password" />
-        </Stack>
+        <UserProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="(admin)" />
+            <Stack.Screen name="login" />
+            <Stack.Screen name="register" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="forgot-password" />
+            <Stack.Screen name="verify-code" />
+            <Stack.Screen name="reset-password" />
+          </Stack>
+        </UserProvider>
       </LotsProvider>
     </GestureHandlerRootView>
   );
