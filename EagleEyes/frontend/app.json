@@ -62,6 +62,13 @@
     "plugins": [
       "expo-router",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "EagleEyes needs access to your photos so you can attach pictures to a hazard report.",
+          "cameraPermission": "EagleEyes needs access to your camera so you can take a photo for a hazard report."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",

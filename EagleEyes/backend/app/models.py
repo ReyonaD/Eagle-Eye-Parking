@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, JSON
 from app.database import Base
 from datetime import datetime, timezone
 from app.database import Base
@@ -30,6 +30,12 @@ class Alert(Base):
     description = Column(String, nullable=True)
     #red bagde number for frontend display
     upvotes=Column(Integer, default=1)
+    #'published' = visible to commuters; 'pending' = waiting for admin review
+    status = Column(String, default="published", index=True)
+    #which parking lot the report refers to (picked by the commuter)
+    lot_name = Column(String, nullable=True)
+    #URLs (relative to the backend) of photos attached to the report
+    image_urls = Column(JSON, nullable=True, default=list)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 

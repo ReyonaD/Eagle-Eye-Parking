@@ -1,10 +1,11 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { apiFetch } from '../utils/webCompat';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 //REGISTER
 export const register = async (email, password) => {
-    const response = await fetch(`${BASE_URL}/register`, {
+    const response = await apiFetch(`${BASE_URL}/register`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ email, password }),
@@ -24,7 +25,7 @@ export const login = async (email, password) => {
         //FastAPI login requires form-urlencoded, NOT JSON!
         const formData = `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
         console.log("EXACT PACKAGE BEING SENT:", formData);
-        const res = await fetch(`${BASE_URL}/login`, {
+        const res = await apiFetch(`${BASE_URL}/login`, {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: formData,
@@ -65,7 +66,7 @@ export const promoteToAdmin = async (targetEmail) => {
     const token = await AsyncStorage.getItem('token');
     if (!token) { throw new Error("No authorization token found"); }
 
-    const response = await fetch(`${BASE_URL}/admin/users/${encodeURIComponent(targetEmail)}/promote')`, {
+    const response = await apiFetch(`${BASE_URL}/admin/users/${encodeURIComponent(targetEmail)}/promote`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json',
@@ -76,7 +77,7 @@ export const promoteToAdmin = async (targetEmail) => {
 }
 //FORGOT PASSWORD - request a reset email
 export const requestPasswordReset = async (email) => {
-    const response = await fetch(`${BASE_URL}/forgot-password`, {
+    const response = await apiFetch(`${BASE_URL}/forgot-password`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ email }),
@@ -93,7 +94,7 @@ export const requestPasswordReset = async (email) => {
 };
 //VERIFY RESET CODE - check the 6-digit code before asking for a new password
 export const verifyResetCode = async (email, code) => {
-    const response = await fetch(`${BASE_URL}/verify-reset-code`, {
+    const response = await apiFetch(`${BASE_URL}/verify-reset-code`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ email, code }),
@@ -109,7 +110,7 @@ export const verifyResetCode = async (email, code) => {
 };
 //RESET PASSWORD - submit email + 6-digit code + new password
 export const resetPassword = async (email, code, newPassword) => {
-    const response = await fetch(`${BASE_URL}/reset-password`, {
+    const response = await apiFetch(`${BASE_URL}/reset-password`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ email, code, new_password: newPassword }),
