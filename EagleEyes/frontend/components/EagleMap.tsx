@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
+import LotDetailsSheet from './LotDetailsSheet';
 import { Ionicons } from '@expo/vector-icons';
 // import { getParkedLocation, requestPermissions } from '../modules/parkzen-core';
 
@@ -12,7 +13,7 @@ interface EagleMapProps {
 const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }> = {
   "Main campus":     { latitude: 33.2110, longitude: -97.1475, latitudeDelta: 0.018, longitudeDelta: 0.018 },
   "Discovery Park":  { latitude: 33.2549, longitude: -97.1520, latitudeDelta: 0.018, longitudeDelta: 0.018 },
-  "Frisco Landing":  { latitude: 33.1511, longitude: -96.8238, latitudeDelta: 0.018, longitudeDelta: 0.018 },
+  "Frisco Landing":  { latitude: 33.1858, longitude: -96.8055, latitudeDelta: 0.018, longitudeDelta: 0.018 },
 };
 
 function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
@@ -35,6 +36,7 @@ function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
 export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
+  const [sheetLot, setSheetLot] = useState<any | null>(null);
 
 
   useEffect(() => {
@@ -90,12 +92,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
             tappable={lot.isVisible !== false}
             onPress={() => {
               if (lot.isVisible === false) return;
-              Alert.alert(
-                lot.name,
-                `Permits: ${lot.permits}\n` +
-                `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
-                `Is Full: ${lot.isFull ? 'Yes' : 'No'}\n\n`
-              );
+              setSheetLot(lot);
             }}
           />
         ))}
@@ -118,6 +115,13 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
           <Marker coordinate={parkedLocation} title="My Car" pinColor="#0000FF" />
         )}
       </MapView>
+
+      {/* LOT DETAILS BOTTOM SHEET */}
+      <LotDetailsSheet
+        lot={sheetLot}
+        visible={sheetLot !== null}
+        onClose={() => setSheetLot(null)}
+      />
 
       {/* ZOOM Controls */}
       <View style={styles.zoomControls}>

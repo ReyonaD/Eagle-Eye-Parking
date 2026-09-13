@@ -3,6 +3,7 @@ import React, { createContext, useState, useContext, ReactNode, useEffect} from 
 interface LotsContextType {
     lots: any[];
     isLoading: boolean;
+    lastRefreshAt: string | null;
     fetchLots: () => Promise<void>;
 }
 
@@ -90,11 +91,15 @@ interface LotsProviderProps {
 
 export function LotsProvider({ children }: { children : ReactNode }) {
     const [lots, setLots] = useState<any[]>([]);
-    const [isLoading, setIsLoading] = useState(true);//start fetching as app opens
+    const [isLoading, setIsLoading] = useState(true);
+    const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+    const hasLoadedOnce = React.useRef(false);
 
-    const fetchLots = async () => {
+    const fetchLots = async (showLoading = false) => {
     try {
-      setIsLoading(true);
+      if (showLoading) {
+        setIsLoading(true);
+      }
       const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
       
       const response = await fetch(`${BACKEND_URL}/api/lots`, {
@@ -120,15 +125,23 @@ export function LotsProvider({ children }: { children : ReactNode }) {
 
         if (mappedCoords.length < 3) return null;
 
-        // Read the Backend's Occupancy Estimate
+        // Read the backend occupancy estimate from either the source-specific field
+        // or the direct ParkZen estimate, and tolerate older payloads without
+        // lastUpdatedVia set.
         let emptyPercentage = null;
-        if (lot.occupancy && lot.occupancy.lastUpdatedVia) {
-           const method = lot.occupancy.lastUpdatedVia; // e.g., 'capstone_simulation'
-           if (lot.occupancy[method] && lot.occupancy[method].estimate !== undefined) {
-               // The backend estimate is % FULL (e.g., 0.85). We want % EMPTY.
-               const percentFullDecimal = lot.occupancy[method].estimate;
-               emptyPercentage = Math.round((1 - percentFullDecimal) * 100); 
-           }
+        const occupancy = lot.occupancy || {};
+        const method = occupancy.lastUpdatedVia || 'python-fusion';
+        const estimate =
+          typeof occupancy[method]?.estimate === 'number'
+            ? occupancy[method].estimate
+            : typeof occupancy.parkzenServerOccupancyEstimate === 'number'
+              ? occupancy.parkzenServerOccupancyEstimate
+              : typeof occupancy.lprEstimate === 'number'
+                ? occupancy.lprEstimate
+                : null;
+
+        if (typeof estimate === 'number') {
+          emptyPercentage = Math.round((1 - estimate) * 100);
         }
 
         // Translate Backend Status to UI Status
@@ -136,8 +149,12 @@ export function LotsProvider({ children }: { children : ReactNode }) {
         if (lot.infoSheetTitle === 'Full') {
           uiStatus = 'Full';
         } else if (lot.infoSheetTitle === 'Medium') {
-          uiStatus = 'Near Capacity'; // Maps the backend "Medium" to UI's yellow badge
+          uiStatus = 'Near Capacity';
+        } else if (lot.infoSheetTitle === 'No Data' || !estimate) {
+          uiStatus = 'No Data';
         }
+
+        const fillColor = lot.fillColor || '#808080';
 
         return {
           ...lot,
@@ -147,18 +164,23 @@ export function LotsProvider({ children }: { children : ReactNode }) {
           tag: getLotTag(lot, index),
           markerLabel: `${getPermitTag(lot)}, ${getLotTag(lot, index)}`,
           fillColor: lot.fillColor || 'rgba(53, 53, 53, 0.4)',
-          strokeColor: lot.fillColor === '#2ECC71' ? '#27AE60' : 
-                       lot.fillColor === '#F39C12' ? '#D68910' : 
+          strokeColor: lot.fillColor === '#2ECC71' ? '#27AE60' :
+                       lot.fillColor === '#F39C12' ? '#D68910' :
                        lot.fillColor === '#E74C3C' ? '#C0392B' : '#6c6b6b',
           coordinates: mappedCoords,
-          percentEmpty: emptyPercentage, // Now the UI has the exact number!
-          status: uiStatus,              // Now the UI has the exact string!
+          percentEmpty: emptyPercentage,
+          status: uiStatus,
+          lastUpdatedAt: lot.lastUpdatedAt || null,
+          sourceTimestampProvidedByParkzen: lot.sourceTimestampProvidedByParkzen === true,
+          captureTimeSource: lot.captureTimeSource || 'none',
+          backendFetchedAt: lot.backendFetchedAt || null,
           permitList: lot.permits && Array.isArray(lot.permits) ? lot.permits : [],
           permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(',') : 'Unknown'
         };
       }).filter((lot: any) => lot !== null);
 
       setLots(formattedLots);
+      setLastRefreshAt(new Date().toISOString());
     } catch (error) {
       console.error("Error fetching lots:", error);
       setLots([]);
@@ -167,12 +189,24 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     }
   };
 
-  // Automatically fetch when the app opens
+  // Refresh the lot data periodically so the map stays synchronized with ParkZen.
   useEffect(() => {
-    fetchLots();
+    fetchLots(true);
+
+    const intervalId = setInterval(() => {
+      fetchLots(false);
+    }, 30000);
+
+    return () => clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedOnce.current && lots.length > 0) {
+      hasLoadedOnce.current = true;
+    }
+  }, [lots]);
     return (
-        <LotsContext.Provider value={{ lots, isLoading, fetchLots}}>
+        <LotsContext.Provider value={{ lots, isLoading, lastRefreshAt, fetchLots}}>
             {children}
         </LotsContext.Provider>
     );

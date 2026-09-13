@@ -74,3 +74,52 @@ export const promoteToAdmin = async (targetEmail) => {
     });
 
 }
+//FORGOT PASSWORD - request a reset email
+export const requestPasswordReset = async (email) => {
+    const response = await fetch(`${BASE_URL}/forgot-password`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ email }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        let errorMessage = "Request failed.";
+        if (typeof data.detail === 'string') errorMessage = data.detail;
+        //validation errors come back as an array of objects; the only field here is email
+        else if (Array.isArray(data.detail)) errorMessage = "Please enter a valid email address.";
+        throw new Error(errorMessage);
+    }
+    return data;
+};
+//VERIFY RESET CODE - check the 6-digit code before asking for a new password
+export const verifyResetCode = async (email, code) => {
+    const response = await fetch(`${BASE_URL}/verify-reset-code`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ email, code }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        let errorMessage = "Verification failed.";
+        if (typeof data.detail === 'string') errorMessage = data.detail;
+        else if (Array.isArray(data.detail)) errorMessage = data.detail[0].msg;
+        throw new Error(errorMessage);
+    }
+    return data;
+};
+//RESET PASSWORD - submit email + 6-digit code + new password
+export const resetPassword = async (email, code, newPassword) => {
+    const response = await fetch(`${BASE_URL}/reset-password`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ email, code, new_password: newPassword }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        let errorMessage = "Reset failed.";
+        if (typeof data.detail === 'string') errorMessage = data.detail;
+        else if (Array.isArray(data.detail)) errorMessage = data.detail[0].msg;
+        throw new Error(errorMessage);
+    }
+    return data;
+};

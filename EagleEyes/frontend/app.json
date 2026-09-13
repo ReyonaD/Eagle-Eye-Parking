@@ -15,8 +15,14 @@
         "googleMapsApiKey": "AIzaSyAeKFvAPWQat4h6U_sMDIxERr8Oy2b4t8U"
       },
       "infoPlist": {
-        "UIBackgroundModes": ["location", "fetch", "processing"],
-        "BGTaskSchedulerPermittedIdentifiers": ["com.parkzen.refresh"],
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "processing"
+        ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.parkzen.refresh"
+        ],
         "NSLocationAlwaysAndWhenInUseUsageDescription": "EagleEyes needs your location to detect when you park on campus.",
         "NSLocationWhenInUseUsageDescription": "EagleEyes needs your location to show lots near you.",
         "NSLocationAlwaysUsageDescription": "EagleEyes needs background location to remember your parking spot.",
@@ -71,6 +77,19 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "39024e53-7f34-4924-87d9-257bfc49fc81"
+      }
+    },
+    "owner": "alperend",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/39024e53-7f34-4924-87d9-257bfc49fc81"
     }
   }
 }

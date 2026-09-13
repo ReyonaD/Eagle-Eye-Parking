@@ -34,13 +34,19 @@ import { SafeAreaView} from 'react-native-safe-area-context';
 // }
 export default function MapScreen() {
   //consume the global data
-  const { lots, isLoading } = useLots();
+  const { lots, isLoading, lastRefreshAt } = useLots();
   console.log("MapScreen Render - isLoading:", isLoading, "Lots count:", lots?.length);
+
+  const refreshLabel = lastRefreshAt
+    ? new Date(lastRefreshAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : 'Waiting for sync';
   // Dropdown States
   const [selectedCampus, setSelectedCampus] = useState("Main campus");
   const [openCampus, setOpenCampus] = useState(false);
   const [selectedPermit, setSelectedPermit] = useState("All Permits");
   const [openPermit, setOpenPermit] = useState(false);
+  // Measured bottom edge of the dropdown row; overlays anchor to it on any screen size
+  const [dropdownRowBottom, setDropdownRowBottom] = useState(0);
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -109,7 +115,10 @@ export default function MapScreen() {
      <SafeAreaView style={styles.container} edges={['right', 'left']}>
 
       {/* ROW: CAMPUS (left) + PERMIT (right) */}
-      <View style={styles.dropdownRow}>
+      <View
+        style={styles.dropdownRow}
+        onLayout={(e) => setDropdownRowBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+      >
         {/* CAMPUS TRIGGER */}
         <View style={[styles.dropdownWrapper, { marginRight: 8 }]}>
           <Text style={styles.dropdownLabel}>CAMPUS</Text>
@@ -129,6 +138,11 @@ export default function MapScreen() {
         </View>
       </View>
 
+      <View style={styles.liveStatusBar}>
+        <Ionicons name="time-outline" size={14} color="#5d6d7e" />
+        <Text style={styles.liveStatusText}>Last synced: {refreshLabel}</Text>
+      </View>
+
       {/* THE MAP AREA */}
       <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
         <EagleMap
@@ -140,7 +154,7 @@ export default function MapScreen() {
       {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
       {openCampus && (
         <FlatList
-          style={[styles.dropdownOverlay, styles.dropdownOverlayLeft]}
+          style={[styles.dropdownOverlay, styles.dropdownOverlayLeft, { top: dropdownRowBottom - 6 }]}
           data={campuses}
           keyExtractor={(item) => item}
           nestedScrollEnabled
@@ -158,7 +172,7 @@ export default function MapScreen() {
       )}
       {openPermit && (
         <FlatList
-          style={[styles.dropdownOverlay, styles.dropdownOverlayRight]}
+          style={[styles.dropdownOverlay, styles.dropdownOverlayRight, { top: dropdownRowBottom - 6 }]}
           data={permits}
           keyExtractor={(item) => item}
           nestedScrollEnabled
@@ -181,6 +195,22 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9f9f9' },
+
+  liveStatusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  liveStatusText: {
+    fontSize: 12,
+    color: '#5d6d7e',
+    fontWeight: '500',
+  },
 
   // Dropdown Row Layout (Must have high zIndex to float over map)
   dropdownRow: {
@@ -232,7 +262,6 @@ const styles = StyleSheet.create({
   },
   dropdownOverlay: {
     position: 'absolute',
-    top: 170,
     borderWidth: 1,
     borderColor: "#ccc",
     borderRadius: 8,
