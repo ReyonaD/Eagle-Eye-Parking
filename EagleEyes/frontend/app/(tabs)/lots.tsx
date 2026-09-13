@@ -97,12 +97,21 @@ function LotCard({ lot, onPress }: { lot: any; onPress: (lot: any) => void }) {
         </Text>
       </View>
       <View style={styles.cardMiddle}>
-        <Text style={styles.lotName}>{lot.name}</Text>
+        {lot.name === 'Highland Street Garage' ? (
+          <View style={styles.lotNameTag}>
+            <Ionicons name="location-outline" size={14} color="#006b32" />
+            <Text style={styles.lotNameTagText} numberOfLines={1}>{lot.name}</Text>
+          </View>
+        ) : (
+          <Text style={styles.lotName}>{lot.name}</Text>
+        )}
         <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
       </View>
       <View style={styles.cardRight}>
+     <View style={styles.statusContainer}>
         <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-        <Text style={[styles.statusText, { color: dotColor }]}>{lot.status}</Text>
+          <Text style={[styles.statusText, { color: dotColor }]}>{lot.status}</Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -367,7 +376,7 @@ export default function LotsScreen() {
                 </View>
 
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Available Spaces:</Text>
+                  <Text style={styles.detailLabel}>Available Occupancy:</Text>
                   <Text style={styles.detailValue}>
                     {typeof selectedLot.percentEmpty === 'number' ? `${selectedLot.percentEmpty}%` : 'Unknown'}
                   </Text>
@@ -561,31 +570,63 @@ const styles = StyleSheet.create({
   },
   cardMiddle: {
     flex: 1,
-    gap: 3,
+    paddingRight: 10,
   },
   lotName: {
     fontSize: 16,
     fontWeight: '700', // Made slightly bolder
     color: '#1a1a1a',
   },
+  lotNameTag: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    maxWidth: '100%',
+    backgroundColor: '#E6F4EC',
+    borderColor: '#A8D5B8',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    gap: 4,
+  },
+  lotNameTagText: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#006b32',
+  },
   percentText: {
     fontSize: 13,
     fontWeight: '600',
   },
   cardRight: {
+    width: 100, 
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    justifyContent: 'flex-start',
   },
   statusDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
+    marginRight: 2,
+    alignSelf: 'center',
+    paddingLeft: 10,
   },
   statusText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
-    textAlign: 'center',
-    maxWidth: 70,
+    textAlign: 'left',
+    maxWidth: 80,
+    flexShrink: 1,
+    flexWrap: 'wrap',
+    paddingLeft: 10,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
   },
 
   // --- PICKER MODAL ---
