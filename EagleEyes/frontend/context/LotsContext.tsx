@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect} from 'react';
+import { apiFetch } from '../utils/webCompat';
 //define the exact shape of data
 interface LotsContextType {
     lots: any[];
@@ -102,9 +103,9 @@ export function LotsProvider({ children }: { children : ReactNode }) {
       }
       const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
       
-      const response = await fetch(`${BACKEND_URL}/api/lots`, {
+      const response = await apiFetch(`${BACKEND_URL}/api/lots`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'}
+        headers: { 'Content-Type': 'application/json' }
       });
       
       if (!response.ok) throw new Error(`Backend returned ${response.status}`);

@@ -1,7 +1,6 @@
 import React, {useEffect, useRef} from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
 import { APIProvider, Map, Marker, useMap } from '@vis.gl/react-google-maps';
-import { Ionicons } from '@expo/vector-icons';
 
 function WebPolygon({paths, options, onClick}: {paths: any, options: any, onClick?: () => void}) {
     const map = useMap();
@@ -60,11 +59,6 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
   
   // Grab the API key from your .env file
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-
-  const handleFindMyCarWeb = () => {
-    // The web browser doesn't have ParkZen sensors
-    window.alert("The 'Find My Car' feature relies on physical device sensors and is only available on the iOS and Android apps.");
-  };
 
   return (
     <View style={styles.container}>
@@ -126,12 +120,6 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
         </View>
       )}
 
-      {/* FIND MY CAR BUTTON*/}
-      <TouchableOpacity style={styles.findCarButton} onPress={handleFindMyCarWeb}>
-        <Ionicons name="car" size={24} color="white" />
-        <Text style={styles.findCarText}>Find My Car</Text>
-      </TouchableOpacity>
-
       {/* CAPACITY INDICATOR AT BOTTOM*/}
       <View style={styles.capacityContainer}>
         <View style={styles.capacityRow}>
@@ -183,28 +171,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     boxSizing: 'border-box',
-  },
-  findCarButton: {
-    position: 'absolute', 
-    bottom: 100, 
-    alignSelf: 'center', 
-    backgroundColor: '#00853E',
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 14, 
-    paddingHorizontal: 24,
-    borderRadius: 30, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, 
-    shadowRadius: 5, 
-    elevation: 5,
-  },
-  findCarText: { 
-    color: 'white', 
-    fontWeight: 'bold', 
-    fontSize: 18, 
-    marginLeft: 10 
   },
   capacityContainer: {
     position: "absolute",

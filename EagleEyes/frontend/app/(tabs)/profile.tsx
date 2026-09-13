@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
-  Alert,
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from '../../utils/webCompat';
 // Mock user data
 const MOCK_USER = {
   name: 'Student User',
@@ -104,6 +104,7 @@ export function ProfileScreen({ showParking = true }: { showParking?: boolean })
         style: 'destructive',
         onPress: async () => {
           await AsyncStorage.removeItem('token');
+          await AsyncStorage.removeItem('role');
           router.replace('/login');
         },
       },
