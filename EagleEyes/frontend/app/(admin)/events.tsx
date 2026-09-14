@@ -76,8 +76,7 @@ export default function EventsScreen() {
     return toLocalDateString(parseUTC(eventItem.created_at)) < selected;
   }).slice(0, 5);
 
-
-  // ADD EVENT 
+  // ADD EVENT
 
   const handleSaveEvent = () => {
     if (!eventName || !startDate || !startTime || !endDate || !endTime) {
@@ -176,11 +175,11 @@ export default function EventsScreen() {
               <View style={styles.pastEventsWrapper}>
                 <View style={styles.divider} />
                 <Text style={styles.pastFeedTitle}>Previous Events</Text>
-                
+
                 {pastEvents.map((eventItem) => (
-                  <TouchableOpacity 
-                    key={`past-${eventItem.id}`} 
-                    style={[styles.card, styles.outdatedCard]} 
+                  <TouchableOpacity
+                    key={`past-${eventItem.id}`}
+                    style={[styles.card, styles.outdatedCard]}
                     onPress={() => Alert.alert('Past Event', 'This event has already concluded.')}
                   >
                     <View style={styles.cardHeader}>
@@ -191,11 +190,11 @@ export default function EventsScreen() {
                         <Text style={[styles.cardTitle, styles.outdatedText]}>{eventItem.title}</Text>
                       </View>
                     </View>
-                    
+
                     <Text style={[styles.cardTime, styles.outdatedText]}>
                       {formatDate(toLocalDateString(parseUTC(eventItem.created_at)))} • {parseUTC(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
-                    
+
                     <Text style={[styles.clickDetails, styles.outdatedText]}>CONCLUDED</Text>
                   </TouchableOpacity>
                 ))}
@@ -394,7 +393,7 @@ const styles = StyleSheet.create({
   cardTime: { fontSize: 12, color: '#555', marginBottom: 8, fontWeight: '600', textTransform: 'uppercase' },
   cardDesc: { fontSize: 14, color: '#444', marginBottom: 12, lineHeight: 20 },
   clickDetails: { fontSize: 11, color: '#666', fontStyle: 'italic', textAlign: 'right', fontWeight: 'bold' },
-  
+
   pastEventsWrapper: { marginTop: 8 },
   divider: { height: 1, backgroundColor: '#ddd', marginBottom: 16 },
   pastFeedTitle: { fontSize: 16, fontWeight: 'bold', color: '#888', marginBottom: 12, textTransform: 'uppercase' },
@@ -421,9 +420,9 @@ const styles = StyleSheet.create({
     color: '#00853E',
     marginBottom: 8,
   },
-  outdatedIconBox: { backgroundColor: '#e0e0e0' }, 
-  outdatedText: { color: '#888' }, 
-  
+  outdatedIconBox: { backgroundColor: '#e0e0e0' },
+  outdatedText: { color: '#888' },
+
   fab: {
     position: 'absolute',
     right: 20,
