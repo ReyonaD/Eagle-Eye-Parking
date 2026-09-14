@@ -11,14 +11,48 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
 import { openDirections } from '../../utils/navigation';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
-const PAGE_SIZE = 10; // Number of lots to load per page
+
+// Mobile loads just enough lots to fill the viewport, then appends more as
+// the user scrolls toward the bottom. Web instead pages through in fixed
+// chunks with Prev/Next controls.
+const LOAD_MORE_BATCH = 10; // Lots appended per scroll-triggered load (mobile)
+const PAGE_SIZE = 12; // Lots per page (web)
+const ESTIMATED_HEADER_HEIGHT = 190; // live status bar + search/filter header
+const ESTIMATED_CARD_ROW_HEIGHT = 86; // single-column card height + row gap
+const ESTIMATED_GRID_CARD_HEIGHT = 118; // stacked grid tile height + row gap
+const PINNED_SECTION_HEADER_HEIGHT = 40; // "Pinned" label + padding
+const PINNED_GRID_CARD_WIDTH = 240; // fixed width for pinned tiles in grid mode
+
+// A wide web viewport gets a multi-column card grid instead of one full-width
+// row per lot, so a laptop screen isn't mostly empty space either side.
+const GRID_BREAKPOINTS: { minWidth: number; columns: number }[] = [
+  { minWidth: 1400, columns: 4 },
+  { minWidth: 1000, columns: 3 },
+  { minWidth: 700, columns: 2 },
+];
+function getNumColumns(width: number): number {
+  if (Platform.OS !== 'web') return 1;
+  const match = GRID_BREAKPOINTS.find((bp) => width >= bp.minWidth);
+  return match ? match.columns : 1;
+}
+
+// Pin a lot on web with a tap on its pin icon; on native, long-press the
+// card since there's no room for a persistent icon in the list row.
+const PINNED_LOTS_STORAGE_KEY = 'pinnedLotIds';
+const PIN_HINT_SEEN_KEY = 'hasSeenPinHint';
+// Kept distinct from STATUS_COLOR so a pinned+Full lot doesn't read as one signal.
+const PIN_COLOR = '#2F6FED';
 
 
 const STATUS_COLOR: Record<AvailabilityStatus, string> = {
@@ -81,31 +115,121 @@ function getPermitBadgeInfo(permitList: string[], lotName?: string) {
   return { label, ...colors };
 }
 
-function LotCard({ lot, onPress }: { lot: any; onPress: (lot: any) => void }) {
+function LotCard({
+  lot,
+  isPinned,
+  layout = 'row',
+  onPress,
+  onTogglePin,
+}: {
+  lot: any;
+  isPinned: boolean;
+  layout?: 'row' | 'grid';
+  onPress: (lot: any) => void;
+  onTogglePin: (lot: any) => void;
+}) {
   const dotColor = STATUS_COLOR[lot.status as AvailabilityStatus] || STATUS_COLOR['Available'];
   const badge = getPermitBadgeInfo(lot.permitList || [], lot.name);
   const displayPercent = typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% Empty` : 'Live';
+  const isGrid = layout === 'grid';
+
+  const handleLongPress = () => {
+    if (Platform.OS === 'web') return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onTogglePin(lot);
+  };
+
+  const handlePinPress = (event: any) => {
+    event?.stopPropagation?.();
+    onTogglePin(lot);
+  };
+
+  const cardAccessibilityLabel = `${lot.name}, ${lot.status}${isPinned ? ', pinned' : ''}`;
+  const cardAccessibilityHint =
+    Platform.OS === 'web'
+      ? 'Opens lot details'
+      : 'Double tap to view details. Long-press to pin or unpin this lot.';
+
+  const pinButton =
+    Platform.OS === 'web' ? (
+      <TouchableOpacity
+        onPress={handlePinPress}
+        style={[styles.pinIcon, isPinned && styles.pinIconStuck]}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel={isPinned ? 'Unpin this lot' : 'Pin this lot'}
+        accessibilityHint="Pinned lots stay at the top of the list"
+      >
+        <Ionicons
+          name={isPinned ? 'pin' : 'pin-outline'}
+          size={20}
+          color={isPinned ? PIN_COLOR : '#c2c2c2'}
+        />
+      </TouchableOpacity>
+    ) : null;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={() => onPress(lot)} activeOpacity={0.7}>
-      <View style={[styles.permitBadge, { backgroundColor: badge.bg }]}>
-        <Text
-          style={[styles.permitBadgeText, { color: badge.text }]}
-          numberOfLines={2}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-        >
-          {badge.label}
-        </Text>
-      </View>
-      <View style={styles.cardMiddle}>
-        <Text style={styles.lotName}>{lot.name}</Text>
-        <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
-      </View>
-      <View style={styles.cardRight}>
-        <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-        <Text style={[styles.statusText, { color: dotColor }]}>{lot.status}</Text>
-      </View>
+    <TouchableOpacity
+      style={[styles.card, isGrid && styles.cardGrid]}
+      onPress={() => onPress(lot)}
+      onLongPress={Platform.OS === 'web' ? undefined : handleLongPress}
+      delayLongPress={500}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={cardAccessibilityLabel}
+      accessibilityHint={cardAccessibilityHint}
+    >
+      {pinButton}
+
+      {isGrid ? (
+        <>
+          <View style={[styles.permitBadge, { backgroundColor: badge.bg }]}>
+            <Text
+              style={[styles.permitBadgeText, { color: badge.text }]}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {badge.label}
+            </Text>
+          </View>
+          <View style={styles.gridNameRow}>
+            <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+            <Text style={styles.lotNameGrid} numberOfLines={2}>
+              {lot.name}
+            </Text>
+          </View>
+          <View style={styles.gridBottomRow}>
+            <Text style={[styles.statusText, { color: dotColor }]} numberOfLines={1}>
+              {lot.status}
+            </Text>
+            <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={[styles.permitBadge, { backgroundColor: badge.bg }]}>
+            <Text
+              style={[styles.permitBadgeText, { color: badge.text }]}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {badge.label}
+            </Text>
+          </View>
+          <View style={styles.cardMiddle}>
+            <Text style={styles.lotName}>{lot.name}</Text>
+            <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
+          </View>
+          <View style={styles.cardRight}>
+            <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+            <Text style={[styles.statusText, { color: dotColor }]} numberOfLines={1}>
+              {lot.status}
+            </Text>
+          </View>
+        </>
+      )}
     </TouchableOpacity>
   );
 }
@@ -205,10 +329,73 @@ export default function LotsScreen() {
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [permitPickerVisible, setPermitPickerVisible] = useState(false);
   const [availabilityPickerVisible, setAvailabilityPickerVisible] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [showPinHint, setShowPinHint] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const listRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
   const { lots, isLoading, lastRefreshAt } = useLots();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  const numColumns = getNumColumns(windowWidth);
+  const cardLayout = numColumns > 1 ? 'grid' : 'row';
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(PINNED_LOTS_STORAGE_KEY);
+        if (stored) setPinnedIds(new Set(JSON.parse(stored)));
+      } catch (error) {
+        console.error('Error loading pinned lots:', error);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    (async () => {
+      try {
+        const seen = await AsyncStorage.getItem(PIN_HINT_SEEN_KEY);
+        if (!seen) {
+          setShowPinHint(true);
+          await AsyncStorage.setItem(PIN_HINT_SEEN_KEY, 'true');
+        }
+      } catch (error) {
+        console.error('Error checking pin hint state:', error);
+      }
+    })();
+  }, []);
+
+  const togglePin = (lot: any) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(lot.id)) {
+        next.delete(lot.id);
+      } else {
+        next.add(lot.id);
+      }
+      AsyncStorage.setItem(PINNED_LOTS_STORAGE_KEY, JSON.stringify(Array.from(next))).catch(
+        (error) => console.error('Error saving pinned lots:', error)
+      );
+      return next;
+    });
+  };
+
+  const cardRowHeight = cardLayout === 'grid' ? ESTIMATED_GRID_CARD_HEIGHT : ESTIMATED_CARD_ROW_HEIGHT;
+
+  // The pinned section sits above the scrollable list and eats into the
+  // viewport, so account for its height when estimating a first screenful.
+  const pinnedPerRow =
+    cardLayout === 'grid' ? Math.max(1, Math.floor(windowWidth / (PINNED_GRID_CARD_WIDTH + 12))) : 1;
+  const pinnedRows = pinnedIds.size > 0 ? Math.ceil(pinnedIds.size / pinnedPerRow) : 0;
+  const pinnedSectionHeight = pinnedRows > 0 ? PINNED_SECTION_HEADER_HEIGHT + pinnedRows * cardRowHeight : 0;
+
+  // Enough rows (x columns) to fill the viewport, plus a couple extra so the
+  // user hits the scroll-triggered load before running out of content.
+  const rowsVisible =
+    Math.ceil((windowHeight - ESTIMATED_HEADER_HEIGHT - pinnedSectionHeight) / cardRowHeight) + 2;
+  const initialVisibleCount = Math.max(LOAD_MORE_BATCH, rowsVisible * numColumns);
+  const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
 
   const refreshLabel = lastRefreshAt
     ? new Date(lastRefreshAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -238,11 +425,23 @@ export default function LotsScreen() {
       return true;
     });
   }, [lots, query, permitFilter, availabilityFilter]);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginatedLots = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, currentPage]);
+
+  // Pinned lots render in their own fixed section above the scrollable list,
+  // so they're always visible regardless of scroll position.
+  const { pinnedLots, unpinnedLots } = useMemo(() => {
+    if (pinnedIds.size === 0) return { pinnedLots: [] as typeof filtered, unpinnedLots: filtered };
+    const pinned: typeof filtered = [];
+    const rest: typeof filtered = [];
+    filtered.forEach((lot) => (pinnedIds.has(lot.id) ? pinned : rest).push(lot));
+    return { pinnedLots: pinned, unpinnedLots: rest };
+  }, [filtered, pinnedIds]);
+
+  // Mobile: dynamically-growing slice loaded via scroll. Web: fixed-size page.
+  const visibleLots = unpinnedLots.slice(0, visibleCount);
+  const hasMoreToLoad = visibleCount < unpinnedLots.length;
+
+  const totalPages = Math.max(1, Math.ceil(unpinnedLots.length / PAGE_SIZE));
+  const paginatedLots = unpinnedLots.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const visiblePageNumbers = useMemo(() => {
     const maxButtons = 5;
     const count = Math.min(totalPages, maxButtons);
@@ -252,22 +451,36 @@ export default function LotsScreen() {
     }
     return Array.from({ length: count }, (_, index) => start + index);
   }, [totalPages, currentPage]);
+
+  const listData = isWeb ? paginatedLots : visibleLots;
+
   useEffect(() => {
-    setCurrentPage(1);
+    if (isWeb) {
+      setCurrentPage(1);
+    } else {
+      setVisibleCount(initialVisibleCount);
+    }
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, permitFilter, availabilityFilter]);
 
   useEffect(() => {
-    if (currentPage > totalPages) {
+    if (isWeb && currentPage > totalPages) {
       setCurrentPage(totalPages);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalPages, currentPage]);
+
+  const handleLoadMore = () => {
+    if (!hasMoreToLoad) return;
+    setVisibleCount((prev) => Math.min(prev + LOAD_MORE_BATCH, unpinnedLots.length));
+  };
 
   const handlePageChange = (page: number) => {
     const nextPage = Math.min(Math.max(1, page), totalPages);
     setCurrentPage(nextPage);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
-  
 
   const handleLotPress = (lot: any) => {
     try {
@@ -296,118 +509,170 @@ export default function LotsScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['right', 'left']}>
+      <View style={styles.liveStatusBar}>
+        <Ionicons name="time-outline" size={14} color="#5d6d7e" />
+        <Text style={styles.liveStatusText}>Last synced: {refreshLabel}</Text>
+      </View>
+      <FilterHeader
+        query={query}
+        onChangeQuery={setQuery}
+        permitFilter={permitFilter}
+        availabilityFilter={availabilityFilter}
+        onAllPermits={() => { setPermitFilter('all'); setAvailabilityFilter('all'); }}
+        onPermitPress={() => setPermitPickerVisible(true)}
+        onAvailabilityPress={() => setAvailabilityPickerVisible(true)}
+      />
+      {showPinHint ? (
+        <View style={styles.pinHintBanner}>
+          <Ionicons name="pin" size={16} color={PIN_COLOR} />
+          <Text style={styles.pinHintText}>Long-press a lot to pin it to the top</Text>
+          <TouchableOpacity
+            onPress={() => setShowPinHint(false)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss pin hint"
+          >
+            <Ionicons name="close" size={16} color="#999" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+      {pinnedLots.length > 0 ? (
+        <View style={styles.pinnedSection}>
+          <Text style={styles.pinnedSectionTitle}>Pinned</Text>
+          <View style={cardLayout === 'grid' ? styles.pinnedGridWrap : undefined}>
+            {pinnedLots.map((lot) => (
+              <View key={lot.id} style={cardLayout === 'grid' ? styles.pinnedGridCard : undefined}>
+                <LotCard
+                  lot={lot}
+                  isPinned
+                  layout={cardLayout}
+                  onPress={handleLotPress}
+                  onTogglePin={togglePin}
+                />
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
       <FlatList
+        key={`cols-${numColumns}`}
         ref={listRef}
-        data={paginatedLots}
+        data={listData}
+        numColumns={numColumns}
+        columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <LotCard lot={item} onPress={handleLotPress} />}
-        ListHeaderComponent={
-          <>
-            <View style={styles.liveStatusBar}>
-              <Ionicons name="time-outline" size={14} color="#5d6d7e" />
-              <Text style={styles.liveStatusText}>Last synced: {refreshLabel}</Text>
-            </View>
-            <FilterHeader
-              query={query}
-              onChangeQuery={setQuery}
-              permitFilter={permitFilter}
-              availabilityFilter={availabilityFilter}
-              onAllPermits={() => { setPermitFilter('all'); setAvailabilityFilter('all'); }}
-              onPermitPress={() => setPermitPickerVisible(true)}
-              onAvailabilityPress={() => setAvailabilityPickerVisible(true)}
-            />
-          </>
-        }
+        renderItem={({ item }) => (
+          <LotCard
+            lot={item}
+            isPinned={false}
+            layout={cardLayout}
+            onPress={handleLotPress}
+            onTogglePin={togglePin}
+          />
+        )}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No lots match your search.</Text>
+          <Text style={styles.emptyText}>
+            {filtered.length === 0 ? 'No lots match your search.' : 'All matching lots are pinned above.'}
+          </Text>
         }
-ListFooterComponent={// Pagination Controls
-  filtered.length > 0 ? (
-    <View style={styles.paginationContainer}>
-      <Text style={styles.paginationSummary}>
-        Showing {(currentPage - 1) * PAGE_SIZE + 1}-
-        {Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} lots
-      </Text>
+        ListFooterComponent={
+          filtered.length === 0 ? null : isWeb ? (
+            unpinnedLots.length > 0 ? (
+              <View style={styles.paginationContainer}>
+                <Text style={styles.paginationSummary}>
+                  Showing {(currentPage - 1) * PAGE_SIZE + 1}-
+                  {Math.min(currentPage * PAGE_SIZE, unpinnedLots.length)} of {unpinnedLots.length} lots
+                </Text>
 
-      <View style={styles.paginationRow}>
-        <TouchableOpacity
-          style={[
-            styles.pageButton,
-            currentPage === 1 && styles.pageButtonDisabled,
-          ]}
-          onPress={() => handlePageChange(currentPage - 1)}
-          disabled={currentPage === 1}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={18}
-            color={currentPage === 1 ? '#aaa' : '#00853E'}
-          />
+                <View style={styles.paginationRow}>
+                  <TouchableOpacity
+                    style={[styles.pageButton, currentPage === 1 && styles.pageButtonDisabled]}
+                    onPress={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={18}
+                      color={currentPage === 1 ? '#aaa' : '#00853E'}
+                    />
+                    <Text
+                      style={[styles.pageButtonText, currentPage === 1 && styles.pageButtonTextDisabled]}
+                    >
+                      Prev
+                    </Text>
+                  </TouchableOpacity>
 
-          <Text
-            style={[
-              styles.pageButtonText,
-              currentPage === 1 && styles.pageButtonTextDisabled,
-            ]}
-          >
-            Prev
-          </Text>
-        </TouchableOpacity>
+                  <View style={styles.pageNumbers}>
+                    {visiblePageNumbers.map((page) => (
+                      <TouchableOpacity
+                        key={page}
+                        style={[
+                          styles.pageNumberButton,
+                          page === currentPage && styles.pageNumberButtonActive,
+                        ]}
+                        onPress={() => handlePageChange(page)}
+                      >
+                        <Text
+                          style={[
+                            styles.pageNumberText,
+                            page === currentPage && styles.pageNumberTextActive,
+                          ]}
+                        >
+                          {page}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
 
-        <View style={styles.pageNumbers}>
-          {visiblePageNumbers.map((page) => (
-            <TouchableOpacity
-              key={page}
-              style={[
-                styles.pageNumberButton,
-                page === currentPage && styles.pageNumberButtonActive,
-              ]}
-              onPress={() => handlePageChange(page)}
-            >
-              <Text
-                style={[
-                  styles.pageNumberText,
-                  page === currentPage && styles.pageNumberTextActive,
-                ]}
-              >
-                {page}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.pageButton,
+                      currentPage === totalPages && styles.pageButtonDisabled,
+                    ]}
+                    onPress={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                  >
+                    <Text
+                      style={[
+                        styles.pageButtonText,
+                        currentPage === totalPages && styles.pageButtonTextDisabled,
+                      ]}
+                    >
+                      Next
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={currentPage === totalPages ? '#aaa' : '#00853E'}
+                    />
+                  </TouchableOpacity>
+                </View>
 
-        <TouchableOpacity
-          style={[
-            styles.pageButton,
-            currentPage === totalPages && styles.pageButtonDisabled,
-          ]}
-          onPress={() => handlePageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}
-        >
-          <Text
-            style={[
-              styles.pageButtonText,
-              currentPage === totalPages && styles.pageButtonTextDisabled,
-            ]}
-          >
-            Next
-          </Text>
-
-          <Ionicons
-            name="chevron-forward"
-            size={18}
-            color={currentPage === totalPages ? '#aaa' : '#00853E'}
-          />
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.pageIndicator}>
-        Page {currentPage} of {totalPages}
-      </Text>
-    </View>
-  ) : null
-}
+                <Text style={styles.pageIndicator}>
+                  Page {currentPage} of {totalPages}
+                </Text>
+              </View>
+            ) : null
+          ) : (
+            <View style={styles.paginationContainer}>
+              {hasMoreToLoad ? (
+                <>
+                  <ActivityIndicator size="small" color="#00853E" />
+                  <Text style={styles.paginationSummary}>
+                    Showing {pinnedLots.length + visibleLots.length} of {filtered.length} lots
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.paginationEndText}>
+                  You've reached the end — {filtered.length} lot{filtered.length === 1 ? '' : 's'} total
+                </Text>
+              )}
+            </View>
+          )
+        }
+        onEndReached={isWeb ? undefined : handleLoadMore}
+        onEndReachedThreshold={0.5}
         keyboardShouldPersistTaps="handled"
       />
 
@@ -556,7 +821,38 @@ ListFooterComponent={// Pagination Controls
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#f9f9f9', // Matches the app's overall background so white cards stand out
+  },
+
+  // Fixed above the scrollable list so pinned lots stay visible while
+  // scrolling through the rest.
+  pinnedSection: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    gap: 12,
+    backgroundColor: '#f9f9f9',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  pinnedSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#999',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  // Web grid mode: pinned tiles wrap left-to-right instead of stacking.
+  pinnedGridWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  pinnedGridCard: {
+    width: PINNED_GRID_CARD_WIDTH,
+  },
+  columnWrapper: {
+    gap: 12,
   },
 
   liveStatusBar: {
@@ -641,9 +937,29 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 
+  // --- PIN HINT BANNER ---
+  pinHintBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#EAF1FF',
+  },
+  pinHintText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#2F4F7A',
+    fontWeight: '500',
+  },
+
   // --- LIST CONTENT ---
   listContent: {
     paddingHorizontal: 16, // Matched Map Screen horizontal padding
+    paddingTop: 14, // Room for the pin icon poking above the first row's cards
     paddingBottom: 24,
     gap: 12,
   },
@@ -653,7 +969,7 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 15,
   },
-  // --- PAGINATION ---
+  // --- PAGINATION (web: numbered pages, mobile: infinite scroll footer) ---
 paginationContainer: {
   alignItems: 'center',
   paddingTop: 10,
@@ -665,6 +981,13 @@ paginationSummary: {
   fontSize: 12,
   color: '#777',
   fontWeight: '500',
+},
+
+paginationEndText: {
+  fontSize: 12,
+  color: '#999',
+  fontWeight: '600',
+  letterSpacing: 0.2,
 },
 
 paginationRow: {
@@ -755,6 +1078,48 @@ pageIndicator: {
     elevation: 2,
     gap: 12,
   },
+  // Web grid mode: a stacked tile instead of a full-width row, so multiple
+  // cards fit side by side on a wide screen.
+  cardGrid: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 6,
+  },
+  gridNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  // marginTop: 'auto' pins this to the card's bottom edge even when other
+  // cards in the same row have a taller (2-line) name above it.
+  gridBottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 'auto',
+  },
+  lotNameGrid: {
+    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1a1a1a',
+  },
+  // Pokes above the card's top edge, like a pin stuck through a paper on a board.
+  pinIcon: {
+    position: 'absolute',
+    top: -10,
+    left: 16,
+    zIndex: 3,
+  },
+  pinIconStuck: {
+    transform: [{ rotate: '-18deg' }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 4,
+  },
   permitBadge: {
     width: 46,
     height: 46,
@@ -793,7 +1158,7 @@ pageIndicator: {
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'center',
-    maxWidth: 70,
+    maxWidth: 100, // Wide enough for "Near Capacity" to stay on one line
   },
 
   // --- PICKER MODAL ---
