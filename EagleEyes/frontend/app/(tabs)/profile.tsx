@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
-  Alert,
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from '../../utils/webCompat';
 // Mock user data
 const MOCK_USER = {
   name: 'Student User',
@@ -91,7 +91,7 @@ function Divider() {
 }
 
 // Main screen
-export default function ProfileScreen() {
+export function ProfileScreen({ showParking = true }: { showParking?: boolean }) {
   const router = useRouter();
   const [user] = useState(MOCK_USER);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -104,6 +104,7 @@ export default function ProfileScreen() {
         style: 'destructive',
         onPress: async () => {
           await AsyncStorage.removeItem('token');
+          await AsyncStorage.removeItem('role');
           router.replace('/login');
         },
       },
@@ -222,21 +223,22 @@ export default function ProfileScreen() {
           />
         </Section>
 
-        {/* Parking */}
-        <Section title="Parking">
-          <MenuRow
-            icon="card-outline"
-            label="Permit Details"
-            value={`Type ${user.permit.type}`}
-            onPress={() => router.push('/profile/parking' as any)}
-          />
-          <Divider />
-          <MenuRow
-            icon="car-outline"
-            label="My Vehicles"
-            onPress={() => router.push('/profile/parking' as any)}
-          />
-        </Section>
+        {showParking && (
+          <Section title="Parking">
+            <MenuRow
+              icon="card-outline"
+              label="Permit Details"
+              value={`Type ${user.permit.type}`}
+              onPress={() => router.push('/profile/parking' as any)}
+            />
+            <Divider />
+            <MenuRow
+              icon="car-outline"
+              label="My Vehicles"
+              onPress={() => router.push('/profile/parking' as any)}
+            />
+          </Section>
+        )}
 
         {/* Preferences */}
         <Section title="Preferences">
@@ -282,6 +284,8 @@ export default function ProfileScreen() {
     </SafeAreaView>
   );
 }
+
+export default ProfileScreen;
 
 const styles = StyleSheet.create({
   screen: {

@@ -1,7 +1,6 @@
 import React, {useEffect, useRef} from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
 import { APIProvider, Map, Marker, useMap } from '@vis.gl/react-google-maps';
-import { Ionicons } from '@expo/vector-icons';
 
 function WebPolygon({paths, options, onClick}: {paths: any, options: any, onClick?: () => void}) {
     const map = useMap();
@@ -32,6 +31,23 @@ function WebPolygon({paths, options, onClick}: {paths: any, options: any, onClic
 
     return null;
 }
+
+function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
+  if (coordinates.length === 0) return null;
+
+  const totals = coordinates.reduce(
+    (center, coordinate) => ({
+      latitude: center.latitude + coordinate.latitude,
+      longitude: center.longitude + coordinate.longitude,
+    }),
+    { latitude: 0, longitude: 0 },
+  );
+
+  return {
+    lat: totals.latitude / coordinates.length,
+    lng: totals.longitude / coordinates.length,
+  };
+}
 //Main-map component
 interface EagleMapProps {
   liveLots: any[];
@@ -43,11 +59,6 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
   
   // Grab the API key from your .env file
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-
-  const handleFindMyCarWeb = () => {
-    // The web browser doesn't have ParkZen sensors
-    window.alert("The 'Find My Car' feature relies on physical device sensors and is only available on the iOS and Android apps.");
-  };
 
   return (
     <View style={styles.container}>
@@ -72,25 +83,33 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
               }));
               
               return (
-                <WebPolygon 
-                  key={lot.id} 
-                  paths={webPaths} 
-                  options={{
-                    fillColor: lot.fillColor,
-                    strokeColor: lot.strokeColor,
-                    strokeWeight: 2,
-                    clickable: true,
-                  }}
-                  onClick={() => {
-                    // Match the mobile Alert popup format
-                    window.alert(
-                      `${lot.name}\n` +
-                      `Permits: ${lot.permits}\n` +
-                      `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
-                      `Is Full: ${lot.isFull ? 'Yes' : 'No'}`
-                    );
-                  }}
-                />
+                <React.Fragment key={lot.id}>
+                  <WebPolygon 
+                    paths={webPaths} 
+                    options={{
+                      fillColor: lot.fillColor,
+                      strokeColor: lot.strokeColor,
+                      strokeWeight: 2,
+                      clickable: true,
+                    }}
+                    onClick={() => {
+                      window.alert(
+                        `${lot.name}\n` +
+                        `Permits: ${lot.permits}\n` +
+                        `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
+                        `Is Full: ${lot.isFull ? 'Yes' : 'No'}`
+                      );
+                    }}
+                  />
+                  {lot.isVisible !== false && (() => {
+                    const center = getLotCenter(lot.coordinates);
+                    return center ? (
+                      <Marker position={center}>
+                        <div style={styles.hsgMarker}>{lot.tag}</div>
+                      </Marker>
+                    ) : null;
+                  })()}
+                </React.Fragment>
               );
             })}
           </Map>
@@ -100,12 +119,6 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
           <Text style={styles.errorText}>Google Maps API Key is missing!</Text>
         </View>
       )}
-
-      {/* FIND MY CAR BUTTON*/}
-      <TouchableOpacity style={styles.findCarButton} onPress={handleFindMyCarWeb}>
-        <Ionicons name="car" size={24} color="white" />
-        <Text style={styles.findCarText}>Find My Car</Text>
-      </TouchableOpacity>
 
       {/* CAPACITY INDICATOR AT BOTTOM*/}
       <View style={styles.capacityContainer}>
@@ -144,27 +157,20 @@ const styles = StyleSheet.create({
     color: '#d32f2f',
     fontWeight: 'bold'
   },
-  findCarButton: {
-    position: 'absolute', 
-    bottom: 100, 
-    alignSelf: 'center', 
-    backgroundColor: '#00853E',
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 14, 
-    paddingHorizontal: 24,
-    borderRadius: 30, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, 
-    shadowRadius: 5, 
-    elevation: 5,
-  },
-  findCarText: { 
-    color: 'white', 
-    fontWeight: 'bold', 
-    fontSize: 18, 
-    marginLeft: 10 
+  hsgMarker: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#BDBDBD',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    color: '#333333',
+    fontSize: 11,
+    fontWeight: '700',
+    boxSizing: 'border-box',
   },
   capacityContainer: {
     position: "absolute",

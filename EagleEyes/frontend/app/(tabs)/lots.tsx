@@ -169,18 +169,17 @@ function LotCard({
     ) : null;
 
   return (
-    <TouchableOpacity
-      style={[styles.card, isGrid && styles.cardGrid]}
-      onPress={() => onPress(lot)}
-      onLongPress={Platform.OS === 'web' ? undefined : handleLongPress}
-      delayLongPress={500}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={cardAccessibilityLabel}
-      accessibilityHint={cardAccessibilityHint}
-    >
-      {pinButton}
-
+    <View style={[styles.cardWrapper, isGrid && styles.cardWrapperGrid]}>
+      <TouchableOpacity
+        style={[styles.card, isGrid && styles.cardGrid]}
+        onPress={() => onPress(lot)}
+        onLongPress={Platform.OS === 'web' ? undefined : handleLongPress}
+        delayLongPress={500}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={cardAccessibilityLabel}
+        accessibilityHint={cardAccessibilityHint}
+      >
       {isGrid ? (
         <>
           <View style={[styles.permitBadge, { backgroundColor: badge.bg }]}>
@@ -195,9 +194,16 @@ function LotCard({
           </View>
           <View style={styles.gridNameRow}>
             <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-            <Text style={styles.lotNameGrid} numberOfLines={2}>
-              {lot.name}
-            </Text>
+            {lot.name === 'Highland Street Garage' ? (
+              <View style={styles.lotNameTag}>
+                <Ionicons name="location-outline" size={14} color="#006b32" />
+                <Text style={styles.lotNameTagText} numberOfLines={1}>{lot.name}</Text>
+              </View>
+            ) : (
+              <Text style={styles.lotNameGrid} numberOfLines={2}>
+                {lot.name}
+              </Text>
+            )}
           </View>
           <View style={styles.gridBottomRow}>
             <Text style={[styles.statusText, { color: dotColor }]} numberOfLines={1}>
@@ -219,18 +225,29 @@ function LotCard({
             </Text>
           </View>
           <View style={styles.cardMiddle}>
-            <Text style={styles.lotName}>{lot.name}</Text>
+            {lot.name === 'Highland Street Garage' ? (
+              <View style={styles.lotNameTag}>
+                <Ionicons name="location-outline" size={14} color="#006b32" />
+                <Text style={styles.lotNameTagText} numberOfLines={1}>{lot.name}</Text>
+              </View>
+            ) : (
+              <Text style={styles.lotName}>{lot.name}</Text>
+            )}
             <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
           </View>
           <View style={styles.cardRight}>
-            <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-            <Text style={[styles.statusText, { color: dotColor }]} numberOfLines={1}>
-              {lot.status}
-            </Text>
+            <View style={styles.statusContainer}>
+              <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+              <Text style={[styles.statusText, { color: dotColor }]} numberOfLines={1}>
+                {lot.status}
+              </Text>
+            </View>
           </View>
         </>
       )}
-    </TouchableOpacity>
+      </TouchableOpacity>
+      {pinButton}
+    </View>
   );
 }
 
@@ -753,7 +770,7 @@ export default function LotsScreen() {
                 </View>
 
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Available Spaces:</Text>
+                  <Text style={styles.detailLabel}>Available Occupancy:</Text>
                   <Text style={styles.detailValue}>
                     {typeof selectedLot.percentEmpty === 'number' ? `${selectedLot.percentEmpty}%` : 'Unknown'}
                   </Text>
@@ -1065,6 +1082,15 @@ pageIndicator: {
 },
 
   // --- LOT CARD ---
+  // Wraps the card's TouchableOpacity so the pin button (also a button on
+  // web) is a sibling rather than a DOM descendant — nested <button> tags
+  // are invalid HTML and break hydration on web.
+  cardWrapper: {
+    position: 'relative',
+  },
+  cardWrapperGrid: {
+    flex: 1,
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1081,7 +1107,6 @@ pageIndicator: {
   // Web grid mode: a stacked tile instead of a full-width row, so multiple
   // cards fit side by side on a wide screen.
   cardGrid: {
-    flex: 1,
     flexDirection: 'column',
     alignItems: 'stretch',
     gap: 6,
@@ -1134,6 +1159,7 @@ pageIndicator: {
   },
   cardMiddle: {
     flex: 1,
+    paddingRight: 10,
     gap: 3,
   },
   lotName: {
@@ -1141,24 +1167,51 @@ pageIndicator: {
     fontWeight: '700', // Made slightly bolder
     color: '#1a1a1a',
   },
+  lotNameTag: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    maxWidth: '100%',
+    backgroundColor: '#E6F4EC',
+    borderColor: '#A8D5B8',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    gap: 4,
+  },
+  lotNameTagText: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#006b32',
+  },
   percentText: {
     fontSize: 13,
     fontWeight: '600',
   },
   cardRight: {
+    // No fixed width: "Near Capacity" needs to render on one line, so this
+    // shrink-wraps to whatever the status text needs instead of clipping it.
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
   },
   statusDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
+    marginRight: 2,
+    alignSelf: 'center',
   },
   statusText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
-    textAlign: 'center',
-    maxWidth: 100, // Wide enough for "Near Capacity" to stay on one line
+    textAlign: 'left',
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
 
   // --- PICKER MODAL ---

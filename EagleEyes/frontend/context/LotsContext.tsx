@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect} from 'react';
+import { apiFetch } from '../utils/webCompat';
 //define the exact shape of data
 interface LotsContextType {
     lots: any[];
@@ -9,6 +10,79 @@ interface LotsContextType {
 
 //create the context 
 const LotsContext = createContext<LotsContextType | undefined>(undefined);
+
+const LOT_TAGS: Record<string, string> = {
+  hsg: 'HSG',
+};
+
+const PERMIT_ABBREVIATIONS: Record<string, string> = {
+  'Premium Parking': 'PP',
+  'Motorcycle': 'MC',
+  'Faculty/Staff': 'F/S',
+  'Visitor': 'VIS',
+  'General': 'GEN',
+  'Economy': 'E',
+  'Student': 'STU',
+  'Service Vehicle': 'SV',
+};
+
+function getPermitTag(lot: any): string {
+  const permits = Array.isArray(lot.permits)
+    ? lot.permits
+    : typeof lot.permits === 'string'
+      ? lot.permits.split(',').map((permit: string) => permit.trim()).filter(Boolean)
+      : Array.isArray(lot.permitList)
+        ? lot.permitList
+        : [];
+  if (permits.length === 0) return '?';
+
+  const rawPermit = String(permits[0]).trim();
+  const strippedPermit = rawPermit.replace(/\s*\(.*$/, '').trim();
+  return PERMIT_ABBREVIATIONS[rawPermit]
+    || PERMIT_ABBREVIATIONS[strippedPermit]
+    || (strippedPermit.length <= 4 ? strippedPermit : strippedPermit.slice(0, 3).toUpperCase());
+}
+
+function getLotTag(lot: any, index: number): string {
+  const sourceId = String(lot.id || '').trim();
+  if (sourceId && LOT_TAGS[sourceId]) return LOT_TAGS[sourceId];
+
+  const sourceName = String(lot.lot_name || lot.name || '').trim();
+  const normalizedName = sourceName.toLowerCase();
+  if (normalizedName === 'hsg') return 'HSG';
+
+  const nameTag = sourceName.match(/\b(?:lot|garage)\s*([a-z0-9-]+)/i)?.[1];
+  if (nameTag) return nameTag.toUpperCase();
+
+  if (sourceId) return sourceId.replace(/[^a-z0-9]/gi, '').toUpperCase();
+  return `LOT-${index + 1}`;
+}
+
+function getLotDisplayName(lot: any, index: number): string {
+  const rawName = lot.lot_name || lot.name || '';
+  const rawId = String(lot.id || '').toLowerCase();
+  const normalizedName = String(rawName).toLowerCase();
+
+  if (normalizedName === 'hsg' || rawId === 'hsg') {
+    return 'HSG';
+  }
+
+  return rawName || `Lot ${index}`;
+}
+
+function isCampusLot(lot: any): boolean {
+  const sourceName = String(lot.lot_name || lot.name || '').trim();
+  const sourceId = String(lot.id || '').toLowerCase();
+  const searchableName = `${sourceId} ${sourceName}`.toLowerCase();
+
+  if (/on[-\s]?street|street\s+parking/.test(searchableName)) return false;
+
+  const normalizedName = sourceName.toLowerCase();
+  const isHsg = sourceId === 'hsg' || normalizedName === 'hsg';
+  const hasTwoDigitLotNumber = /\b\d{2}\b/.test(searchableName);
+
+  return isHsg || hasTwoDigitLotNumber;
+}
 
 //defind the props for the Provider
 //expect to receive standard React components inside the children variable
@@ -29,9 +103,9 @@ export function LotsProvider({ children }: { children : ReactNode }) {
       }
       const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
       
-      const response = await fetch(`${BACKEND_URL}/api/lots`, {
+      const response = await apiFetch(`${BACKEND_URL}/api/lots`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'}
+        headers: { 'Content-Type': 'application/json' }
       });
       
       if (!response.ok) throw new Error(`Backend returned ${response.status}`);
@@ -44,7 +118,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
         return;
       }
 
-      const formattedLots = data.map((lot: any, index: number) => {
+      const formattedLots = data.filter(isCampusLot).map((lot: any, index: number) => {
         const mappedCoords = (lot.vertices || []).map((v: any) => ({
           latitude: parseFloat(v.latitude) || parseFloat(v.lat),
           longitude: parseFloat(v.longitude) || parseFloat(v.lng) || parseFloat(v.lon)
@@ -85,12 +159,15 @@ export function LotsProvider({ children }: { children : ReactNode }) {
 
         return {
           ...lot,
+          sourceId: String(lot.id || `lot-${index}`),
           id: `lot-${index}-${lot.id || 'no-id'}`,
-          name: lot.lot_name || lot.name || `Lot ${index}`,
-          fillColor,
-          strokeColor: fillColor === '#2ECC71' ? '#27AE60' : 
-                       fillColor === '#F39C12' ? '#D68910' : 
-                       fillColor === '#E74C3C' ? '#C0392B' : '#6c6b6b',
+          name: getLotDisplayName(lot, index),
+          tag: getLotTag(lot, index),
+          markerLabel: `${getPermitTag(lot)}, ${getLotTag(lot, index)}`,
+          fillColor: lot.fillColor || 'rgba(53, 53, 53, 0.4)',
+          strokeColor: lot.fillColor === '#2ECC71' ? '#27AE60' :
+                       lot.fillColor === '#F39C12' ? '#D68910' :
+                       lot.fillColor === '#E74C3C' ? '#C0392B' : '#6c6b6b',
           coordinates: mappedCoords,
           percentEmpty: emptyPercentage,
           status: uiStatus,
