@@ -33,6 +33,24 @@ function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
   };
 }
 
+function getLotMarkerSize(coordinates: { latitude: number; longitude: number }[]) {
+  const latitudes = coordinates.map((coordinate) => coordinate.latitude);
+  const longitudes = coordinates.map((coordinate) => coordinate.longitude);
+  const latitudeSpan = Math.max(...latitudes) - Math.min(...latitudes);
+  const longitudeSpan = Math.max(...longitudes) - Math.min(...longitudes);
+  const mapScale = 18000;
+  // Lot pin dynamic size
+  return {
+    width: Math.max(18, Math.min(30, longitudeSpan * mapScale * 0.75)),
+    height: Math.max(26, Math.min(40, latitudeSpan * mapScale * 0.75)),
+    circleSize: Math.max(18, Math.min(30, longitudeSpan * mapScale * 0.75)),
+    fontSize: Math.max(9, Math.min(12, Math.min(
+      longitudeSpan * mapScale * 0.7,
+      latitudeSpan * mapScale * 0.7,
+    ) * 0.4)),
+  };
+}
+
 export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
@@ -100,13 +118,39 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
           if (lot.isVisible === false) return null;
           const center = getLotCenter(lot.coordinates || []);
           if (!center) return null;
+          const markerSize = getLotMarkerSize(lot.coordinates || []);
 
           return (
-            <Marker key={`${lot.id}-label`} coordinate={center} anchor={{ x: 0.5, y: 0.5 }}>
-              <View style={styles.hsgMarker}>
-                <Text style={styles.hsgMarkerText} numberOfLines={1} adjustsFontSizeToFit>
+            <Marker
+              key={`${lot.id}-label`}
+              coordinate={center}
+              anchor={{ x: 0.5, y: 0.5 }}
+              onPress={() => setSheetLot(lot)}
+            >
+              <View
+                style={[
+                  styles.markerContainer,
+                  {
+                    width: markerSize.width,
+                    height: markerSize.height + markerSize.circleSize / 2,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.markerCircle,
+                    {
+                      width: markerSize.circleSize,
+                      height: markerSize.circleSize,
+                      borderRadius: markerSize.circleSize / 2,
+                    },
+                  ]}
+                />
+                <View style={[styles.hsgMarker, markerSize]}>
+                <Text style={[styles.hsgMarkerText, { fontSize: markerSize.fontSize }]} numberOfLines={1} adjustsFontSizeToFit>
                   {lot.tag}
                 </Text>
+                </View>
               </View>
             </Marker>
           );
@@ -169,21 +213,37 @@ const styles = StyleSheet.create({
   map: {
     ...StyleSheet.absoluteFillObject,
   },
+  markerContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  markerCircle: {
+    position: 'absolute',
+    top: 0,
+    backgroundColor: '#FFFFFF',
+    flexShrink: 0,
+    zIndex: 2,
+  },
   hsgMarker: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 26,
+    height: 40,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#BDBDBD',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 0,
     elevation: 3,
   },
   hsgMarkerText: {
     color: '#333333',
-    fontSize: 11,
     fontWeight: '700',
+    paddingTop: 12,
+    paddingHorizontal: 1,
+    flexShrink: 1,
+    textAlign: 'center',
+    includeFontPadding: false,
+    zIndex: 1,
   },
   zoomControls: {
     position: 'absolute',

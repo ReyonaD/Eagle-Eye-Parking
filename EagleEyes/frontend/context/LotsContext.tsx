@@ -50,6 +50,7 @@ function getLotTag(lot: any, index: number): string {
   const sourceName = String(lot.lot_name || lot.name || '').trim();
   const normalizedName = sourceName.toLowerCase();
   if (normalizedName === 'hsg') return 'HSG';
+  if (normalizedName.includes('union circle') && normalizedName.includes('garage')) return 'UCG';
 
   const nameTag = sourceName.match(/\b(?:lot|garage)\s*([a-z0-9-]+)/i)?.[1];
   if (nameTag) return nameTag.toUpperCase();
@@ -79,9 +80,10 @@ function isCampusLot(lot: any): boolean {
 
   const normalizedName = sourceName.toLowerCase();
   const isHsg = sourceId === 'hsg' || normalizedName === 'hsg';
+  const isUnionCircleGarage = normalizedName.includes('union circle') && normalizedName.includes('garage');
   const hasTwoDigitLotNumber = /\b\d{2}\b/.test(searchableName);
 
-  return isHsg || hasTwoDigitLotNumber;
+  return isHsg || isUnionCircleGarage || hasTwoDigitLotNumber;
 }
 
 //defind the props for the Provider

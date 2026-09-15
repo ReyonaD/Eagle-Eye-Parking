@@ -48,6 +48,24 @@ function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
     lng: totals.longitude / coordinates.length,
   };
 }
+
+function getLotMarkerSize(coordinates: { latitude: number; longitude: number }[]) {
+  const latitudes = coordinates.map((coordinate) => coordinate.latitude);
+  const longitudes = coordinates.map((coordinate) => coordinate.longitude);
+  const latitudeSpan = Math.max(...latitudes) - Math.min(...latitudes);
+  const longitudeSpan = Math.max(...longitudes) - Math.min(...longitudes);
+  const mapScale = 18000;
+
+  return {
+    width: Math.max(18, Math.min(30, longitudeSpan * mapScale * 0.75)),
+    height: Math.max(26, Math.min(40, latitudeSpan * mapScale * 0.75)),
+    circleSize: Math.max(18, Math.min(30, longitudeSpan * mapScale * 0.75)),
+    fontSize: Math.max(9, Math.min(12, Math.min(
+      longitudeSpan * mapScale * 0.7,
+      latitudeSpan * mapScale * 0.7,
+    ) * 0.4)),
+  };
+}
 //Main-map component
 interface EagleMapProps {
   liveLots: any[];
@@ -103,9 +121,36 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
                   />
                   {lot.isVisible !== false && (() => {
                     const center = getLotCenter(lot.coordinates);
+                    const markerSize = getLotMarkerSize(lot.coordinates);
                     return center ? (
-                      <Marker position={center}>
-                        <div style={styles.hsgMarker}>{lot.tag}</div>
+                      <Marker
+                        position={center}
+                        onClick={() => {
+                          window.alert(
+                            `${lot.name}\n` +
+                            `Permits: ${lot.permits}\n` +
+                            `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
+                            `Is Full: ${lot.isFull ? 'Yes' : 'No'}`
+                          );
+                        }}
+                      >
+                        <div
+                          style={{
+                            ...styles.markerContainer,
+                            width: markerSize.width,
+                            height: markerSize.height + markerSize.circleSize / 2,
+                          }}
+                        >
+                          <div
+                            style={{
+                              ...styles.markerCircle,
+                              width: markerSize.circleSize,
+                              height: markerSize.circleSize,
+                              borderRadius: markerSize.circleSize / 2,
+                            }}
+                          />
+                          <div style={{ ...styles.hsgMarker, ...markerSize }}>{lot.tag}</div>
+                        </div>
                       </Marker>
                     ) : null;
                   })()}
@@ -157,20 +202,35 @@ const styles = StyleSheet.create({
     color: '#d32f2f',
     fontWeight: 'bold'
   },
+  markerContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  markerCircle: {
+    position: 'absolute',
+    top: 0,
+    backgroundColor: '#FFFFFF',
+    flexShrink: 0,
+    zIndex: 2,
+  },
   hsgMarker: {
-    width: 36,
+    width: 26,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 4,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#BDBDBD',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 0,
     color: '#333333',
-    fontSize: 11,
     fontWeight: '700',
+    paddingTop: 2,
+    paddingLeft: 1,
+    paddingRight: 1,
+    overflow: 'hidden',
     boxSizing: 'border-box',
+    zIndex: 1,
   },
   capacityContainer: {
     position: "absolute",
