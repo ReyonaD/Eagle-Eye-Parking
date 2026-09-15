@@ -69,13 +69,6 @@ export default function EventsScreen() {
   const activeEvents = events.filter(eventItem =>
     eventItem.created_at && toLocalDateString(parseUTC(eventItem.created_at)) >= selected
   );
-  // Filter for PAST events (local dates strictly before the selected date)
-  // We limit to the 5 most recent past events so the screen doesn't get infinitely long.
-  const pastEvents = events.filter(eventItem => {
-    if (!eventItem.created_at) return false;
-    return toLocalDateString(parseUTC(eventItem.created_at)) < selected;
-  }).slice(0, 5);
-
   // ADD EVENT
 
   const handleSaveEvent = () => {
@@ -168,37 +161,6 @@ export default function EventsScreen() {
                   <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
                 </TouchableOpacity>
               ))
-            )}
-
-            {/* --- SECTION 2: PAST / OUTDATED EVENTS --- */}
-            {pastEvents.length > 0 && !isLoading && (
-              <View style={styles.pastEventsWrapper}>
-                <View style={styles.divider} />
-                <Text style={styles.pastFeedTitle}>Previous Events</Text>
-
-                {pastEvents.map((eventItem) => (
-                  <TouchableOpacity
-                    key={`past-${eventItem.id}`}
-                    style={[styles.card, styles.outdatedCard]}
-                    onPress={() => Alert.alert('Past Event', 'This event has already concluded.')}
-                  >
-                    <View style={styles.cardHeader}>
-                      <View style={styles.titleRow}>
-                        <View style={[styles.iconBox, styles.outdatedIconBox]}>
-                          <Ionicons name={getIconForCategory(eventItem.category)} size={20} color="#666" />
-                        </View>
-                        <Text style={[styles.cardTitle, styles.outdatedText]}>{eventItem.title}</Text>
-                      </View>
-                    </View>
-
-                    <Text style={[styles.cardTime, styles.outdatedText]}>
-                      {formatDate(toLocalDateString(parseUTC(eventItem.created_at)))} • {parseUTC(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-
-                    <Text style={[styles.clickDetails, styles.outdatedText]}>CONCLUDED</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
             )}
 
           </View>

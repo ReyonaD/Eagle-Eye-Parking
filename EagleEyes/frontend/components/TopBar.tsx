@@ -20,16 +20,14 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
         <Text style={styles.appNameLeft}>EagleEyes</Text>
       </View>
 
-      <TouchableOpacity 
-        style={styles.bellWrapper} 
-        onPress={() => router.push(role === 'admin' ? '/(admin)/hazards' : '/(tabs)/alerts')}
-      >
-        <Ionicons 
-          name={role === 'admin' ? "alert-circle-outline" : "notifications-outline"} 
-          size={27} 
-          color={role === 'admin' ? "#D0021B" : "#333"} 
-        />
-      </TouchableOpacity>
+      {role !== 'admin' && (
+        <TouchableOpacity
+          style={styles.bellWrapper}
+          onPress={() => router.push('/(tabs)/alerts')}
+        >
+          <Ionicons name="notifications-outline" size={27} color="#333" />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

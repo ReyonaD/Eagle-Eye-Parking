@@ -23,20 +23,19 @@ interface MenuRowProps {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value?: string;
-  onPress: () => void;
+  onPress?: () => void;
   danger?: boolean;
 }
 
 function MenuRow({ icon, label, value, onPress, danger = false }: MenuRowProps) {
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.5}>
+    <TouchableOpacity style={styles.row} onPress={onPress} disabled={!onPress} activeOpacity={0.5}>
       <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
         <Ionicons name={icon} size={27} color={danger ? '#D0021B' : '#00853E'} />
       </View>
       <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
       <View style={styles.rowRight}>
         {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        {!danger && <Ionicons name="chevron-forward" size={27} color="#ccc" />}
       </View>
     </TouchableOpacity>
   );
@@ -86,7 +85,7 @@ export default function AdminProfileScreen() {
           <Text style={styles.email}>{user.email}</Text>
           <TouchableOpacity
             style={styles.editBtn}
-            onPress={() => router.push('/profile/details' as any)}
+            disabled
             activeOpacity={0.7}
           >
             <Ionicons name="pencil-outline" size={27} color="#fff" />
@@ -99,21 +98,12 @@ export default function AdminProfileScreen() {
             icon="person-outline"
             label="Full Name"
             value={user.name}
-            onPress={() => router.push('/profile/details' as any)}
           />
           <Divider />
           <MenuRow
             icon="mail-outline"
             label="Email"
             value={user.email}
-            onPress={() => router.push('/profile/details' as any)}
-          />
-          <Divider />
-          <MenuRow
-            icon="call-outline"
-            label="Phone"
-            value={user.phone}
-            onPress={() => router.push('/profile/details' as any)}
           />
         </Section>
 
@@ -126,6 +116,7 @@ export default function AdminProfileScreen() {
             <Switch
               value={notificationsEnabled}
               onValueChange={setNotificationsEnabled}
+              disabled
               trackColor={{ false: '#ddd', true: '#00853E' }}
               thumbColor="#fff"
             />
@@ -134,13 +125,11 @@ export default function AdminProfileScreen() {
           <MenuRow
             icon="settings-outline"
             label="App Settings"
-            onPress={() => router.push('/profile/settings' as any)}
           />
           <Divider />
           <MenuRow
             icon="help-circle-outline"
             label="Help & Support"
-            onPress={() => router.push('/profile/settings' as any)}
           />
         </Section>
 
