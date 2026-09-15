@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from '../../utils/webCompat';
 
 const MOCK_USER = {
   name: 'Admin User',
@@ -68,6 +68,7 @@ export default function AdminProfileScreen() {
         style: 'destructive',
         onPress: async () => {
           await AsyncStorage.removeItem('token');
+          await AsyncStorage.removeItem('role');
           router.replace('/login');
         },
       },

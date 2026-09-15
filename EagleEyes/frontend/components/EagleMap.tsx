@@ -16,6 +16,30 @@ const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; lati
   "Frisco Landing":  { latitude: 33.1858, longitude: -96.8055, latitudeDelta: 0.018, longitudeDelta: 0.018 },
 };
 
+// Hide POI/transit clutter so the lot polygons are the visual focus; roads
+// and labels stay for orientation. Matches EagleMap.web.tsx.
+const MAP_STYLES = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
+
+// react-native-maps' Polygon has no separate fillOpacity prop like the web
+// SDK does, so a lighter fill (matching the web version's look) has to be
+// baked into the color itself as an alpha channel.
+const LOT_FILL_OPACITY = 0.35;
+const LOT_29_RESIDENT_RESERVE_PIN_SOUTH_OFFSET = 0.00015;
+const LOT_29_RESIDENT_RESERVE_PIN_EAST_OFFSET = 0.00015;
+
+function withFillOpacity(color: string, opacity: number): string {
+  const hexMatch = /^#([0-9a-f]{6})$/i.exec(color || '');
+  if (!hexMatch) return color;
+  const value = parseInt(hexMatch[1], 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
 function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
   if (coordinates.length === 0) return null;
 
@@ -33,28 +57,128 @@ function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
   };
 }
 
-function getLotMarkerSize(coordinates: { latitude: number; longitude: number }[]) {
+function getLotMarkerCenter(lot: any) {
+  const center = getLotCenter(lot.coordinates || []);
+  if (!center) return null;
+
+  //Move the pin for Lot20 Eagle specifically
+  const lotName = String(lot.name || lot.lot_name || '');
+  const normalizedLotName = lotName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (/\blot\s*20\b.*\beagle\b/i.test(lotName)) {
+    const LOT_20_PIN_SOUTH_OFFSET = 0.0012;
+    const LOT_20_PIN_EAST_OFFSET = 0.00015;
+    return {
+      ...center,
+      latitude: center.latitude - LOT_20_PIN_SOUTH_OFFSET,
+      longitude: center.longitude + LOT_20_PIN_EAST_OFFSET,
+    };
+  }
+  //Overlappping Lot 24 so manually adjusting the pin for Lot 24 A-Reserved
+  if (/\blot\s*24\b.*\ba[-\s]?reserved\b/i.test(lotName)) {
+    // Adjust this number to change the northward position of the Lot 24 A-Reserved pin.
+    const LOT_24_A_RESERVED_PIN_NORTH_OFFSET = 0.00015;
+    return {
+      ...center,
+      latitude: center.latitude + LOT_24_A_RESERVED_PIN_NORTH_OFFSET,
+    };
+  }
+
+  if (/\blot\s*29\b.*\bresident\s+reserve(?:d)?\b/i.test(normalizedLotName)) {
+    return {
+      ...center,
+      latitude: center.latitude - LOT_29_RESIDENT_RESERVE_PIN_SOUTH_OFFSET,
+      longitude: center.longitude + LOT_29_RESIDENT_RESERVE_PIN_EAST_OFFSET,
+    };
+  }
+
+  return center;
+}
+
+function getGroupedMarkerCenter(lots: any[]) {
+  const centers = lots
+    .map(getLotMarkerCenter)
+    .filter((center): center is { latitude: number; longitude: number } => center !== null);
+  if (centers.length === 0) return null;
+
+  const totals = centers.reduce(
+    (center, lotCenter) => ({
+      latitude: center.latitude + lotCenter.latitude,
+      longitude: center.longitude + lotCenter.longitude,
+    }),
+    { latitude: 0, longitude: 0 },
+  );
+
+  return {
+    latitude: totals.latitude / centers.length,
+    longitude: totals.longitude / centers.length,
+  };
+}
+
+function getLotMarkerSize(coordinates: { latitude: number; longitude: number }[], tag: string) {
   const latitudes = coordinates.map((coordinate) => coordinate.latitude);
   const longitudes = coordinates.map((coordinate) => coordinate.longitude);
   const latitudeSpan = Math.max(...latitudes) - Math.min(...latitudes);
   const longitudeSpan = Math.max(...longitudes) - Math.min(...longitudes);
   const mapScale = 18000;
+  const fontSize = Math.max(8, Math.min(10, Math.min(
+    longitudeSpan * mapScale * 0.7,
+    latitudeSpan * mapScale * 0.7,
+  ) * 0.4));
+  const labelWidth = tag.length * fontSize * 0.7 + 8;
+  const width = Math.max(13, Math.min(24, Math.max(longitudeSpan * mapScale * 0.55, labelWidth)));
   // Lot pin dynamic size
   return {
-    width: Math.max(18, Math.min(30, longitudeSpan * mapScale * 0.75)),
-    height: Math.max(26, Math.min(40, latitudeSpan * mapScale * 0.75)),
-    circleSize: Math.max(18, Math.min(30, longitudeSpan * mapScale * 0.75)),
-    fontSize: Math.max(9, Math.min(12, Math.min(
-      longitudeSpan * mapScale * 0.7,
-      latitudeSpan * mapScale * 0.7,
-    ) * 0.4)),
+    width,
+    height: Math.max(20, Math.min(30, latitudeSpan * mapScale * 0.55)),
+    circleSize: width,
+    fontSize,
   };
+}
+
+function shouldShowLotMarker(lot: any): boolean {
+  const name = String(lot.lot_name || lot.name || '').trim();
+  return /\blot\s+(?:[1-9]|[1-9]\d)\b/i.test(name)
+    || /^(?:highland street garage|union circle garage)$/i.test(name);
+}
+
+function isLot29(lot: any): boolean {
+  return /\blot\s*29\b/i.test(String(lot.name || lot.lot_name || ''));
+}
+
+function getLotMarkerGroups(lots: any[], latitudeDelta: number) {
+  const groupingDistance = Math.max(0.00008, latitudeDelta * 0.08);
+  const groups: { lots: any[]; center: { latitude: number; longitude: number } }[] = [];
+
+  lots.forEach((lot) => {
+    if (lot.isVisible === false || !shouldShowLotMarker(lot)) return;
+    const center = getLotMarkerCenter(lot);
+    if (!center) return;
+
+    const isCloseToLot29 = latitudeDelta <= 0.003 && isLot29(lot);
+    const existingGroup = groups.find((group) => {
+      if (isCloseToLot29 || group.lots.some(isLot29)) return false;
+      const latitudeDistance = group.center.latitude - center.latitude;
+      const longitudeDistance = (group.center.longitude - center.longitude) * Math.cos(center.latitude * Math.PI / 180);
+      return Math.hypot(latitudeDistance, longitudeDistance) <= groupingDistance;
+    });
+
+    if (existingGroup) {
+      existingGroup.lots.push(lot);
+      existingGroup.center = getGroupedMarkerCenter(existingGroup.lots) || existingGroup.center;
+    } else {
+      groups.push({ lots: [lot], center });
+    }
+  });
+
+  return groups;
 }
 
 export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
+  const untRegion = CAMPUS_REGIONS["Main campus"];
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [sheetLot, setSheetLot] = useState<any | null>(null);
+  const [latitudeDelta, setLatitudeDelta] = useState(untRegion.latitudeDelta);
 
 
   useEffect(() => {
@@ -63,9 +187,6 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
       mapRef.current?.animateToRegion(region, 800);
     }
   }, [selectedCampus]);
-
-  const untRegion = CAMPUS_REGIONS["Main campus"];
-
 
   const handleLongPress = (event: any) => {
     const coords = event.nativeEvent.coordinate;
@@ -89,22 +210,36 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
     }
   };
 
+  const handleClusterPress = (center: { latitude: number; longitude: number }) => {
+    const nextDelta = Math.max(0.002, latitudeDelta * 0.45);
+    mapRef.current?.animateToRegion(
+      {
+        ...center,
+        latitudeDelta: nextDelta,
+        longitudeDelta: nextDelta,
+      },
+      400,
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* MAP */}
       <MapView 
         ref={mapRef}
         style={styles.map} 
-        provider={PROVIDER_GOOGLE} 
+        provider={PROVIDER_GOOGLE}
         initialRegion={untRegion}
+        onRegionChangeComplete={(region) => setLatitudeDelta(region.latitudeDelta)}
         showsUserLocation={true}
         onLongPress={handleLongPress}
+        customMapStyle={MAP_STYLES}
       >
         {liveLots.length > 0 && liveLots.map((lot) => (
           <Polygon
             key={lot.id}
             coordinates={lot.coordinates}
-            fillColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.fillColor}
+            fillColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : withFillOpacity(lot.fillColor, LOT_FILL_OPACITY)}
             strokeColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.strokeColor}
             strokeWidth={lot.isVisible === false ? 0 : 2}
             tappable={lot.isVisible !== false}
@@ -114,16 +249,29 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
             }}
           />
         ))}
-        {liveLots.map((lot) => {
-          if (lot.isVisible === false) return null;
-          const center = getLotCenter(lot.coordinates || []);
-          if (!center) return null;
-          const markerSize = getLotMarkerSize(lot.coordinates || []);
+        {getLotMarkerGroups(liveLots, latitudeDelta).map((group) => {
+          const lot = group.lots[0];
+          if (group.lots.length > 1) {
+            return (
+              <Marker
+                key={`${group.lots.map((groupLot) => groupLot.id).join('-')}-cluster`}
+                coordinate={group.center}
+                anchor={{ x: 0.5, y: 0.5 }}
+                onPress={() => handleClusterPress(group.center)}
+              >
+                <View style={styles.clusterMarker}>
+                  <Text style={styles.clusterMarkerText}>{group.lots.length}</Text>
+                </View>
+              </Marker>
+            );
+          }
+
+          const markerSize = getLotMarkerSize(lot.coordinates || [], lot.tag);
 
           return (
             <Marker
-              key={`${lot.id}-label`}
-              coordinate={center}
+              key={`${group.lots.map((groupLot) => groupLot.id).join('-')}-label`}
+              coordinate={group.center}
               anchor={{ x: 0.5, y: 0.5 }}
               onPress={() => setSheetLot(lot)}
             >
@@ -225,6 +373,19 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     zIndex: 2,
   },
+  clusterMarker: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3366ff',
+  },
+  clusterMarkerText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   hsgMarker: {
     width: 26,
     height: 40,
@@ -238,7 +399,7 @@ const styles = StyleSheet.create({
   hsgMarkerText: {
     color: '#333333',
     fontWeight: '700',
-    paddingTop: 12,
+    paddingTop: 0,
     paddingHorizontal: 1,
     flexShrink: 1,
     textAlign: 'center',

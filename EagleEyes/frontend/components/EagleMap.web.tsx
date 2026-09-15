@@ -1,6 +1,15 @@
 import React, {useEffect, useRef} from 'react';
 import { View, StyleSheet, Text } from 'react-native';
-import { APIProvider, Map, Marker, useMap } from '@vis.gl/react-google-maps';
+import { AdvancedMarker, APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
+
+// Hide POI/transit clutter so the lot polygons are the visual focus; roads
+// and labels stay for orientation.
+const MAP_STYLES: any[] = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
+const LOT_29_RESIDENT_RESERVE_PIN_SOUTH_OFFSET = 0.00015;
+const LOT_29_RESIDENT_RESERVE_PIN_EAST_OFFSET = 0.00015;
 
 function WebPolygon({paths, options, onClick}: {paths: any, options: any, onClick?: () => void}) {
     const map = useMap();
@@ -49,22 +58,162 @@ function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
   };
 }
 
-function getLotMarkerSize(coordinates: { latitude: number; longitude: number }[]) {
+function getLotMarkerCenter(lot: any) {
+  const center = getLotCenter(lot.coordinates || []);
+  if (!center) return null;
+
+  const lotName = String(lot.name || lot.lot_name || '');
+  const normalizedLotName = lotName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (/\blot\s*20\b.*\beagle\b/i.test(lotName)) {
+    // Adjust these numbers to change the position of the Lot 20 Eagle pin.
+    const LOT_20_PIN_SOUTH_OFFSET = 0.00015;
+    const LOT_20_PIN_EAST_OFFSET = 0.00015;
+    return {
+      ...center,
+      lat: center.lat - LOT_20_PIN_SOUTH_OFFSET,
+      lng: center.lng + LOT_20_PIN_EAST_OFFSET,
+    };
+  }
+
+  if (/\blot\s*24\b.*\ba[-\s]?reserved\b/i.test(lotName)) {
+    // Adjust this number to change the northward position of the Lot 24 A-Reserved pin.
+    const LOT_24_A_RESERVED_PIN_NORTH_OFFSET = 0.00015;
+    return {
+      ...center,
+      lat: center.lat + LOT_24_A_RESERVED_PIN_NORTH_OFFSET,
+    };
+  }
+
+  if (/\blot\s*29\b.*\bresident\s+reserve(?:d)?\b/i.test(normalizedLotName)) {
+    // Adjust these numbers to change the south/east position of the Lot 29 Resident Reserve pin.
+    return {
+      ...center,
+      lat: center.lat - LOT_29_RESIDENT_RESERVE_PIN_SOUTH_OFFSET,
+      lng: center.lng + LOT_29_RESIDENT_RESERVE_PIN_EAST_OFFSET,
+    };
+  }
+
+  return center;
+}
+
+function getGroupedMarkerCenter(lots: any[]) {
+  const centers = lots
+    .map(getLotMarkerCenter)
+    .filter((center): center is { lat: number; lng: number } => center !== null);
+  if (centers.length === 0) return null;
+
+  const totals = centers.reduce(
+    (center, lotCenter) => ({
+      lat: center.lat + lotCenter.lat,
+      lng: center.lng + lotCenter.lng,
+    }),
+    { lat: 0, lng: 0 },
+  );
+
+  return {
+    lat: totals.lat / centers.length,
+    lng: totals.lng / centers.length,
+  };
+}
+
+function getLotMarkerSize(coordinates: { latitude: number; longitude: number }[], tag: string) {
   const latitudes = coordinates.map((coordinate) => coordinate.latitude);
   const longitudes = coordinates.map((coordinate) => coordinate.longitude);
   const latitudeSpan = Math.max(...latitudes) - Math.min(...latitudes);
   const longitudeSpan = Math.max(...longitudes) - Math.min(...longitudes);
   const mapScale = 18000;
+  const fontSize = Math.max(8, Math.min(10, Math.min(
+    longitudeSpan * mapScale * 0.7,
+    latitudeSpan * mapScale * 0.7,
+  ) * 0.4));
+  const labelWidth = tag.length * fontSize * 0.7 + 8;
+  const width = Math.max(13, Math.min(24, Math.max(longitudeSpan * mapScale * 0.55, labelWidth)));
 
   return {
-    width: Math.max(18, Math.min(30, longitudeSpan * mapScale * 0.75)),
-    height: Math.max(26, Math.min(40, latitudeSpan * mapScale * 0.75)),
-    circleSize: Math.max(18, Math.min(30, longitudeSpan * mapScale * 0.75)),
-    fontSize: Math.max(9, Math.min(12, Math.min(
-      longitudeSpan * mapScale * 0.7,
-      latitudeSpan * mapScale * 0.7,
-    ) * 0.4)),
+    width,
+    height: Math.max(20, Math.min(30, latitudeSpan * mapScale * 0.55)),
+    circleSize: width,
+    fontSize,
   };
+}
+
+function shouldShowLotMarker(lot: any): boolean {
+  const name = String(lot.lot_name || lot.name || '').trim();
+  return /\blot\s+(?:[1-9]|[1-9]\d)\b/i.test(name)
+    || /^(?:highland street garage|union circle garage)$/i.test(name);
+}
+
+function isLot29(lot: any): boolean {
+  return /\blot\s*29\b/i.test(String(lot.name || lot.lot_name || ''));
+}
+
+function getLotMarkerGroups(lots: any[], zoom: number) {
+  const latitudeDelta = 0.018 / 2 ** (zoom - 15);
+  const groupingDistance = Math.max(0.00008, latitudeDelta * 0.08);
+  const groups: { lots: any[]; center: { lat: number; lng: number } }[] = [];
+
+  lots.forEach((lot) => {
+    if (lot.isVisible === false || !shouldShowLotMarker(lot)) return;
+    const center = getLotMarkerCenter(lot);
+    if (!center) return;
+
+    const isCloseToLot29 = zoom >= 17 && isLot29(lot);
+    const existingGroup = groups.find((group) => {
+      if (isCloseToLot29 || group.lots.some(isLot29)) return false;
+      const latitudeDistance = group.center.lat - center.lat;
+      const longitudeDistance = (group.center.lng - center.lng) * Math.cos(center.lat * Math.PI / 180);
+      return Math.hypot(latitudeDistance, longitudeDistance) <= groupingDistance;
+    });
+
+    if (existingGroup) {
+      existingGroup.lots.push(lot);
+      const groupedCenter = getGroupedMarkerCenter(existingGroup.lots);
+      if (groupedCenter) existingGroup.center = groupedCenter;
+    } else {
+      groups.push({ lots: [lot], center });
+    }
+  });
+
+  return groups;
+}
+
+function WebZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+    const updateZoom = () => onZoomChange(map.getZoom() || 15);
+    updateZoom();
+    const listener = map.addListener('zoom_changed', updateZoom);
+    return () => listener.remove();
+  }, [map, onZoomChange]);
+
+  return null;
+}
+
+function WebClusterMarker({
+  center,
+  count,
+}: {
+  center: { lat: number; lng: number };
+  count: number;
+}) {
+  const map = useMap();
+
+  return (
+    <AdvancedMarker
+      position={center}
+      onClick={() => {
+        if (!map) return;
+        map.panTo(center);
+        map.setZoom(Math.min((map.getZoom() || 15) + 2, 21));
+      }}
+    >
+      <div style={styles.clusterMarker}>
+        <span style={styles.clusterMarkerText}>{count}</span>
+      </div>
+    </AdvancedMarker>
+  );
 }
 //Main-map component
 interface EagleMapProps {
@@ -77,6 +226,7 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
   
   // Grab the API key from your .env file
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+  const [zoom, setZoom] = React.useState(15);
 
   return (
     <View style={styles.container}>
@@ -89,12 +239,12 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
             defaultZoom={15}
             gestureHandling={'greedy'}
             disableDefaultUI={true}
+            styles={MAP_STYLES}
           >
+            <WebZoomWatcher onZoomChange={setZoom} />
             {liveLots.map((lot) => {
               if (!lot.coordinates || lot.coordinates.length === 0) return null;
-              
-              // Grab the first coordinate of the lot to place the pin
-              //const anchorCoord = lot.coordinates[0];
+
               const webPaths = lot.coordinates.map((coord: any) => ({
                 lat: coord.latitude,
                 lng: coord.longitude
@@ -119,18 +269,31 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
                       );
                     }}
                   />
-                  {lot.isVisible !== false && (() => {
-                    const center = getLotCenter(lot.coordinates);
-                    const markerSize = getLotMarkerSize(lot.coordinates);
-                    return center ? (
-                      <Marker
-                        position={center}
+                  {getLotMarkerGroups(liveLots, zoom)
+                    .filter((group) => group.lots[0].id === lot.id)
+                    .map((group) => {
+                      const markerLot = group.lots[0];
+                      if (group.lots.length > 1) {
+                        return (
+                          <WebClusterMarker
+                            key={`${group.lots.map((groupLot) => groupLot.id).join('-')}-cluster`}
+                            center={group.center}
+                            count={group.lots.length}
+                          />
+                        );
+                      }
+
+                      const markerSize = getLotMarkerSize(markerLot.coordinates, markerLot.tag);
+                      return (
+                      <AdvancedMarker
+                        key={`${group.lots.map((groupLot) => groupLot.id).join('-')}-label`}
+                        position={group.center}
                         onClick={() => {
                           window.alert(
-                            `${lot.name}\n` +
-                            `Permits: ${lot.permits}\n` +
-                            `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
-                            `Is Full: ${lot.isFull ? 'Yes' : 'No'}`
+                            `${markerLot.name}\n` +
+                            `Permits: ${markerLot.permits}\n` +
+                            `Percent Empty: ${markerLot.percentEmpty !== undefined ? markerLot.percentEmpty + '%' : 'Unknown'}\n` +
+                            `Is Full: ${markerLot.isFull ? 'Yes' : 'No'}`
                           );
                         }}
                       >
@@ -149,11 +312,11 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
                               borderRadius: markerSize.circleSize / 2,
                             }}
                           />
-                          <div style={{ ...styles.hsgMarker, ...markerSize }}>{lot.tag}</div>
+                          <div style={{ ...styles.hsgMarker, ...markerSize }}>{markerLot.tag}</div>
                         </div>
-                      </Marker>
-                    ) : null;
-                  })()}
+                      </AdvancedMarker>
+                      );
+                    })}
                 </React.Fragment>
               );
             })}
@@ -213,6 +376,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     flexShrink: 0,
     zIndex: 2,
+  },
+  clusterMarker: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3366ff',
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    boxSizing: 'border-box',
+  },
+  clusterMarkerText: {
+    position: 'relative',
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    zIndex: 1,
   },
   hsgMarker: {
     width: 26,

@@ -71,19 +71,32 @@ function getLotDisplayName(lot: any, index: number): string {
   return rawName || `Lot ${index}`;
 }
 
+// ParkZen also reports a handful of on-street parking segments along named
+// streets (not discrete numbered lots) — exclude those by name explicitly.
+// A previous "must contain a two-digit lot number" heuristic tried to infer
+// this instead, but it also silently dropped real lots like "Lot 1",
+// "P9246 Lot", and "Murchison" that have no such number.
+const ON_STREET_SEGMENT_NAMES = new Set([
+  'sycamore st - n. texas blvd to ave d',
+  'sycamore st - ave d to ave c',
+  'sycamore st - motorcycle',
+  'mulberry st (welch to bernard)',
+  'mulberry st - ave d to ave b',
+  'maple - welch to bernard',
+  'highland st - n. tx blvd to ave d',
+  'highland st - welch to bernard',
+  'ave d - chestnut to mulberry',
+  'chestnut - n. tx blvd to ave c',
+  'kendolph - eagle to wilshire',
+]);
+
 function isCampusLot(lot: any): boolean {
-  const sourceName = String(lot.lot_name || lot.name || '').trim();
-  const sourceId = String(lot.id || '').toLowerCase();
-  const searchableName = `${sourceId} ${sourceName}`.toLowerCase();
+  const sourceName = String(lot.lot_name || lot.name || '').trim().toLowerCase();
 
-  if (/on[-\s]?street|street\s+parking/.test(searchableName)) return false;
+  if (/on[-\s]?street|street\s+parking/.test(sourceName)) return false;
+  if (ON_STREET_SEGMENT_NAMES.has(sourceName)) return false;
 
-  const normalizedName = sourceName.toLowerCase();
-  const isHsg = sourceId === 'hsg' || normalizedName === 'hsg';
-  const isUnionCircleGarage = normalizedName.includes('union circle') && normalizedName.includes('garage');
-  const hasTwoDigitLotNumber = /\b\d{2}\b/.test(searchableName);
-
-  return isHsg || isUnionCircleGarage || hasTwoDigitLotNumber;
+  return true;
 }
 
 //defind the props for the Provider
