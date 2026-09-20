@@ -548,6 +548,8 @@ def approve_alert(
         alert.category = edits.category.strip()
     if edits.description is not None:
         alert.description = edits.description.strip() or None
+    if edits.image_urls is not None:
+        alert.image_urls = edits.image_urls
 
     alert.status = "published"
     db.commit()
