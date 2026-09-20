@@ -1,6 +1,13 @@
 import React, {useEffect, useRef} from 'react';
 import { View, StyleSheet, Text } from 'react-native';
-import { APIProvider, Map, Marker, useMap } from '@vis.gl/react-google-maps';
+import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
+
+// Hide POI/transit clutter so the lot polygons are the visual focus; roads
+// and labels stay for orientation.
+const MAP_STYLES: google.maps.MapTypeStyle[] = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
 
 function WebPolygon({paths, options, onClick}: {paths: any, options: any, onClick?: () => void}) {
     const map = useMap();
@@ -32,22 +39,6 @@ function WebPolygon({paths, options, onClick}: {paths: any, options: any, onClic
     return null;
 }
 
-function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
-  if (coordinates.length === 0) return null;
-
-  const totals = coordinates.reduce(
-    (center, coordinate) => ({
-      latitude: center.latitude + coordinate.latitude,
-      longitude: center.longitude + coordinate.longitude,
-    }),
-    { latitude: 0, longitude: 0 },
-  );
-
-  return {
-    lat: totals.latitude / coordinates.length,
-    lng: totals.longitude / coordinates.length,
-  };
-}
 //Main-map component
 interface EagleMapProps {
   liveLots: any[];
@@ -71,12 +62,11 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
             defaultZoom={15}
             gestureHandling={'greedy'}
             disableDefaultUI={true}
+            styles={MAP_STYLES}
           >
             {liveLots.map((lot) => {
               if (!lot.coordinates || lot.coordinates.length === 0) return null;
-              
-              // Grab the first coordinate of the lot to place the pin
-              //const anchorCoord = lot.coordinates[0];
+
               const webPaths = lot.coordinates.map((coord: any) => ({
                 lat: coord.latitude,
                 lng: coord.longitude
@@ -101,14 +91,6 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
                       );
                     }}
                   />
-                  {lot.isVisible !== false && (() => {
-                    const center = getLotCenter(lot.coordinates);
-                    return center ? (
-                      <Marker position={center}>
-                        <div style={styles.hsgMarker}>{lot.tag}</div>
-                      </Marker>
-                    ) : null;
-                  })()}
                 </React.Fragment>
               );
             })}
@@ -156,21 +138,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#d32f2f',
     fontWeight: 'bold'
-  },
-  hsgMarker: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#BDBDBD',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    color: '#333333',
-    fontSize: 11,
-    fontWeight: '700',
-    boxSizing: 'border-box',
   },
   capacityContainer: {
     position: "absolute",

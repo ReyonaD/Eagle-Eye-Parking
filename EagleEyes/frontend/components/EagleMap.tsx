@@ -16,21 +16,26 @@ const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; lati
   "Frisco Landing":  { latitude: 33.1858, longitude: -96.8055, latitudeDelta: 0.018, longitudeDelta: 0.018 },
 };
 
-function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
-  if (coordinates.length === 0) return null;
+// Hide POI/transit clutter so the lot polygons are the visual focus; roads
+// and labels stay for orientation. Matches EagleMap.web.tsx.
+const MAP_STYLES = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
 
-  const totals = coordinates.reduce(
-    (center, coordinate) => ({
-      latitude: center.latitude + coordinate.latitude,
-      longitude: center.longitude + coordinate.longitude,
-    }),
-    { latitude: 0, longitude: 0 },
-  );
+// react-native-maps' Polygon has no separate fillOpacity prop like the web
+// SDK does, so a lighter fill (matching the web version's look) has to be
+// baked into the color itself as an alpha channel.
+const LOT_FILL_OPACITY = 0.35;
 
-  return {
-    latitude: totals.latitude / coordinates.length,
-    longitude: totals.longitude / coordinates.length,
-  };
+function withFillOpacity(color: string, opacity: number): string {
+  const hexMatch = /^#([0-9a-f]{6})$/i.exec(color || '');
+  if (!hexMatch) return color;
+  const value = parseInt(hexMatch[1], 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
 export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
@@ -47,7 +52,6 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
   }, [selectedCampus]);
 
   const untRegion = CAMPUS_REGIONS["Main campus"];
-
 
   const handleLongPress = (event: any) => {
     const coords = event.nativeEvent.coordinate;
@@ -77,16 +81,17 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
       <MapView 
         ref={mapRef}
         style={styles.map} 
-        provider={PROVIDER_GOOGLE} 
+        provider={PROVIDER_GOOGLE}
         initialRegion={untRegion}
         showsUserLocation={true}
         onLongPress={handleLongPress}
+        customMapStyle={MAP_STYLES}
       >
         {liveLots.length > 0 && liveLots.map((lot) => (
           <Polygon
             key={lot.id}
             coordinates={lot.coordinates}
-            fillColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.fillColor}
+            fillColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : withFillOpacity(lot.fillColor, LOT_FILL_OPACITY)}
             strokeColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.strokeColor}
             strokeWidth={lot.isVisible === false ? 0 : 2}
             tappable={lot.isVisible !== false}
@@ -96,21 +101,6 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
             }}
           />
         ))}
-        {liveLots.map((lot) => {
-          if (lot.isVisible === false) return null;
-          const center = getLotCenter(lot.coordinates || []);
-          if (!center) return null;
-
-          return (
-            <Marker key={`${lot.id}-label`} coordinate={center} anchor={{ x: 0.5, y: 0.5 }}>
-              <View style={styles.hsgMarker}>
-                <Text style={styles.hsgMarkerText} numberOfLines={1} adjustsFontSizeToFit>
-                  {lot.tag}
-                </Text>
-              </View>
-            </Marker>
-          );
-        })}
         {parkedLocation && (
           <Marker coordinate={parkedLocation} title="My Car" pinColor="#0000FF" />
         )}
@@ -168,22 +158,6 @@ const styles = StyleSheet.create({
   },
   map: {
     ...StyleSheet.absoluteFillObject,
-  },
-  hsgMarker: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#BDBDBD',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    elevation: 3,
-  },
-  hsgMarkerText: {
-    color: '#333333',
-    fontSize: 11,
-    fontWeight: '700',
   },
   zoomControls: {
     position: 'absolute',
