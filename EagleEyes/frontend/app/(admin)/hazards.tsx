@@ -132,12 +132,19 @@ function HazardDetail({
       Alert.alert('Photo Access Needed', 'Please allow photo library access in Settings.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 });
-    if (result.canceled || !result.assets?.[0]) return;
+    //same multi-select config as the commuter report form (known-good on device)
+    const result = await ImagePicker.launchImageLibraryAsync({
+      quality: 0.7,
+      allowsMultipleSelection: true,
+      selectionLimit: 3 - editPhotos.length,
+    });
+    if (result.canceled || !result.assets?.length) return;
     setIsUploadingPhoto(true);
     try {
-      const { image_url } = await uploadAlertImage(result.assets[0]);
-      setEditPhotos(prev => [...prev, image_url]);
+      for (const asset of result.assets.slice(0, 3 - editPhotos.length)) {
+        const { image_url } = await uploadAlertImage(asset);
+        setEditPhotos(prev => [...prev, image_url]);
+      }
     } catch {
       Alert.alert('Error', 'Could not upload the photo. Check your connection.');
     } finally {
@@ -238,9 +245,9 @@ function HazardDetail({
                 </TouchableOpacity>
               </View>
             ))}
-            {editPhotos.length < 3 && (
-              <TouchableOpacity style={styles.addPhotoTile} onPress={handleAddPhoto} disabled={isUploadingPhoto}>
-                {isUploadingPhoto ? (
+            {Array.from({ length: 3 - editPhotos.length }).map((_, i) => (
+              <TouchableOpacity key={`add-slot-${i}`} style={styles.addPhotoTile} onPress={handleAddPhoto} disabled={isUploadingPhoto}>
+                {isUploadingPhoto && i === 0 ? (
                   <ActivityIndicator color="#00853E" />
                 ) : (
                   <>
@@ -249,7 +256,7 @@ function HazardDetail({
                   </>
                 )}
               </TouchableOpacity>
-            )}
+            ))}
           </View>
         ) : photoUrls.length > 0 ? (
           <View style={styles.pictureRow}>
