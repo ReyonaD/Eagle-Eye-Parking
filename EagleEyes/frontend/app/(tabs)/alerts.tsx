@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { getAlerts, BASE_URL } from '../../api/alerts';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -166,6 +167,7 @@ function SectionHeader({ title }: { title: string }) {
 
 function AlertCard({ alert }: { alert: AlertItem }) {
   const visual = TYPE_STYLES[alert.type];
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
 
   return (
     <View style={styles.card}>
@@ -190,11 +192,23 @@ function AlertCard({ alert }: { alert: AlertItem }) {
         {!!alert.imageUrls?.length && (
           <View style={styles.cardPhotoRow}>
             {alert.imageUrls.map((url) => (
-              <Image key={url} source={{ uri: `${BASE_URL}${url}` }} style={styles.cardPhoto} />
+              <TouchableOpacity key={url} onPress={() => setPreviewUri(`${BASE_URL}${url}`)} activeOpacity={0.85}>
+                <Image source={{ uri: `${BASE_URL}${url}` }} style={styles.cardPhoto} />
+              </TouchableOpacity>
             ))}
           </View>
         )}
       </View>
+
+      <Modal visible={!!previewUri} transparent animationType="fade" onRequestClose={() => setPreviewUri(null)}>
+        <TouchableOpacity
+          style={styles.previewOverlay}
+          activeOpacity={1}
+          onPress={() => setPreviewUri(null)}
+        >
+          {previewUri && <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" />}
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -258,7 +272,7 @@ export default function AlertsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={['right', 'left']}>
       {/* <TopBar /> */}
 
       <FlatList
@@ -485,5 +499,15 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 8,
     backgroundColor: '#E5E7EB',
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewImage: {
+    width: '94%',
+    height: '80%',
   },
 });

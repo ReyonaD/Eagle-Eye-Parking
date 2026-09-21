@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Image, Modal,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Image, Modal, RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -309,8 +309,8 @@ export default function HazardsScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedHazard, setSelectedHazard] = useState<any | null>(null);
 
-  const fetchHazards = async () => {
-    setIsLoading(true);
+  const fetchHazards = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     try {
       //pending = commuter reports awaiting review; published = live on the feed
       const [pending, published] = await Promise.all([
@@ -322,8 +322,15 @@ export default function HazardsScreen() {
     } catch {
       Alert.alert('Error', 'Could not load hazard reports.');
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
+  };
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchHazards(false); //quiet fetch: keep the list visible while refreshing
+    setIsRefreshing(false);
   };
 
   useFocusEffect(
@@ -380,7 +387,10 @@ export default function HazardsScreen() {
         />
       ) : (
         <>
-          <ScrollView contentContainerStyle={styles.listScroll}>
+          <ScrollView
+            contentContainerStyle={styles.listScroll}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#00853E" />}
+          >
             <Text style={styles.screenTitle}>Hazard Reports</Text>
             <Text style={styles.screenSubtitle}>Review commuter-submitted hazard alerts</Text>
 
