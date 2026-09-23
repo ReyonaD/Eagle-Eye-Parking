@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  RefreshControl,
+  Modal,
 } from 'react-native';
+import { getAlerts, BASE_URL } from '../../api/alerts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -19,58 +22,56 @@ interface AlertItem {
   title: string;
   description: string;
   time: string;
-  section: 'Today' | 'Yesterday';
+  section: 'Today' | 'Yesterday' | 'Earlier';
   type: AlertType;
+  lotName?: string;
+  imageUrls?: string[];
   unread?: boolean;
   important?: boolean;
 }
 
-const ALERTS: AlertItem[] = [
-  {
-    id: '1',
-    title: 'Lot 7 Closed for Construction',
-    description:
-      'Lot 7 will be fully closed starting Oct 15th for resurfacing. Please use the other lots as an alternative.',
-    time: '2h',
-    section: 'Today',
-    type: 'warning',
-    unread: true,
-    important: true,
-  },
-  {
-    id: '2',
-    title: 'Commuter Permit Updates',
-    description:
-      'Eagle Annual permit applications are now open. Renew before Sep 1st to secure your spot.',
-    time: '5h',
-    section: 'Today',
-    type: 'info',
-    unread: true,
-    important: false,
-  },
-  {
-    id: '3',
-    title: 'Game Day Parking Enforcement',
-    description:
-      'Lot 20 will be reserved for game parking today starting at 12:00 PM. Ensure your car is parked appropriately.',
-    time: '1d',
-    section: 'Yesterday',
-    type: 'event',
-    unread: false,
-    important: true,
-  },
-  {
-    id: '4',
-    title: 'Lot 25 Temporarily Closed for Icy Condition',
-    description:
-      'Lot 25 is temporarily closed due to icy conditions. Please avoid the area until further notice.',
-    time: '1d',
-    section: 'Yesterday',
-    type: 'info',
-    unread: false,
-    important: false,
-  },
-];
+//backend timestamps are UTC without a "Z" suffix; normalize before parsing
+function parseUTC(isoString: string): Date {
+  return new Date(/Z$|[+-]\d{2}:?\d{2}$/.test(isoString) ? isoString : `${isoString}Z`);
+}
+
+//"2h" / "1d" style label from a backend timestamp
+function timeAgo(createdAt: string): string {
+  const ms = Date.now() - parseUTC(createdAt).getTime();
+  const minutes = Math.max(1, Math.floor(ms / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function sectionFor(createdAt: string): AlertItem['section'] {
+  const created = parseUTC(createdAt);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
+  if (created >= startOfToday) return 'Today';
+  if (created >= startOfYesterday) return 'Yesterday';
+  return 'Earlier';
+}
+
+//map a backend alert (id, title, alert_type, category, description, upvotes, created_at)
+//into the shape this screen's design renders
+function toAlertItem(raw: any): AlertItem {
+  return {
+    id: String(raw.id),
+    title: raw.title,
+    description: raw.description || raw.category || '',
+    time: timeAgo(raw.created_at),
+    section: sectionFor(raw.created_at),
+    type: raw.alert_type === 'hazard' ? 'warning' : raw.alert_type === 'event' ? 'event' : 'info',
+    lotName: raw.lot_name || undefined,
+    imageUrls: Array.isArray(raw.image_urls) && raw.image_urls.length ? raw.image_urls : undefined,
+    unread: sectionFor(raw.created_at) === 'Today',
+    important: raw.alert_type === 'hazard' || (raw.upvotes ?? 0) >= 2,
+  };
+}
+
 
 const TYPE_STYLES = {
   warning: {
@@ -166,6 +167,7 @@ function SectionHeader({ title }: { title: string }) {
 
 function AlertCard({ alert }: { alert: AlertItem }) {
   const visual = TYPE_STYLES[alert.type];
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
 
   return (
     <View style={styles.card}>
@@ -179,42 +181,98 @@ function AlertCard({ alert }: { alert: AlertItem }) {
           <Text style={styles.cardTime}>{alert.time}</Text>
         </View>
 
+        {!!alert.lotName && (
+          <View style={styles.lotRow}>
+            <Ionicons name="location" size={13} color="#00853E" />
+            <Text style={styles.lotText}>{alert.lotName}</Text>
+          </View>
+        )}
         <Text style={styles.cardDescription}>{alert.description}</Text>
+
+        {!!alert.imageUrls?.length && (
+          <View style={styles.cardPhotoRow}>
+            {alert.imageUrls.map((url) => (
+              <TouchableOpacity key={url} onPress={() => setPreviewUri(`${BASE_URL}${url}`)} activeOpacity={0.85}>
+                <Image source={{ uri: `${BASE_URL}${url}` }} style={styles.cardPhoto} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
+
+      <Modal visible={!!previewUri} transparent animationType="fade" onRequestClose={() => setPreviewUri(null)}>
+        <TouchableOpacity
+          style={styles.previewOverlay}
+          activeOpacity={1}
+          onPress={() => setPreviewUri(null)}
+        >
+          {previewUri && <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" />}
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
 
 export default function AlertsScreen() {
+  const router = useRouter();
   const [filter, setFilter] = useState<FilterType>('All');
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadAlerts = useCallback(async () => {
+    try {
+      //the feed is split by type on the backend, so fetch both and merge
+      const [hazards, events] = await Promise.all([
+        getAlerts('hazard'),
+        getAlerts('event'),
+      ]);
+      const merged = [...hazards, ...events]
+        .map(toAlertItem)
+        .sort((a, b) => Number(b.id) - Number(a.id));
+      setAlerts(merged);
+    } catch (error) {
+      console.error('Failed to load alerts:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAlerts();
+  }, [loadAlerts]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadAlerts();
+    setRefreshing(false);
+  }, [loadAlerts]);
 
   const filteredAlerts = useMemo(() => {
     switch (filter) {
       case 'Unread':
-        return ALERTS.filter((alert) => alert.unread);
+        return alerts.filter((alert) => alert.unread);
       case 'Important':
-        return ALERTS.filter((alert) => alert.important);
+        return alerts.filter((alert) => alert.important);
       default:
-        return ALERTS;
+        return alerts;
     }
-  }, [filter]);
+  }, [filter, alerts]);
 
-  const todayAlerts = filteredAlerts.filter((a) => a.section === 'Today');
-  const yesterdayAlerts = filteredAlerts.filter((a) => a.section === 'Yesterday');
-
-  const listData = [
-    ...(todayAlerts.length
-      ? [{ id: 'today-header', kind: 'header', label: 'TODAY' as const }]
-      : []),
-    ...todayAlerts.map((a) => ({ ...a, kind: 'alert' as const })),
-    ...(yesterdayAlerts.length
-      ? [{ id: 'yesterday-header', kind: 'header', label: 'YESTERDAY' as const }]
-      : []),
-    ...yesterdayAlerts.map((a) => ({ ...a, kind: 'alert' as const })),
+  const sections: { label: string; items: AlertItem[] }[] = [
+    { label: 'TODAY', items: filteredAlerts.filter((a) => a.section === 'Today') },
+    { label: 'YESTERDAY', items: filteredAlerts.filter((a) => a.section === 'Yesterday') },
+    { label: 'EARLIER', items: filteredAlerts.filter((a) => a.section === 'Earlier') },
   ];
 
+  const listData = sections.flatMap((s) =>
+    s.items.length
+      ? [
+          { id: `${s.label}-header`, kind: 'header' as const, label: s.label },
+          ...s.items.map((a) => ({ ...a, kind: 'alert' as const })),
+        ]
+      : []
+  );
+
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={['right', 'left']}>
       {/* <TopBar /> */}
 
       <FlatList
@@ -233,17 +291,52 @@ export default function AlertsScreen() {
             <FilterTabs selected={filter} onSelect={setFilter} />
           </>
         }
+        ListEmptyComponent={
+          <Text style={{ textAlign: 'center', color: '#9CA3AF', marginTop: 32 }}>
+            No alerts right now. Pull down to refresh.
+          </Text>
+        }
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       />
+
+      {/* commuters submit hazard reports for admin review */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/report-hazard')}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="add" size={30} color="#fff" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  lotRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
+  lotText: { fontSize: 12.5, fontWeight: '700', color: '#00853E' },
   screen: {
     flex: 1,
     backgroundColor: '#F3F4F6',
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#00853E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
   },
 
   // top app bar 
@@ -395,5 +488,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: '#64748B',
+  },
+  cardPhotoRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  cardPhoto: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    backgroundColor: '#E5E7EB',
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewImage: {
+    width: '94%',
+    height: '80%',
   },
 });
