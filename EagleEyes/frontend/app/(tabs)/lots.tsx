@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
 import { openDirections } from '../../utils/navigation';
+import { GROUP_EMBLEMS, normalizePermit } from '../../utils/permits';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
 const PAGE_SIZE = 10; // Number of lots to load per page
 
@@ -37,6 +38,8 @@ const PERMIT_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
   'T':    { bg: '#E0D0B4', text: '#5F3A1E' },
   'PP':   { bg: '#F5E6C8', text: '#8B5E00' },
   'A37':  { bg: '#D4C8A8', text: '#5C4A1E' },
+  'RR':   { bg: '#C8C0E8', text: '#2E1E6A' },
+  'ST':   { bg: '#CFD8DC', text: '#263238' },
   'MC':   { bg: '#D8D8D8', text: '#444' },
   'SV':   { bg: '#C8D8C8', text: '#1A4A1A' },
   'VIS':  { bg: '#E8D0C8', text: '#6A2A1A' },
@@ -54,6 +57,9 @@ const PERMIT_ABBREVIATIONS: Record<string, string> = {
 };
 
 function abbreviatePermit(permit: string): string {
+  // Consolidated groups (A-Reserved -> "A", Resident Reserved -> "RR")
+  const group = normalizePermit(permit);
+  if (GROUP_EMBLEMS[group]) return GROUP_EMBLEMS[group];
   if (PERMIT_ABBREVIATIONS[permit]) return PERMIT_ABBREVIATIONS[permit];
   // Strip parenthetical suffix: "PP(Visitor)" → "PP", "Premium Parking (V)" → "Premium Parking"
   const stripped = permit.replace(/\s*\(.*$/, '').trim();
@@ -65,8 +71,8 @@ function abbreviatePermit(permit: string): string {
   return base.slice(0, 3).toUpperCase();
 }
 
-function getPermitBadgeInfo(permitList: string[], lotName?: string) {
-  if (!permitList || permitList.length === 0) {
+function getPermitBadgeInfo(permit: string | null, lotName?: string) {
+  if (!permit) {
     // Try to extract a hint from the lot name (e.g. "Lot 13 - SV" → "SV")
     const namePart = lotName?.match(/[-–]\s*([A-Z0-9/]{1,6})\s*$/i)?.[1]?.toUpperCase();
     if (namePart) {
@@ -75,15 +81,18 @@ function getPermitBadgeInfo(permitList: string[], lotName?: string) {
     }
     return { label: '?', bg: '#E0E0E0', text: '#666' };
   }
-  const raw = permitList[0].trim();
+  const raw = permit.trim();
   const label = abbreviatePermit(raw);
   const colors = PERMIT_BADGE_COLORS[label] || PERMIT_BADGE_COLORS[raw] || { bg: '#D8D8D8', text: '#555' };
   return { label, ...colors };
 }
 
-function LotCard({ lot, onPress }: { lot: any; onPress: (lot: any) => void }) {
+// One card per (lot, permit group) so each permit gets its own emblem/tab
+type LotEntry = { key: string; lot: any; permit: string | null };
+
+function LotCard({ lot, permit, onPress }: { lot: any; permit: string | null; onPress: (lot: any) => void }) {
   const dotColor = STATUS_COLOR[lot.status as AvailabilityStatus] || STATUS_COLOR['Available'];
-  const badge = getPermitBadgeInfo(lot.permitList || [], lot.name);
+  const badge = getPermitBadgeInfo(permit, lot.name);
   const displayPercent = typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% Empty` : 'Live';
 
   return (
@@ -100,6 +109,7 @@ function LotCard({ lot, onPress }: { lot: any; onPress: (lot: any) => void }) {
       </View>
       <View style={styles.cardMiddle}>
         <Text style={styles.lotName}>{lot.name}</Text>
+        {permit ? <Text style={styles.permitNameText}>{permit}</Text> : null}
         <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
       </View>
       <View style={styles.cardRight}>
@@ -223,20 +233,24 @@ export default function LotsScreen() {
   }, [lots]);
 
   const filtered = useMemo(() => {
-    return lots.filter((lot) => {
-      const q = query.toLowerCase();
+    const q = query.trim().toLowerCase();
+    const entries: LotEntry[] = [];
+    lots.forEach((lot) => {
+      if (availabilityFilter !== 'all' && lot.status !== availabilityFilter) return;
       const nameMatch = (lot.name?.toLowerCase() || '').includes(q);
-      const permitMatch = (lot.permits?.toLowerCase() || '').includes(q);
-      if (!nameMatch && !permitMatch) return false;
-      if (permitFilter !== 'all') {
-        const hasPermit = (lot.permitList || []).some(
-          (p: string) => p.trim() === permitFilter
-        );
-        if (!hasPermit) return false;
-      }
-      if (availabilityFilter !== 'all' && lot.status !== availabilityFilter) return false;
-      return true;
+      const groups: (string | null)[] = (lot.permitList || []).length > 0 ? lot.permitList : [null];
+      groups.forEach((permit) => {
+        if (permitFilter !== 'all' && permit !== permitFilter) return;
+        if (q && !nameMatch) {
+          // Search by permit name or its emblem (e.g. "A", "RR")
+          if (!permit) return;
+          const emblem = abbreviatePermit(permit).toLowerCase();
+          if (!permit.toLowerCase().includes(q) && emblem !== q) return;
+        }
+        entries.push({ key: `${lot.id}-${permit ?? 'none'}`, lot, permit });
+      });
     });
+    return entries;
   }, [lots, query, permitFilter, availabilityFilter]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginatedLots = useMemo(() => {
@@ -299,8 +313,8 @@ export default function LotsScreen() {
       <FlatList
         ref={listRef}
         data={paginatedLots}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <LotCard lot={item} onPress={handleLotPress} />}
+        keyExtractor={(item) => item.key}
+        renderItem={({ item }) => <LotCard lot={item.lot} permit={item.permit} onPress={handleLotPress} />}
         ListHeaderComponent={
           <>
             <View style={styles.liveStatusBar}>
@@ -327,7 +341,7 @@ ListFooterComponent={// Pagination Controls
     <View style={styles.paginationContainer}>
       <Text style={styles.paginationSummary}>
         Showing {(currentPage - 1) * PAGE_SIZE + 1}-
-        {Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} lots
+        {Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} results
       </Text>
 
       <View style={styles.paginationRow}>
@@ -776,6 +790,11 @@ pageIndicator: {
     fontWeight: '700', // Made slightly bolder
     color: '#1a1a1a',
   },
+  permitNameText: {
+    fontSize: 12,
+    color: '#777',
+    fontWeight: '600',
+  },
   percentText: {
     fontSize: 13,
     fontWeight: '600',
@@ -916,4 +935,4 @@ pageIndicator: {
     fontSize: 16,
     fontWeight: '700',
   },
-});
+});

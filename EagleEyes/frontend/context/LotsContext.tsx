@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect} from 'react';
+import { getLotPermitGroups, getLotCategory } from '../utils/permits';
 //define the exact shape of data
 interface LotsContextType {
     lots: any[];
@@ -98,8 +99,14 @@ export function LotsProvider({ children }: { children : ReactNode }) {
           sourceTimestampProvidedByParkzen: lot.sourceTimestampProvidedByParkzen === true,
           captureTimeSource: lot.captureTimeSource || 'none',
           backendFetchedAt: lot.backendFetchedAt || null,
-          permitList: lot.permits && Array.isArray(lot.permits) ? lot.permits : [],
-          permits: lot.permits && Array.isArray(lot.permits) ? lot.permits.join(',') : 'Unknown'
+          // Raw ParkZen permits (e.g. A01, A02 ... A90) kept for reference
+          rawPermitList: Array.isArray(lot.permits) ? lot.permits : [],
+          // Lot category from its name (A-Reserved / Resident Reserved / Street Parking)
+          category: getLotCategory(lot.lot_name || lot.name),
+          // Consolidated permit groups, with the lot's category first
+          // (A01..A90 -> "A-Reserved", numbered resident spots -> "Resident Reserved")
+          permitList: getLotPermitGroups(lot.lot_name || lot.name, lot.permits),
+          permits: getLotPermitGroups(lot.lot_name || lot.name, lot.permits).join(',') || 'Unknown'
         };
       }).filter((lot: any) => lot !== null);
 
