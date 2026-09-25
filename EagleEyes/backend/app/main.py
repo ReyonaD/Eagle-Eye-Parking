@@ -1,25 +1,35 @@
 import httpx
 import os
+import random
 import secrets
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import FastAPI, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.staticfiles import StaticFiles
 from jose import jwt, JWTError 
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, text
 from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
 from app.models import User, Alert, PasswordResetToken
-from app.schemas import UserCreate, AlertResponse, AlertCreate, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.schemas import UserCreate, AlertResponse, AlertCreate, AlertApprove, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin
 from app.core.email import send_password_reset_email
-from typing import List
+from typing import List, Optional
 Base.metadata.create_all(bind=engine)
+#create_all does not add new columns to existing tables, so patch them in here.
+#Existing alerts predate the approval flow and stay visible as 'published'.
+with engine.connect() as _conn:
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'published'"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS lot_name VARCHAR"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS image_urls JSON"))
+    _conn.commit()
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
 app.add_middleware(
@@ -29,6 +39,29 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
 )
+
+# Photos attached to hazard/event reports are saved to disk here and served back at /uploads/<filename>
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+MAX_IMAGE_SIZE = 8 * 1024 * 1024  # 8MB
+MAX_IMAGES_PER_ALERT = 3
+#extension is picked from the sniffed content, never the client-supplied filename
+IMAGE_SIGNATURES = [
+    (b"\xff\xd8\xff", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", ".png"),
+    (b"RIFF", ".webp"),  # confirmed further below (bytes 8-12 must read "WEBP")
+]
+
+def _sniff_image_extension(header: bytes) -> Optional[str]:
+    """Identify JPEG/PNG/WEBP from the actual file bytes, not the client-supplied content-type."""
+    for signature, ext in IMAGE_SIGNATURES:
+        if header.startswith(signature):
+            if ext == ".webp" and header[8:12] != b"WEBP":
+                continue
+            return ext
+    return None
 parkzen_auth_cache = {
     "token": None,
     "expires_at": None
@@ -235,6 +268,36 @@ def read_current_user(current_user: User = Depends(get_current_user)):
         "is_active": current_user.is_active
     }
 
+async def get_parkzen_token(username: str, password: str, force_refresh: bool = False) -> str:
+    """Return a valid ParkZen token, logging in only when the cached one is
+    missing, expired, or explicitly invalidated (force_refresh)."""
+    current_time = datetime.now()
+    if (not force_refresh
+            and parkzen_auth_cache["token"] is not None
+            and parkzen_auth_cache["expires_at"] is not None
+            and parkzen_auth_cache["expires_at"] > current_time):
+        return parkzen_auth_cache["token"]
+
+    auth_url = "https://api.parkzenapp.com/api/auth/login"
+    auth_payload = {"username": username, "password": password}
+    async with httpx.AsyncClient() as client:
+        auth_response = await client.post(auth_url, json=auth_payload)
+
+    if auth_response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Failed to authenticate with ParkZen")
+
+    auth_data = auth_response.json()
+    token = auth_data.get("accessToken") or auth_data.get("token")
+    if not token and "data" in auth_data:
+        token = auth_data["data"].get("accessToken") or auth_data["data"].get("token")
+
+    if not token:
+        raise HTTPException(status_code=500, detail="Could not find token in login response")
+
+    parkzen_auth_cache["token"] = token
+    parkzen_auth_cache["expires_at"] = current_time + timedelta(minutes=10)
+    return token
+
 @app.get("/api/lots")
 async def get_parking_lots():
     """Fetches UNT lots drawn in Parkzen Dashboard"""
@@ -246,32 +309,7 @@ async def get_parking_lots():
         raise HTTPException(status_code=500, detail="Missing ParkZen credentials in backend .env")
     
     try:
-        # CHECK IF WE ALREADY HAVE A VALID TOKEN
-        current_time = datetime.now()
-        if parkzen_auth_cache["token"] is None or parkzen_auth_cache["expires_at"] < current_time:
-            
-            # FETCH A NEW TOKEN ONLY IF WE NEED ONE
-            auth_url = "https://api.parkzenapp.com/api/auth/login"
-            auth_payload = {"username": username, "password": password}
-            
-            async with httpx.AsyncClient() as client:
-                auth_response = await client.post(auth_url, json=auth_payload)
-
-            if auth_response.status_code != 200:
-                raise HTTPException(status_code=401, detail="Failed to authenticate with ParkZen")
-            
-            auth_data = auth_response.json()
-            token = auth_data.get("accessToken") or auth_data.get("token") 
-            if not token and "data" in auth_data:
-                token = auth_data["data"].get("accessToken") or auth_data["data"].get("token")
-                
-            if not token:
-                raise HTTPException(status_code=500, detail="Could not find token in login response")
-            
-            # Save token to cache and set expiration
-            parkzen_auth_cache["token"] = token
-            parkzen_auth_cache["expires_at"] = current_time + timedelta(minutes=10)
-        active_token = parkzen_auth_cache["token"]
+        active_token = await get_parkzen_token(username, password)
 
         # FETCH THE LOTS ASYNCHRONOUSLY
         lots_url = f"https://api.parkzenapp.com/api/lots?clientId={client_id}"
@@ -279,6 +317,14 @@ async def get_parking_lots():
 
         async with httpx.AsyncClient() as client:
             lots_response = await client.get(lots_url, headers=headers)
+
+        # A 401 here means the cached token was invalidated early (e.g., another
+        # login on the shared ParkZen account) — force one fresh login and retry.
+        if lots_response.status_code == 401:
+            active_token = await get_parkzen_token(username, password, force_refresh=True)
+            headers = {"Authorization": f"Bearer {active_token}"}
+            async with httpx.AsyncClient() as client:
+                lots_response = await client.get(lots_url, headers=headers)
 
         if lots_response.status_code != 200:
             raise HTTPException(lots_response.status_code, detail="Fail to fetch lots from ParkZen API")
@@ -406,21 +452,63 @@ def get_alerts(
     Orders them by newest first!
     """
     alerts = db.query(Alert)\
-            .filter(Alert.alert_type == alert_type)\
+            .filter(Alert.alert_type == alert_type, Alert.status == "published")\
             .order_by(desc(Alert.created_at))\
             .all()
     return alerts
+
+@app.get("/alerts/pending", response_model=List[AlertResponse])
+def get_pending_alerts(
+    alert_type: str = Query(..., description="Must be 'hazard' or 'event'"),
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin review queue: commuter-submitted alerts waiting for approval."""
+    return db.query(Alert)\
+            .filter(Alert.alert_type == alert_type, Alert.status == "pending")\
+            .order_by(desc(Alert.created_at))\
+            .all()
     
+@app.post("/alerts/upload-image")
+async def upload_alert_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """Saves a single photo for a hazard/event report and returns its URL.
+    Called once per selected photo before POST /alerts, which attaches the returned URLs."""
+    contents = await file.read()
+    if len(contents) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="Image must be smaller than 8MB")
+
+    ext = _sniff_image_extension(contents[:12])
+    if ext is None:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WEBP images are allowed")
+
+    #random filename: never trust or reuse the client-supplied name
+    filename = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(UPLOAD_DIR, filename), "wb") as f:
+        f.write(contents)
+
+    return {"image_url": f"/uploads/{filename}"}
+
 @app.post("/alerts", response_model=AlertResponse)
 def create_alert(
     alert_data: AlertCreate,
-    db: Session= Depends(get_db)
+    db: Session= Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    if alert_data.image_urls and len(alert_data.image_urls) > MAX_IMAGES_PER_ALERT:
+        raise HTTPException(status_code=400, detail=f"A report can include at most {MAX_IMAGES_PER_ALERT} photos")
+
+    #admin posts go live immediately; commuter reports wait for admin review
     new_alert = Alert(
-        title=alert_data.title.upper(), 
+        title=alert_data.title.upper(),
         alert_type=alert_data.alert_type.lower(),
         category=alert_data.category,
-        description=alert_data.description
+        description=alert_data.description,
+        lot_name=alert_data.lot_name,
+        image_urls=alert_data.image_urls or [],
+        status="published" if current_user.role == "admin" else "pending"
     )
     db.add(new_alert)
     db.commit()
@@ -440,6 +528,30 @@ def upvote_alert(
     db.commit()
     db.refresh(alert)
 
+    return alert
+
+@app.put("/alerts/{alert_id}/approve", response_model=AlertResponse)
+def approve_alert(
+    alert_id: int,
+    edits: AlertApprove,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin approves a pending report (optionally editing it) and publishes it."""
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found or already resolved.")
+
+    if edits.title is not None and edits.title.strip():
+        alert.title = edits.title.strip().upper()
+    if edits.category is not None and edits.category.strip():
+        alert.category = edits.category.strip()
+    if edits.description is not None:
+        alert.description = edits.description.strip() or None
+
+    alert.status = "published"
+    db.commit()
+    db.refresh(alert)
     return alert
 
 @app.delete("/alerts/{alert_id}")

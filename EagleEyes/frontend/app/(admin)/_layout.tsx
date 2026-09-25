@@ -39,13 +39,18 @@ export default function AdminLayout() {
         />
 
         <Tabs.Screen
-          name="index"
+          name="profile"
           options={{
             title: 'PROFILE',
             tabBarIcon: ({ color }) => (
               <Ionicons name="home-outline" size={26} color={color} />
             ),
           }}
+        />
+
+        <Tabs.Screen
+          name="index"
+          options={{ href: null }}
         />
 
         {/* Hidden screen — navigable via router.push but not shown in tab bar */}

@@ -16,21 +16,33 @@ const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; lati
   "Frisco Landing":  { latitude: 33.1858, longitude: -96.8055, latitudeDelta: 0.018, longitudeDelta: 0.018 },
 };
 
+// Hide POI/transit clutter so the lot polygons are the visual focus; roads
+// and labels stay for orientation. Matches EagleMap.web.tsx.
+const MAP_STYLES = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
+
+// react-native-maps' Polygon has no separate fillOpacity prop like the web
+// SDK does, so a lighter fill (matching the web version's look) has to be
+// baked into the color itself as an alpha channel.
+const LOT_FILL_OPACITY = 0.35;
+
+function withFillOpacity(color: string, opacity: number): string {
+  const hexMatch = /^#([0-9a-f]{6})$/i.exec(color || '');
+  if (!hexMatch) return color;
+  const value = parseInt(hexMatch[1], 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
 export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
   const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [sheetLot, setSheetLot] = useState<any | null>(null);
 
-  // useEffect(() => {
-  //   const setupParkZen = async () => {
-  //     try {
-  //       await requestPermissions();
-  //     } catch (error) {
-  //       console.warn("ParkZen permissions failed.");
-  //     }
-  //   };
-  //   setupParkZen();
-  // }, []);
 
   useEffect(() => {
     const region = CAMPUS_REGIONS[selectedCampus];
@@ -40,27 +52,6 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
   }, [selectedCampus]);
 
   const untRegion = CAMPUS_REGIONS["Main campus"];
-
-  /*
-  const handleFindMyCar = async () => {
-    try {
-      console.log("Finding parked car location...");
-      // Commented out ParkzenCore call for dev server compatibility
-      // For native build, uncomment and use: const loc = await getParkedLocation();
-      
-      // Dev server fallback: use the manually dropped pin if available
-      if (parkedLocation) {
-        mapRef.current?.animateCamera({ center: parkedLocation, zoom: 17 }, { duration: 1000 });
-        Alert.alert("Simulated Car Found!", "Showing the manually dropped pin.\n\nTip: Long-press the map to simulate parking");
-      } else {
-        Alert.alert("No Parking Detected", "Long-press the map to simulate parking a car");
-      }
-    } catch (error) {
-      console.warn("Error finding car:", error);
-      Alert.alert("Error", "Could not find parked car location");
-    }
-  };
-  */
 
   const handleLongPress = (event: any) => {
     const coords = event.nativeEvent.coordinate;
@@ -90,16 +81,17 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
       <MapView 
         ref={mapRef}
         style={styles.map} 
-        provider={PROVIDER_GOOGLE} 
+        provider={PROVIDER_GOOGLE}
         initialRegion={untRegion}
         showsUserLocation={true}
         onLongPress={handleLongPress}
+        customMapStyle={MAP_STYLES}
       >
         {liveLots.length > 0 && liveLots.map((lot) => (
           <Polygon
             key={lot.id}
             coordinates={lot.coordinates}
-            fillColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.fillColor}
+            fillColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : withFillOpacity(lot.fillColor, LOT_FILL_OPACITY)}
             strokeColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.strokeColor}
             strokeWidth={lot.isVisible === false ? 0 : 2}
             tappable={lot.isVisible !== false}

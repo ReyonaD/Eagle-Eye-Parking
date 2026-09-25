@@ -69,15 +69,27 @@ export default function MapScreen() {
     // 1. Guard against empty data, but REMOVE the Array.isArray strict check
     if (!lot?.permits) return { ...lot, isVisible: false };
 
-    // Use the consolidated permit groups (A01..A90 -> "A-Reserved", etc.)
-    const permitsArray: string[] = Array.isArray(lot.permitList) && lot.permitList.length > 0
-      ? lot.permitList
-      : consolidatePermits(lot.permits);
-    if (permitsArray.length === 0) return { ...lot, isVisible: false };
+    // Lots listed in "Lots to be changed" use their consolidated groups (A-Reserved, Resident Reserved, Street Parking)
+    if (lot.category) {
+      const groups: string[] = Array.isArray(lot.permitList) ? lot.permitList : consolidatePermits(lot.permits);
+      if (selectedPermit === A_RESERVED || selectedPermit === RESIDENT_RESERVED || selectedPermit === STREET_PARKING) {
+        return { ...lot, isVisible: groups.includes(selectedPermit) };
+      }
+    }
 
-    // Reserved groups are matched exactly so e.g. "Resident" doesn't pick up "Resident Reserved"
-    if (selectedPermit === A_RESERVED || selectedPermit === RESIDENT_RESERVED || selectedPermit === STREET_PARKING) {
-      return { ...lot, isVisible: permitsArray.includes(selectedPermit) };
+    // FIXED: Handle both Arrays AND Comma-Separated Strings
+    let permitsArray = [];
+    if (lot.category) {
+      // Listed lots: match other permits, but don't let "Resident" pick up "Resident Reserved", etc.
+      permitsArray = (lot.permitList || []).filter(
+        (p: string) => p !== A_RESERVED && p !== RESIDENT_RESERVED && p !== STREET_PARKING
+      );
+    } else if (Array.isArray(lot.permits)) {
+      permitsArray = lot.permits;
+    } else if (typeof lot.permits === 'string') {
+      permitsArray = lot.permits.split(','); // Split "Eagle, Faculty" into ["Eagle", " Faculty"]
+    } else {
+      return { ...lot, isVisible: false }; 
     }
 
     const permitMap: { [key: string]: string[] } = {
@@ -105,8 +117,6 @@ export default function MapScreen() {
 
     // Loop over our new safe permitsArray
     const isVisible = permitsArray.some((p: any) => {
-      // Reserved groups only match their own dropdown option (handled above)
-      if (p === A_RESERVED || p === RESIDENT_RESERVED || p === STREET_PARKING) return false;
       const lotPermitCleaned = clean(p);
       
       // Match if exact or if the backend string contains our target
@@ -318,4 +328,4 @@ const styles = StyleSheet.create({
   },
 
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' }
-});
+});

@@ -14,13 +14,19 @@ const getIconForCategory = (category: string) => {
     default: return 'calendar';
   }
 };
-const getTodayDateString = () => {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
+//backend stores timestamps in UTC without a "Z" suffix; append it before
+//parsing so comparisons and displayed times use the device's local time
+const parseUTC = (isoString: string) =>
+  new Date(/Z$|[+-]\d{2}:?\d{2}$/.test(isoString) ? isoString : `${isoString}Z`);
+
+const toLocalDateString = (d: Date) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+const getTodayDateString = () => toLocalDateString(new Date());
 export default function EventsScreen() {
   const [selected, setSelected] = useState(getTodayDateString());
   const [events, setEvents] = useState<any[]>([]);
@@ -59,20 +65,18 @@ export default function EventsScreen() {
     const m = months[Number(month) - 1] ?? '';
     return `${m} ${Number(day)}, ${year}`;
   };
-  //Filter for ACTIVE events (matches the selected date exactly)
-  const activeEvents = events.filter(eventItem => 
-    eventItem.created_at && eventItem.created_at.startsWith(selected)
+  //Filter for ACTIVE events (selected LOCAL date or later, so nothing disappears)
+  const activeEvents = events.filter(eventItem =>
+    eventItem.created_at && toLocalDateString(parseUTC(eventItem.created_at)) >= selected
   );
-  // Filter for PAST events (dates strictly before the selected date)
+  // Filter for PAST events (local dates strictly before the selected date)
   // We limit to the 5 most recent past events so the screen doesn't get infinitely long.
   const pastEvents = events.filter(eventItem => {
     if (!eventItem.created_at) return false;
-    const eventDate = eventItem.created_at.split('T')[0]; // Grabs just the YYYY-MM-DD
-    return eventDate < selected;
+    return toLocalDateString(parseUTC(eventItem.created_at)) < selected;
   }).slice(0, 5);
 
-
-  // ADD EVENT 
+  // ADD EVENT
 
   const handleSaveEvent = () => {
     if (!eventName || !startDate || !startTime || !endDate || !endTime) {
@@ -156,7 +160,7 @@ export default function EventsScreen() {
                     </View>
                   </View>
                   <Text style={styles.cardTime}>
-                    {new Date(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {parseUTC(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </Text>
                   {eventItem.description && (
                      <Text style={styles.cardDesc}>{eventItem.description}</Text>
@@ -171,11 +175,11 @@ export default function EventsScreen() {
               <View style={styles.pastEventsWrapper}>
                 <View style={styles.divider} />
                 <Text style={styles.pastFeedTitle}>Previous Events</Text>
-                
+
                 {pastEvents.map((eventItem) => (
-                  <TouchableOpacity 
-                    key={`past-${eventItem.id}`} 
-                    style={[styles.card, styles.outdatedCard]} 
+                  <TouchableOpacity
+                    key={`past-${eventItem.id}`}
+                    style={[styles.card, styles.outdatedCard]}
                     onPress={() => Alert.alert('Past Event', 'This event has already concluded.')}
                   >
                     <View style={styles.cardHeader}>
@@ -186,11 +190,11 @@ export default function EventsScreen() {
                         <Text style={[styles.cardTitle, styles.outdatedText]}>{eventItem.title}</Text>
                       </View>
                     </View>
-                    
+
                     <Text style={[styles.cardTime, styles.outdatedText]}>
-                      {formatDate(eventItem.created_at.split('T')[0])} • {new Date(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {formatDate(toLocalDateString(parseUTC(eventItem.created_at)))} • {parseUTC(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
-                    
+
                     <Text style={[styles.clickDetails, styles.outdatedText]}>CONCLUDED</Text>
                   </TouchableOpacity>
                 ))}
@@ -389,7 +393,7 @@ const styles = StyleSheet.create({
   cardTime: { fontSize: 12, color: '#555', marginBottom: 8, fontWeight: '600', textTransform: 'uppercase' },
   cardDesc: { fontSize: 14, color: '#444', marginBottom: 12, lineHeight: 20 },
   clickDetails: { fontSize: 11, color: '#666', fontStyle: 'italic', textAlign: 'right', fontWeight: 'bold' },
-  
+
   pastEventsWrapper: { marginTop: 8 },
   divider: { height: 1, backgroundColor: '#ddd', marginBottom: 16 },
   pastFeedTitle: { fontSize: 16, fontWeight: 'bold', color: '#888', marginBottom: 12, textTransform: 'uppercase' },
@@ -416,9 +420,9 @@ const styles = StyleSheet.create({
     color: '#00853E',
     marginBottom: 8,
   },
-  outdatedIconBox: { backgroundColor: '#e0e0e0' }, 
-  outdatedText: { color: '#888' }, 
-  
+  outdatedIconBox: { backgroundColor: '#e0e0e0' },
+  outdatedText: { color: '#888' },
+
   fab: {
     position: 'absolute',
     right: 20,
