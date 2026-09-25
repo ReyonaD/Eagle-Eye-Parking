@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Image, Modal,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Image, Modal, RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, router, useFocusEffect } from 'expo-router';
-import { getAlerts, getPendingAlerts, approveAlert, deleteAlert, BASE_URL } from '../../api/alerts';
+import * as ImagePicker from 'expo-image-picker';
+import { getAlerts, getPendingAlerts, approveAlert, deleteAlert, uploadAlertImage, BASE_URL } from '../../api/alerts';
 import { useLots } from '../../context/LotsContext';
 import LotMiniMap from '../../components/LotMiniMap';
 
@@ -108,7 +109,7 @@ function HazardDetail({
   isPending: boolean;
   onBack: () => void;
   onDecline: (h: any) => void;
-  onApprove: (h: any, edits: { title: string; description: string }) => void;
+  onApprove: (h: any, edits: { title: string; description: string; image_urls: string[] }) => void;
 }) {
   const insets = useSafeAreaInsets();
   //admins can edit a pending report before publishing it
@@ -117,6 +118,39 @@ function HazardDetail({
   const [previewUri, setPreviewUri] = useState<string | null>(null);
 
   const photoUrls: string[] = Array.isArray(hazard.image_urls) ? hazard.image_urls : [];
+  //the admin can drop unclear student photos or attach better ones before publishing
+  const [editPhotos, setEditPhotos] = useState<string[]>(photoUrls);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  const handleAddPhoto = async () => {
+    if (editPhotos.length >= 3) {
+      Alert.alert('Limit Reached', 'An alert can have up to 3 photos.');
+      return;
+    }
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Photo Access Needed', 'Please allow photo library access in Settings.');
+      return;
+    }
+    //same multi-select config as the commuter report form (known-good on device)
+    const result = await ImagePicker.launchImageLibraryAsync({
+      quality: 0.7,
+      allowsMultipleSelection: true,
+      selectionLimit: 3 - editPhotos.length,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    setIsUploadingPhoto(true);
+    try {
+      for (const asset of result.assets.slice(0, 3 - editPhotos.length)) {
+        const { image_url } = await uploadAlertImage(asset);
+        setEditPhotos(prev => [...prev, image_url]);
+      }
+    } catch {
+      Alert.alert('Error', 'Could not upload the photo. Check your connection.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
 
   //find the reported lot's polygon so the detail can show it on a real map
   const { lots } = useLots();
@@ -193,8 +227,38 @@ function HazardDetail({
           STUDENT REPORT(S): {hazard.upvotes}
         </Text>
 
-        <Text style={styles.locationLabel}>PHOTOS POSTED BY STUDENT:</Text>
-        {photoUrls.length > 0 ? (
+        <Text style={styles.locationLabel}>
+          {isPending ? 'PHOTOS (TAP \u2715 TO REMOVE, WILL PUBLISH AS SHOWN):' : 'PHOTOS POSTED BY STUDENT:'}
+        </Text>
+        {isPending ? (
+          <View style={styles.pictureRow}>
+            {editPhotos.map(url => (
+              <View key={url} style={styles.photoEditWrap}>
+                <TouchableOpacity onPress={() => setPreviewUri(`${BASE_URL}${url}`)} activeOpacity={0.85}>
+                  <Image source={{ uri: `${BASE_URL}${url}` }} style={styles.pictureThumb} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.photoRemoveBadge}
+                  onPress={() => setEditPhotos(prev => prev.filter(u => u !== url))}
+                >
+                  <Ionicons name="close" size={14} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {Array.from({ length: 3 - editPhotos.length }).map((_, i) => (
+              <TouchableOpacity key={`add-slot-${i}`} style={styles.addPhotoTile} onPress={handleAddPhoto} disabled={isUploadingPhoto}>
+                {isUploadingPhoto && i === 0 ? (
+                  <ActivityIndicator color="#00853E" />
+                ) : (
+                  <>
+                    <Ionicons name="add" size={26} color="#00853E" />
+                    <Text style={styles.addPhotoText}>ADD</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : photoUrls.length > 0 ? (
           <View style={styles.pictureRow}>
             {photoUrls.map(url => (
               <TouchableOpacity key={url} onPress={() => setPreviewUri(`${BASE_URL}${url}`)} activeOpacity={0.85}>
@@ -217,7 +281,7 @@ function HazardDetail({
         {isPending && (
           <TouchableOpacity
             style={styles.approveButton}
-            onPress={() => onApprove(hazard, { title: editTitle, description: editDescription })}
+            onPress={() => onApprove(hazard, { title: editTitle, description: editDescription, image_urls: editPhotos })}
           >
             <Text style={styles.actionButtonText}>APPROVE</Text>
           </TouchableOpacity>
@@ -245,8 +309,8 @@ export default function HazardsScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedHazard, setSelectedHazard] = useState<any | null>(null);
 
-  const fetchHazards = async () => {
-    setIsLoading(true);
+  const fetchHazards = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     try {
       //pending = commuter reports awaiting review; published = live on the feed
       const [pending, published] = await Promise.all([
@@ -258,8 +322,15 @@ export default function HazardsScreen() {
     } catch {
       Alert.alert('Error', 'Could not load hazard reports.');
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
+  };
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchHazards(false); //quiet fetch: keep the list visible while refreshing
+    setIsRefreshing(false);
   };
 
   useFocusEffect(
@@ -316,7 +387,10 @@ export default function HazardsScreen() {
         />
       ) : (
         <>
-          <ScrollView contentContainerStyle={styles.listScroll}>
+          <ScrollView
+            contentContainerStyle={styles.listScroll}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#00853E" />}
+          >
             <Text style={styles.screenTitle}>Hazard Reports</Text>
             <Text style={styles.screenSubtitle}>Review commuter-submitted hazard alerts</Text>
 
@@ -501,6 +575,19 @@ const styles = StyleSheet.create({
   mapPlaceholderSub: { fontSize: 11, color: '#bbb', marginTop: 4 },
   studentCount: { fontSize: 14, fontWeight: '700', color: '#333', textTransform: 'uppercase', marginBottom: 16 },
   pictureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  photoEditWrap: { position: 'relative' },
+  photoRemoveBadge: {
+    position: 'absolute', top: -6, right: -6,
+    backgroundColor: '#C0392B', borderRadius: 11, width: 22, height: 22,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#fff',
+  },
+  addPhotoTile: {
+    width: 110, height: 110, borderRadius: 8,
+    borderWidth: 2, borderColor: '#00853E', borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5EE',
+  },
+  addPhotoText: { fontSize: 11, fontWeight: '800', color: '#00853E', letterSpacing: 1 },
   pictureThumb: { width: 110, height: 110, borderRadius: 8, backgroundColor: '#e8e8e8' },
   picturePlaceholder: {
     height: 100,
