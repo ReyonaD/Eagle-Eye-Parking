@@ -1,9 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import LotDetailsSheet from './LotDetailsSheet';
 import { Ionicons } from '@expo/vector-icons';
-// import { getParkedLocation, requestPermissions } from '../modules/parkzen-core';
 
 interface EagleMapProps {
   liveLots: any[];
@@ -16,19 +15,12 @@ const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; lati
   "Frisco Landing":  { latitude: 33.1858, longitude: -96.8055, latitudeDelta: 0.018, longitudeDelta: 0.018 },
 };
 
-// Hide POI/transit clutter so the lot polygons are the visual focus; roads
-// and labels stay for orientation. Matches EagleMap.web.tsx.
 const MAP_STYLES = [
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
 ];
 
-// react-native-maps' Polygon has no separate fillOpacity prop like the web
-// SDK does, so a lighter fill (matching the web version's look) has to be
-// baked into the color itself as an alpha channel.
 const LOT_FILL_OPACITY = 0.35;
-const LOT_29_RESIDENT_RESERVE_PIN_SOUTH_OFFSET = 0.00015;
-const LOT_29_RESIDENT_RESERVE_PIN_EAST_OFFSET = 0.00015;
 
 function withFillOpacity(color: string, opacity: number): string {
   const hexMatch = /^#([0-9a-f]{6})$/i.exec(color || '');
@@ -40,146 +32,125 @@ function withFillOpacity(color: string, opacity: number): string {
   return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
-function getLotCenter(coordinates: { latitude: number; longitude: number }[]) {
-  if (coordinates.length === 0) return null;
+function getLotNumberLabel(lot: any): string {
+  const rawName = String(lot?.name || lot?.lot_name || '').trim();
+  const rawTag = String(lot?.tag || '').trim();
+  const rawId = String(lot?.id || '').trim();
+  const combined = `${rawName} ${rawTag} ${rawId}`.toLowerCase();
 
-  const totals = coordinates.reduce(
-    (center, coordinate) => ({
-      latitude: center.latitude + coordinate.latitude,
-      longitude: center.longitude + coordinate.longitude,
-    }),
-    { latitude: 0, longitude: 0 },
-  );
+  if (combined.includes('highland') && combined.includes('garage')) return 'HSG';
+  if (combined.includes('union circle') && combined.includes('garage')) return 'UCG';
+  if (combined === 'hsg' || rawId.toLowerCase() === 'hsg' || rawTag.toUpperCase() === 'HSG') return 'HSG';
+  if (combined.includes('ucg') || rawTag.toUpperCase() === 'UCG' || rawId.toLowerCase() === 'ucg') return 'UCG';
 
-  return {
-    latitude: totals.latitude / coordinates.length,
-    longitude: totals.longitude / coordinates.length,
-  };
+  const match = /lot\s*(\d+)/i.exec(rawName);
+  if (match) return `Lot ${match[1]}`;
+
+  if (/^\d+$/.test(rawTag)) return `Lot ${rawTag}`;
+  if (/^\d+$/.test(rawId)) return `Lot ${rawId}`;
+
+  return '';
 }
 
-function getLotMarkerCenter(lot: any) {
-  const center = getLotCenter(lot.coordinates || []);
-  if (!center) return null;
+function pointInPolygon(point: { latitude: number; longitude: number }, polygon: { latitude: number; longitude: number }[]) {
+  let inside = false;
 
-  //Move the pin for Lot20 Eagle specifically
-  const lotName = String(lot.name || lot.lot_name || '');
-  const normalizedLotName = lotName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  if (/\blot\s*20\b.*\beagle\b/i.test(lotName)) {
-    const LOT_20_PIN_SOUTH_OFFSET = 0.0012;
-    const LOT_20_PIN_EAST_OFFSET = 0.00015;
-    return {
-      ...center,
-      latitude: center.latitude - LOT_20_PIN_SOUTH_OFFSET,
-      longitude: center.longitude + LOT_20_PIN_EAST_OFFSET,
-    };
-  }
-  //Overlappping Lot 24 so manually adjusting the pin for Lot 24 A-Reserved
-  if (/\blot\s*24\b.*\ba[-\s]?reserved\b/i.test(lotName)) {
-    // Adjust this number to change the northward position of the Lot 24 A-Reserved pin.
-    const LOT_24_A_RESERVED_PIN_NORTH_OFFSET = 0.00015;
-    return {
-      ...center,
-      latitude: center.latitude + LOT_24_A_RESERVED_PIN_NORTH_OFFSET,
-    };
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].latitude;
+    const yi = polygon[i].longitude;
+    const xj = polygon[j].latitude;
+    const yj = polygon[j].longitude;
+
+    const intersects =
+      ((yi > point.longitude) !== (yj > point.longitude)) &&
+      (point.latitude < ((xj - xi) * (point.longitude - yi)) / ((yj - yi) || 1) + xi);
+
+    if (intersects) inside = !inside;
   }
 
-  if (/\blot\s*29\b.*\bresident\s+reserve(?:d)?\b/i.test(normalizedLotName)) {
-    return {
-      ...center,
-      latitude: center.latitude - LOT_29_RESIDENT_RESERVE_PIN_SOUTH_OFFSET,
-      longitude: center.longitude + LOT_29_RESIDENT_RESERVE_PIN_EAST_OFFSET,
-    };
-  }
-
-  return center;
+  return inside;
 }
 
-function getGroupedMarkerCenter(lots: any[]) {
-  const centers = lots
-    .map(getLotMarkerCenter)
-    .filter((center): center is { latitude: number; longitude: number } => center !== null);
-  if (centers.length === 0) return null;
+function doesLabelFitLot(
+  label: string,
+  coordinate: { latitude: number; longitude: number },
+  polygon: { latitude: number; longitude: number }[],
+  fontSize: number,
+  mapSize: { width: number; height: number },
+  region: { latitudeDelta: number; longitudeDelta: number },
+) {
+  if (!mapSize.width || !mapSize.height || !region.latitudeDelta || !region.longitudeDelta) return false;
 
-  const totals = centers.reduce(
-    (center, lotCenter) => ({
-      latitude: center.latitude + lotCenter.latitude,
-      longitude: center.longitude + lotCenter.longitude,
-    }),
-    { latitude: 0, longitude: 0 },
-  );
+  const labelWidth = label.length * fontSize * 0.68 + 8;
+  const labelHeight = fontSize + 6;
+  const halfLatitude = (labelHeight / 2) * region.latitudeDelta / mapSize.height;
+  const halfLongitude = (labelWidth / 2) * region.longitudeDelta / mapSize.width;
 
-  return {
-    latitude: totals.latitude / centers.length,
-    longitude: totals.longitude / centers.length,
-  };
-}
-
-function getLotMarkerSize(coordinates: { latitude: number; longitude: number }[], tag: string) {
-  const latitudes = coordinates.map((coordinate) => coordinate.latitude);
-  const longitudes = coordinates.map((coordinate) => coordinate.longitude);
-  const latitudeSpan = Math.max(...latitudes) - Math.min(...latitudes);
-  const longitudeSpan = Math.max(...longitudes) - Math.min(...longitudes);
-  const mapScale = 18000;
-  const fontSize = Math.max(8, Math.min(10, Math.min(
-    longitudeSpan * mapScale * 0.7,
-    latitudeSpan * mapScale * 0.7,
-  ) * 0.4));
-  const labelWidth = tag.length * fontSize * 0.7 + 8;
-  const width = Math.max(13, Math.min(24, Math.max(longitudeSpan * mapScale * 0.55, labelWidth)));
-  // Lot pin dynamic size
-  return {
-    width,
-    height: Math.max(20, Math.min(30, latitudeSpan * mapScale * 0.55)),
-    circleSize: width,
-    fontSize,
-  };
-}
-
-function shouldShowLotMarker(lot: any): boolean {
-  const name = String(lot.lot_name || lot.name || '').trim();
-  return /\blot\s+(?:[1-9]|[1-9]\d)\b/i.test(name)
-    || /^(?:highland street garage|union circle garage)$/i.test(name);
-}
-
-function isLot29(lot: any): boolean {
-  return /\blot\s*29\b/i.test(String(lot.name || lot.lot_name || ''));
-}
-
-function getLotMarkerGroups(lots: any[], latitudeDelta: number) {
-  const groupingDistance = Math.max(0.00008, latitudeDelta * 0.08);
-  const groups: { lots: any[]; center: { latitude: number; longitude: number } }[] = [];
-
-  lots.forEach((lot) => {
-    if (lot.isVisible === false || !shouldShowLotMarker(lot)) return;
-    const center = getLotMarkerCenter(lot);
-    if (!center) return;
-
-    const isCloseToLot29 = latitudeDelta <= 0.003 && isLot29(lot);
-    const existingGroup = groups.find((group) => {
-      if (isCloseToLot29 || group.lots.some(isLot29)) return false;
-      const latitudeDistance = group.center.latitude - center.latitude;
-      const longitudeDistance = (group.center.longitude - center.longitude) * Math.cos(center.latitude * Math.PI / 180);
-      return Math.hypot(latitudeDistance, longitudeDistance) <= groupingDistance;
-    });
-
-    if (existingGroup) {
-      existingGroup.lots.push(lot);
-      existingGroup.center = getGroupedMarkerCenter(existingGroup.lots) || existingGroup.center;
-    } else {
-      groups.push({ lots: [lot], center });
+  for (let row = 0; row <= 2; row++) {
+    for (let column = 0; column <= 4; column++) {
+      const point = {
+        latitude: coordinate.latitude + (1 - row) * halfLatitude,
+        longitude: coordinate.longitude + (column / 2 - 1) * halfLongitude,
+      };
+      if (!pointInPolygon(point, polygon)) return false;
     }
-  });
+  }
 
-  return groups;
+  return true;
+}
+
+function getLotLabelCoordinate(
+  coordinates: { latitude: number; longitude: number }[],
+  label: string,
+  fontSize: number,
+  mapSize: { width: number; height: number },
+  region: { latitudeDelta: number; longitudeDelta: number },
+) {
+  if (!coordinates || coordinates.length === 0) return null;
+
+  const latitudes = coordinates.map((point) => point.latitude);
+  const longitudes = coordinates.map((point) => point.longitude);
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLng = Math.min(...longitudes);
+  const maxLng = Math.max(...longitudes);
+
+  const centerLat = (minLat + maxLat) / 2;
+  const centerLng = (minLng + maxLng) / 2;
+
+  const latStep = (maxLat - minLat) / 10;
+  const lngStep = (maxLng - minLng) / 10;
+  const candidates: { latitude: number; longitude: number }[] = [];
+
+  for (let row = 1; row <= 9; row++) {
+    for (let col = 1; col <= 9; col++) {
+      const latitude = minLat + row * latStep;
+      const longitude = minLng + col * lngStep;
+      candidates.push({ latitude, longitude });
+    }
+  }
+
+  const fittingCandidates = candidates.filter((point) =>
+    pointInPolygon(point, coordinates) &&
+    doesLabelFitLot(label, point, coordinates, fontSize, mapSize, region)
+  );
+
+  return fittingCandidates.sort((a, b) => {
+    const distanceA = Math.abs(a.latitude - centerLat) + Math.abs(a.longitude - centerLng);
+    const distanceB = Math.abs(b.latitude - centerLat) + Math.abs(b.longitude - centerLng);
+    return distanceA - distanceB;
+  })[0] || null;
 }
 
 export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
   const untRegion = CAMPUS_REGIONS["Main campus"];
-  const [parkedLocation, setParkedLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [sheetLot, setSheetLot] = useState<any | null>(null);
-  const [latitudeDelta, setLatitudeDelta] = useState(untRegion.latitudeDelta);
-
+  const [mapRegion, setMapRegion] = useState({
+    latitudeDelta: untRegion.latitudeDelta,
+    longitudeDelta: untRegion.longitudeDelta,
+  });
+  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     const region = CAMPUS_REGIONS[selectedCampus];
@@ -187,12 +158,6 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
       mapRef.current?.animateToRegion(region, 800);
     }
   }, [selectedCampus]);
-
-  const handleLongPress = (event: any) => {
-    const coords = event.nativeEvent.coordinate;
-    setParkedLocation(coords);
-    Alert.alert("Test Pin Dropped", "Simulating that you parked here.");
-  };
 
   const handleZoomIn = async () => {
     if (!mapRef.current) return;
@@ -210,29 +175,19 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
     }
   };
 
-  const handleClusterPress = (center: { latitude: number; longitude: number }) => {
-    const nextDelta = Math.max(0.002, latitudeDelta * 0.45);
-    mapRef.current?.animateToRegion(
-      {
-        ...center,
-        latitudeDelta: nextDelta,
-        longitudeDelta: nextDelta,
-      },
-      400,
-    );
-  };
-
   return (
     <View style={styles.container}>
-      {/* MAP */}
-      <MapView 
+      <MapView
         ref={mapRef}
-        style={styles.map} 
+        style={styles.map}
         provider={PROVIDER_GOOGLE}
         initialRegion={untRegion}
-        onRegionChangeComplete={(region) => setLatitudeDelta(region.latitudeDelta)}
+        onLayout={(event) => setMapSize(event.nativeEvent.layout)}
+        onRegionChangeComplete={(region) => setMapRegion({
+          latitudeDelta: region.latitudeDelta,
+          longitudeDelta: region.longitudeDelta,
+        })}
         showsUserLocation={true}
-        onLongPress={handleLongPress}
         customMapStyle={MAP_STYLES}
       >
         {liveLots.length > 0 && liveLots.map((lot) => (
@@ -249,73 +204,50 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
             }}
           />
         ))}
-        {getLotMarkerGroups(liveLots, latitudeDelta).map((group) => {
-          const lot = group.lots[0];
-          if (group.lots.length > 1) {
-            return (
-              <Marker
-                key={`${group.lots.map((groupLot) => groupLot.id).join('-')}-cluster`}
-                coordinate={group.center}
-                anchor={{ x: 0.5, y: 0.5 }}
-                onPress={() => handleClusterPress(group.center)}
-              >
-                <View style={styles.clusterMarker}>
-                  <Text style={styles.clusterMarkerText}>{group.lots.length}</Text>
-                </View>
-              </Marker>
-            );
-          }
 
-          const markerSize = getLotMarkerSize(lot.coordinates || [], lot.tag);
+        {liveLots.length > 0 && liveLots.map((lot) => {
+          if (lot.isVisible === false) return null;
+
+          const lotName = getLotNumberLabel(lot);
+          const fontSize = Math.max(10, Math.min(15, 15 - mapRegion.latitudeDelta * 500));
+          if (!lotName || mapRegion.latitudeDelta > 0.01) return null;
+
+          const labelCoordinate = getLotLabelCoordinate(
+            lot.coordinates || [],
+            lotName,
+            fontSize,
+            mapSize,
+            mapRegion,
+          );
+          if (!labelCoordinate) return null;
 
           return (
             <Marker
-              key={`${group.lots.map((groupLot) => groupLot.id).join('-')}-label`}
-              coordinate={group.center}
+              key={`${lot.id}-label`}
+              coordinate={labelCoordinate}
               anchor={{ x: 0.5, y: 0.5 }}
               onPress={() => setSheetLot(lot)}
             >
-              <View
-                style={[
-                  styles.markerContainer,
-                  {
-                    width: markerSize.width,
-                    height: markerSize.height + markerSize.circleSize / 2,
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.markerCircle,
-                    {
-                      width: markerSize.circleSize,
-                      height: markerSize.circleSize,
-                      borderRadius: markerSize.circleSize / 2,
-                    },
-                  ]}
-                />
-                <View style={[styles.hsgMarker, markerSize]}>
-                <Text style={[styles.hsgMarkerText, { fontSize: markerSize.fontSize }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {lot.tag}
-                </Text>
-                </View>
+              <View style={styles.lotLabel}>
+                <Text style={{
+                  color: lot.fillColor || '#1f1f1f',
+                  fontSize,
+                  fontWeight: '800',
+                  lineHeight: fontSize + 2,
+                  textAlign: 'center',
+                }}>{lotName}</Text>
               </View>
             </Marker>
           );
         })}
-        {parkedLocation && (
-          <Marker coordinate={parkedLocation} title="My Car" pinColor="#0000FF" />
-        )}
       </MapView>
 
-      {/* LOT DETAILS BOTTOM SHEET */}
       <LotDetailsSheet
         lot={sheetLot}
         visible={sheetLot !== null}
         onClose={() => setSheetLot(null)}
       />
 
-      {/* ZOOM Controls */}
       <View style={styles.zoomControls}>
         <TouchableOpacity style={styles.zoomButton} onPress={handleZoomIn}>
           <Ionicons name="add" size={24} color="#333" />
@@ -326,13 +258,6 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
         </TouchableOpacity>
       </View>
 
-      {/* FIND MY CAR BUTTON */}
-      {/* <TouchableOpacity style={styles.findCarButton} onPress={handleFindMyCar}>
-        <Ionicons name="car" size={24} color="white" />
-        <Text style={styles.findCarText}>Find My Car</Text>
-      </TouchableOpacity> */}
-
-      {/* CAPACITY INDICATOR AT BOTTOM */}
       <View style={styles.capacityContainer}>
         <View style={styles.capacityRow}>
           <View style={styles.capacityItem}>
@@ -361,55 +286,17 @@ const styles = StyleSheet.create({
   map: {
     ...StyleSheet.absoluteFillObject,
   },
-  markerContainer: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+  lotLabel: {
+    backgroundColor: 'transparent',
   },
-  markerCircle: {
-    position: 'absolute',
-    top: 0,
-    backgroundColor: '#FFFFFF',
-    flexShrink: 0,
-    zIndex: 2,
-  },
-  clusterMarker: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#3366ff',
-  },
-  clusterMarkerText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  hsgMarker: {
-    width: 26,
-    height: 40,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 0,
-    elevation: 3,
-  },
-  hsgMarkerText: {
-    color: '#333333',
-    fontWeight: '700',
-    paddingTop: 0,
-    paddingHorizontal: 1,
-    flexShrink: 1,
+  lotLabelText: {
+    fontWeight: '800',
     textAlign: 'center',
-    includeFontPadding: false,
-    zIndex: 1,
   },
   zoomControls: {
     position: 'absolute',
     right: 16,
-    bottom: 150, 
+    bottom: 150,
     backgroundColor: 'white',
     borderRadius: 8,
     shadowColor: '#000',
@@ -428,28 +315,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#eee',
     width: '70%',
     alignSelf: 'center',
-  },
-  findCarButton: {
-    position: 'absolute', 
-    bottom: 100, 
-    alignSelf: 'center', 
-    backgroundColor: '#00853E',
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 14, 
-    paddingHorizontal: 24,
-    borderRadius: 30, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, 
-    shadowRadius: 5, 
-    elevation: 5,
-  },
-  findCarText: { 
-    color: 'white', 
-    fontWeight: 'bold', 
-    fontSize: 18, 
-    marginLeft: 10 
   },
   capacityContainer: {
     position: "absolute",
