@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { resetPassword } from '../api/auth';
+import { Alert } from '../utils/webCompat';
 
 export default function ResetPasswordScreen() {
   const params = useLocalSearchParams();

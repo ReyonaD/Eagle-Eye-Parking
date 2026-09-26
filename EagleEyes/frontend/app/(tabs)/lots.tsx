@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Image,
   Modal,
-  Alert,
   ActivityIndicator,
   ScrollView,
   Platform,
@@ -21,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
 import { openDirections } from '../../utils/navigation';
+import { Alert } from '../../utils/webCompat';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
 
 // Mobile loads just enough lots to fill the viewport, then appends more as

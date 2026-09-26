@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { verifyResetCode } from '../api/auth';
+import { Alert } from '../utils/webCompat';
 
 export default function VerifyCodeScreen() {
   const params = useLocalSearchParams();
