@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { register } from '../api/auth';
+import { Alert } from '../utils/webCompat';
 
 export default function RegisterScreen(){
     const [email, setEmail] = useState('');
