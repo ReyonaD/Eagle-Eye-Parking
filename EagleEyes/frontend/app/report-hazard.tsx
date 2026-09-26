@@ -46,8 +46,23 @@ export default function ReportHazardScreen() {
       Alert.alert('Camera Access Needed', 'Please allow camera access in Settings to take a photo.');
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-    if (!result.canceled && result.assets?.[0]) addPhoto(result.assets[0]);
+    //the camera captures one photo per session, so chain sessions until the
+    //user is done or the photo limit is reached
+    let count = photos.length;
+    while (count < MAX_PHOTOS) {
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+      if (result.canceled || !result.assets?.[0]) break;
+      addPhoto(result.assets[0]);
+      count += 1;
+      if (count >= MAX_PHOTOS) break;
+      const takeAnother = await new Promise<boolean>(resolve => {
+        Alert.alert('Photo Added', `${count}/${MAX_PHOTOS} photos attached. Take another?`, [
+          { text: 'Done', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Take Another', onPress: () => resolve(true) },
+        ]);
+      });
+      if (!takeAnother) break;
+    }
   };
 
   const handlePickPhoto = async () => {
@@ -193,12 +208,12 @@ export default function ReportHazardScreen() {
               </TouchableOpacity>
             </View>
           ))}
-          {photos.length < MAX_PHOTOS && (
-            <TouchableOpacity style={styles.addPhotoButton} onPress={handleAddPhotoPress}>
+          {Array.from({ length: MAX_PHOTOS - photos.length }).map((_, i) => (
+            <TouchableOpacity key={`add-slot-${i}`} style={styles.addPhotoButton} onPress={handleAddPhotoPress}>
               <Ionicons name="camera-outline" size={24} color="#00853E" />
               <Text style={styles.addPhotoText}>ADD</Text>
             </TouchableOpacity>
-          )}
+          ))}
         </View>
 
         <View style={styles.postRow}>
