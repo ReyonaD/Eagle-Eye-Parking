@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
-import { getAlerts } from '../../api/alerts'; 
+import { getAlerts } from '../../api/alerts';
 import { SafeAreaView} from 'react-native-safe-area-context';
+import { Alert } from '../../utils/webCompat';
 
 const getIconForCategory = (category: string) => {
   switch (category?.toLowerCase()) {
