@@ -21,6 +21,15 @@ const MAP_STYLES = [
 ];
 
 const LOT_FILL_OPACITY = 0.35;
+const LOT_LABEL_OFFSETS: Record<string, { latitude: number; longitude: number }> = {
+  'Lot 3': { latitude: -0.000108, longitude: 0 },
+  'Lot 2': { latitude: -0.000109, longitude: 0 },
+  'Lot 5': { latitude: -0.00015, longitude: 0 },
+  'Lot 19': { latitude: -0.0001, longitude: 0 },
+  'Lot 20': { latitude: 0, longitude: 0.0018 },
+  'Lot 23': { latitude: -0.00015, longitude: 0 },
+  'Lot 31': { latitude: -0.00015, longitude: 0 },
+};
 
 function withFillOpacity(color: string, opacity: number): string {
   const hexMatch = /^#([0-9a-f]{6})$/i.exec(color || '');
@@ -69,6 +78,18 @@ function pointInPolygon(point: { latitude: number; longitude: number }, polygon:
   }
 
   return inside;
+}
+
+function getPolygonCenter(coordinates: { latitude: number; longitude: number }[]) {
+  if (coordinates.length === 0) return null;
+
+  const latitudes = coordinates.map((point) => point.latitude);
+  const longitudes = coordinates.map((point) => point.longitude);
+
+  return {
+    latitude: (Math.min(...latitudes) + Math.max(...latitudes)) / 2,
+    longitude: (Math.min(...longitudes) + Math.max(...longitudes)) / 2,
+  };
 }
 
 function doesLabelFitLot(
@@ -175,6 +196,15 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
     }
   };
 
+  const labelFontSize = Math.max(10, Math.min(15, 15 - mapRegion.latitudeDelta * 500));
+  const lot20Zones = liveLots.filter(
+    (lot) => lot.isVisible !== false && getLotNumberLabel(lot) === 'Lot 20',
+  );
+  const lot20LabelLot = lot20Zones.find((lot) =>
+    getLotLabelCoordinate(lot.coordinates || [], 'Lot 20', labelFontSize, mapSize, mapRegion),
+  ) || lot20Zones[0];
+  const lot20LabelId = lot20LabelLot?.id;
+
   return (
     <View style={styles.container}>
       <MapView
@@ -204,13 +234,13 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
             }}
           />
         ))}
-
         {liveLots.length > 0 && liveLots.map((lot) => {
           if (lot.isVisible === false) return null;
 
           const lotName = getLotNumberLabel(lot);
-          const fontSize = Math.max(10, Math.min(15, 15 - mapRegion.latitudeDelta * 500));
+          const fontSize = labelFontSize;
           if (!lotName || mapRegion.latitudeDelta > 0.01) return null;
+          if (lotName === 'Lot 20' && lot.id !== lot20LabelId) return null;
 
           const labelCoordinate = getLotLabelCoordinate(
             lot.coordinates || [],
@@ -219,12 +249,23 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
             mapSize,
             mapRegion,
           );
-          if (!labelCoordinate) return null;
+          const markerCoordinate = labelCoordinate || (
+            lotName === 'Lot 20' ? getPolygonCenter(lot.coordinates || []) : null
+          );
+          if (!markerCoordinate) return null;
+
+          const offset = LOT_LABEL_OFFSETS[lotName];
+          const displayCoordinate = offset
+            ? {
+                latitude: markerCoordinate.latitude + offset.latitude,
+                longitude: markerCoordinate.longitude + offset.longitude,
+              }
+            : markerCoordinate;
 
           return (
             <Marker
-              key={`${lot.id}-label`}
-              coordinate={labelCoordinate}
+              key={`${lot.id}-label-${displayCoordinate.latitude.toFixed(6)}-${displayCoordinate.longitude.toFixed(6)}`}
+              coordinate={displayCoordinate}
               anchor={{ x: 0.5, y: 0.5 }}
               onPress={() => setSheetLot(lot)}
             >
@@ -235,6 +276,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
                   fontWeight: '800',
                   lineHeight: fontSize + 2,
                   textAlign: 'center',
+                  includeFontPadding: false,
                 }}>{lotName}</Text>
               </View>
             </Marker>
@@ -288,10 +330,6 @@ const styles = StyleSheet.create({
   },
   lotLabel: {
     backgroundColor: 'transparent',
-  },
-  lotLabelText: {
-    fontWeight: '800',
-    textAlign: 'center',
   },
   zoomControls: {
     position: 'absolute',

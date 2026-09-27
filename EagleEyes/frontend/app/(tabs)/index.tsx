@@ -8,6 +8,7 @@ import EagleMap from '../../components/EagleMap';
 import { SafeAreaView} from 'react-native-safe-area-context';
 //const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
+const MAP_HAZARD_FAB_BOTTOM = 80;
 
 // Top Bar Component
 // function TopBar() {
@@ -33,6 +34,7 @@ import { SafeAreaView} from 'react-native-safe-area-context';
 //   );
 // }
 export default function MapScreen() {
+  const router = useRouter();
   //consume the global data
   const { lots, isLoading, lastRefreshAt } = useLots();
   console.log("MapScreen Render - isLoading:", isLoading, "Lots count:", lots?.length);
@@ -149,6 +151,15 @@ export default function MapScreen() {
           liveLots={filteredLots}
           selectedCampus={selectedCampus}
         />
+        <TouchableOpacity
+          style={styles.hazardFab}
+          onPress={() => router.push('/report-hazard')}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Report a hazard"
+        >
+          <Ionicons name="warning" size={38} color="#FACC15" />
+        </TouchableOpacity>
       </View>
 
       {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
@@ -300,6 +311,22 @@ const styles = StyleSheet.create({
     flex: 1,
     zIndex: 1,
     elevation: 1,
+  },
+  hazardFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: MAP_HAZARD_FAB_BOTTOM,
+    width: 58,
+    height: 58,
+    borderRadius: 8,
+    backgroundColor: '#00853E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
   },
   leftGroup: {
   flexDirection: 'row',
