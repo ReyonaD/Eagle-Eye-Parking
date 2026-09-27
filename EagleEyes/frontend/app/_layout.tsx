@@ -58,6 +58,14 @@ export default function RootLayout() {
           <Stack.Screen name="(admin)" />
           <Stack.Screen name="login" />
           <Stack.Screen name="register" options={{ presentation: 'modal' }} />
+          <Stack.Screen
+            name="report-options"
+            options={{
+              presentation: 'transparentModal',
+              animation: 'slide_from_bottom',
+              contentStyle: { backgroundColor: 'transparent' },
+            }}
+          />
           <Stack.Screen name="forgot-password" />
           <Stack.Screen name="verify-code" />
           <Stack.Screen name="reset-password" />

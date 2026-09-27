@@ -153,7 +153,7 @@ export default function MapScreen() {
         />
         <TouchableOpacity
           style={styles.hazardFab}
-          onPress={() => router.push('/report-hazard')}
+          onPress={() => router.push('/report-options')}
           activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel="Report a hazard"

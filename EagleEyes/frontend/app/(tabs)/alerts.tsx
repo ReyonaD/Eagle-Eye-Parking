@@ -306,7 +306,7 @@ export default function AlertsScreen() {
       {/* commuters submit hazard reports for admin review */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => router.push('/report-hazard')}
+        onPress={() => router.push('/report-options')}
         activeOpacity={0.85}
       >
         <Ionicons name="add" size={30} color="#fff" />
