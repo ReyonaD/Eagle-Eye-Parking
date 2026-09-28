@@ -46,6 +46,22 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 MAX_IMAGE_SIZE = 8 * 1024 * 1024  # 8MB
+
+def _looks_like_heic(header: bytes) -> bool:
+    #iPhones shoot HEIC by default; detect the ISO-BMFF ftyp box so we can convert
+    return len(header) >= 12 and header[4:8] == b"ftyp" and header[8:12] in (
+        b"heic", b"heix", b"hevc", b"mif1", b"msf1"
+    )
+
+def _convert_heic_to_jpeg(contents: bytes) -> bytes:
+    from io import BytesIO
+    import pillow_heif
+    from PIL import Image as PILImage
+    pillow_heif.register_heif_opener()
+    img = PILImage.open(BytesIO(contents)).convert("RGB")
+    buf = BytesIO()
+    img.save(buf, "JPEG", quality=85)
+    return buf.getvalue()
 MAX_IMAGES_PER_ALERT = 3
 #extension is picked from the sniffed content, never the client-supplied filename
 IMAGE_SIGNATURES = [
@@ -481,6 +497,13 @@ async def upload_alert_image(
         raise HTTPException(status_code=400, detail="Image must be smaller than 8MB")
 
     ext = _sniff_image_extension(contents[:12])
+    if ext is None and _looks_like_heic(contents[:12]):
+        #iPhone HEIC photos get converted to JPEG so every client can display them
+        try:
+            contents = _convert_heic_to_jpeg(contents)
+            ext = ".jpg"
+        except Exception:
+            raise HTTPException(status_code=400, detail="Could not process this photo. Please try a different one.")
     if ext is None:
         raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WEBP images are allowed")
 
@@ -548,6 +571,8 @@ def approve_alert(
         alert.category = edits.category.strip()
     if edits.description is not None:
         alert.description = edits.description.strip() or None
+    if edits.image_urls is not None:
+        alert.image_urls = edits.image_urls
 
     alert.status = "published"
     db.commit()

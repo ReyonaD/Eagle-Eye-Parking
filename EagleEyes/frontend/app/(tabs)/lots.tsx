@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Image,
   Modal,
-  Alert,
   ActivityIndicator,
   ScrollView,
   Platform,
@@ -22,6 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
 import { openDirections } from '../../utils/navigation';
 import { GROUP_EMBLEMS } from '../../utils/permits';
+import { Alert } from '../../utils/webCompat';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
 
 // Mobile loads just enough lots to fill the viewport, then appends more as

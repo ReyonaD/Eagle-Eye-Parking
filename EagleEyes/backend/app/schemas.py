@@ -33,6 +33,8 @@ class AlertApprove(BaseModel):
     title: Optional[str] = None
     category: Optional[str] = None
     description: Optional[str] = None
+    #admin can remove unclear photos or attach better ones before publishing
+    image_urls: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
