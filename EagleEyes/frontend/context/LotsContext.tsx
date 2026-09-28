@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect} from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../utils/webCompat';
 import { getLotPermitGroups, getLotCategory } from '../utils/permits';
 //define the exact shape of data
@@ -7,9 +8,18 @@ interface LotsContextType {
     isLoading: boolean;
     lastRefreshAt: string | null;
     fetchLots: () => Promise<void>;
+    // Whether the Map and Lots tabs should be limited to lots matching the
+    // signed-in user's own permit type. Lives here (not on the account profile)
+    // so it persists across logins/logouts on this device without needing
+    // refreshUser's account-rebuild to know about it.
+    filterByPermit: boolean;
+    setFilterByPermit: (value: boolean) => void;
 }
 
-//create the context 
+// Exported so other screens (e.g. profile settings) can read/write it directly if needed.
+export const FILTER_BY_PERMIT_STORAGE_KEY = 'filterLotsByPermit';
+
+//create the context
 const LotsContext = createContext<LotsContextType | undefined>(undefined);
 
 const LOT_TAGS: Record<string, string> = {
@@ -51,6 +61,7 @@ function getLotTag(lot: any, index: number): string {
   const sourceName = String(lot.lot_name || lot.name || '').trim();
   const normalizedName = sourceName.toLowerCase();
   if (normalizedName === 'hsg') return 'HSG';
+  if (normalizedName.includes('union circle') && normalizedName.includes('garage')) return 'UCG';
 
   const nameTag = sourceName.match(/\b(?:lot|garage)\s*([a-z0-9-]+)/i)?.[1];
   if (nameTag) return nameTag.toUpperCase();
@@ -109,7 +120,23 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     const [lots, setLots] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+    const [filterByPermit, setFilterByPermitState] = useState(false);
     const hasLoadedOnce = React.useRef(false);
+
+    useEffect(() => {
+      AsyncStorage.getItem(FILTER_BY_PERMIT_STORAGE_KEY)
+        .then((stored) => {
+          if (stored != null) setFilterByPermitState(stored === 'true');
+        })
+        .catch((error) => console.error('Error loading permit filter preference:', error));
+    }, []);
+
+    const setFilterByPermit = (value: boolean) => {
+      setFilterByPermitState(value);
+      AsyncStorage.setItem(FILTER_BY_PERMIT_STORAGE_KEY, value ? 'true' : 'false').catch(
+        (error) => console.error('Error saving permit filter preference:', error)
+      );
+    };
 
     const fetchLots = async (showLoading = false) => {
     try {
@@ -234,7 +261,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     }
   }, [lots]);
     return (
-        <LotsContext.Provider value={{ lots, isLoading, lastRefreshAt, fetchLots}}>
+        <LotsContext.Provider value={{ lots, isLoading, lastRefreshAt, fetchLots, filterByPermit, setFilterByPermit }}>
             {children}
         </LotsContext.Provider>
     );

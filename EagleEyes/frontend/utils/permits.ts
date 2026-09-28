@@ -104,6 +104,14 @@ export function normalizePermit(raw: unknown): string {
   return trimmed;
 }
 
+/** Whether a lot's permit groups include the given permit type (exact match, case-insensitive). */
+export function lotMatchesPermitType(permitList: unknown, permitType: string): boolean {
+  if (!permitType.trim()) return true;
+  if (!Array.isArray(permitList)) return false;
+  const target = permitType.trim().toLowerCase();
+  return permitList.some((p) => typeof p === 'string' && p.trim().toLowerCase() === target);
+}
+
 /** Normalizes a list of raw permits and removes duplicates, keeping first-seen order. */
 export function consolidatePermits(list: unknown): string[] {
   const arr = Array.isArray(list)

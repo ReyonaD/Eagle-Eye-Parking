@@ -3,12 +3,14 @@ import { View, StyleSheet, TouchableOpacity, Text, Image, FlatList, Platform } f
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
+import { useUser } from '../../context/UserContext';
 import EagleMap from '../../components/EagleMap';
-import { consolidatePermits, A_RESERVED, RESIDENT_RESERVED, STREET_PARKING } from '../../utils/permits';
+import { consolidatePermits, lotMatchesPermitType, A_RESERVED, RESIDENT_RESERVED, STREET_PARKING } from '../../utils/permits';
 //import { requestPermissions } from '../../modules/parkzen-core';
 import { SafeAreaView} from 'react-native-safe-area-context';
 //const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
+const MAP_HAZARD_FAB_BOTTOM = 80;
 
 // Top Bar Component
 // function TopBar() {
@@ -34,8 +36,10 @@ import { SafeAreaView} from 'react-native-safe-area-context';
 //   );
 // }
 export default function MapScreen() {
+  const router = useRouter();
   //consume the global data
-  const { lots, isLoading, lastRefreshAt } = useLots();
+  const { lots, isLoading, lastRefreshAt, filterByPermit } = useLots();
+  const { user } = useUser();
   console.log("MapScreen Render - isLoading:", isLoading, "Lots count:", lots?.length);
 
   const refreshLabel = lastRefreshAt
@@ -125,6 +129,24 @@ export default function MapScreen() {
 
     return { ...lot, isVisible };
   });
+
+  // "Only show my permit type" preference from Profile Setting, applied on top
+  // of the CAMPUS/PERMIT dropdowns above rather than replacing them.
+  const permitTypeFilteredLots = (filterByPermit && user.parkingProfile.permitType)
+    ? filteredLots.map((lot) => ({
+        ...lot,
+        isVisible: lot.isVisible && lotMatchesPermitType(lot.permitList, user.parkingProfile.permitType),
+      }))
+    : filteredLots;
+
+  // The PERMIT dropdown still reads "All Permits" while the preference above is
+  // quietly narrowing the map underneath it — show the user's own permit type
+  // instead so the label matches what's actually visible.
+  const permitDropdownLabel =
+    filterByPermit && user.parkingProfile.permitType && selectedPermit === 'All Permits'
+      ? user.parkingProfile.permitType
+      : selectedPermit;
+
   return (
      <SafeAreaView style={styles.container} edges={['right', 'left']}>
 
@@ -146,7 +168,7 @@ export default function MapScreen() {
         <View style={[styles.dropdownWrapper, { marginLeft: 8 }]}>
           <Text style={styles.dropdownLabel}>PERMIT</Text>
           <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenPermit(!openPermit); setOpenCampus(false); }}>
-            <Text style={styles.dropdownText}>{selectedPermit}</Text>
+            <Text style={styles.dropdownText}>{permitDropdownLabel}</Text>
             <Ionicons name={openPermit ? "chevron-up" : "chevron-down"} size={27} color="#333" />
           </TouchableOpacity>
         </View>
@@ -160,9 +182,18 @@ export default function MapScreen() {
       {/* THE MAP AREA */}
       <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
         <EagleMap
-          liveLots={filteredLots}
+          liveLots={permitTypeFilteredLots}
           selectedCampus={selectedCampus}
         />
+        <TouchableOpacity
+          style={styles.hazardFab}
+          onPress={() => router.push('/report-options')}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Report a hazard"
+        >
+          <Ionicons name="warning" size={38} color="#FACC15" />
+        </TouchableOpacity>
       </View>
 
       {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
@@ -314,6 +345,22 @@ const styles = StyleSheet.create({
     flex: 1,
     zIndex: 1,
     elevation: 1,
+  },
+  hazardFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: MAP_HAZARD_FAB_BOTTOM,
+    width: 58,
+    height: 58,
+    borderRadius: 8,
+    backgroundColor: '#00853E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
   },
   leftGroup: {
   flexDirection: 'row',

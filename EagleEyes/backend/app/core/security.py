@@ -72,3 +72,26 @@ def require_admin(role: str = Depends(get_current_user_role)):
             detail="Access denied. Admin privileges required."
         )
     return role
+
+def get_current_user_is_owner(token: str = Depends(oauth2_scheme)) -> bool:
+    """Extract the owner flag from the JWT token"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return bool(payload.get("is_owner", False))
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+def require_owner(role: str = Depends(get_current_user_role), is_owner: bool = Depends(get_current_user_is_owner)):
+    """Block access to endpoints that manage other admins' access. Owners are
+    the subset of admins who can see the full admin roster and grant/revoke
+    other accounts' admin access — a regular admin can't manage other admins."""
+    if role != "admin" or not is_owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Owner privileges required."
+        )
+    return is_owner
