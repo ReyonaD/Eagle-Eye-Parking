@@ -7,16 +7,27 @@ export interface UserPermit {
   allowedLots: string[];
 }
 
+export interface ParkingProfile {
+  plateState: string;
+  plateNumber: string;
+  permitType: string;
+}
+
 export interface UserProfile {
   name: string;
   email: string;
-  phone: string;
   permit: UserPermit;
+  parkingProfile: ParkingProfile;
 }
 
 interface UserContextType {
   user: UserProfile;
-  updateUser: (updates: Partial<Omit<UserProfile, 'permit'>> & { permit?: Partial<UserPermit> }) => void;
+  updateUser: (
+    updates: Partial<Omit<UserProfile, 'permit' | 'parkingProfile'>> & {
+      permit?: Partial<UserPermit>;
+      parkingProfile?: Partial<ParkingProfile>;
+    }
+  ) => void;
 }
 
 const STORAGE_KEY = 'userProfile';
@@ -24,11 +35,15 @@ const STORAGE_KEY = 'userProfile';
 const DEFAULT_USER: UserProfile = {
   name: 'Student User',
   email: 'student@unt.edu',
-  phone: '(000) 000-0000',
   permit: {
     type: 'E',
     status: 'Active',
     allowedLots: [],
+  },
+  parkingProfile: {
+    plateState: 'TX',
+    plateNumber: '',
+    permitType: '',
   },
 };
 
@@ -46,6 +61,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
           ...DEFAULT_USER,
           ...parsed,
           permit: { ...DEFAULT_USER.permit, ...parsed.permit },
+          parkingProfile: { ...DEFAULT_USER.parkingProfile, ...parsed.parkingProfile },
         });
       } catch {
         // Ignore corrupted storage, keep defaults
@@ -59,6 +75,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
         ...prev,
         ...updates,
         permit: updates.permit ? { ...prev.permit, ...updates.permit } : prev.permit,
+        parkingProfile: updates.parkingProfile
+          ? { ...prev.parkingProfile, ...updates.parkingProfile }
+          : prev.parkingProfile,
       };
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       return next;

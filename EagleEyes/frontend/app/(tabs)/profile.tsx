@@ -74,11 +74,58 @@ function Divider() {
   return <View style={styles.divider} />;
 }
 
+// Permit card colors, sampled from yemma's UNT parking map reference (visual
+// approximations, not official UNT hex codes). Text colors are picked to meet
+// WCAG contrast against each background.
+interface PermitCardStyle {
+  bg: string;
+  text: string;
+  label: string;
+  striped?: boolean;
+}
+
+const PERMIT_CARD_STYLES: Record<string, PermitCardStyle> = {
+  'Eagle': { bg: '#CDA357', text: '#fff', label: 'rgba(255,255,255,0.7)' },
+  'A-Reserved': { bg: '#2E6643', text: '#fff', label: 'rgba(255,255,255,0.7)' },
+  'Faculty and Staff': { bg: '#3D5AA3', text: '#fff', label: 'rgba(255,255,255,0.7)' },
+  'Resident': { bg: '#DC8542', text: '#1a1a1a', label: 'rgba(26,26,26,0.65)' },
+  'Resident Reserved': { bg: '#DC8542', text: '#1a1a1a', label: 'rgba(26,26,26,0.65)', striped: true },
+  'Visitor': { bg: '#AC3376', text: '#fff', label: 'rgba(255,255,255,0.7)' },
+  'Motorcycle': { bg: '#637BB5', text: '#fff', label: 'rgba(255,255,255,0.7)' },
+};
+
+const DEFAULT_PERMIT_CARD_STYLE: PermitCardStyle = {
+  bg: '#6B7280',
+  text: '#fff',
+  label: 'rgba(255,255,255,0.7)',
+};
+
+function getPermitCardStyle(permitType: string): PermitCardStyle {
+  return PERMIT_CARD_STYLES[permitType] || DEFAULT_PERMIT_CARD_STYLE;
+}
+
+// Diagonal orange/black stripe pattern for Resident Reserved, matching the
+// UNT parking map. Built from rotated Views since no SVG/gradient lib is installed.
+// Covers the full card (including behind the text/badge) at low opacity so
+// the text still pops on top.
+function DiagonalStripes() {
+  const stripeCount = 28;
+  const spacing = 34;
+  return (
+    <View style={styles.stripesClip} pointerEvents="none">
+      {Array.from({ length: stripeCount }).map((_, i) => (
+        <View key={i} style={[styles.stripe, { top: i * spacing - 460 }]} />
+      ))}
+    </View>
+  );
+}
+
 // Main screen
-export function ProfileScreen({ showParking = true }: { showParking?: boolean }) {
+export function ProfileScreen() {
   const router = useRouter();
   const { user } = useUser();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const permitCardStyle = getPermitCardStyle(user.parkingProfile.permitType);
 
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -104,24 +151,36 @@ export function ProfileScreen({ showParking = true }: { showParking?: boolean })
           <View style={styles.avatarCircle}>
             <Ionicons name="person-circle" size={27} color="#00853E" />
           </View>
-          <Text style={styles.name}>{user.name}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.name}>{user.name}</Text>
+            <TouchableOpacity
+              style={styles.editIconBtn}
+              onPress={() => router.push('/profile/edit-name' as any)}
+              activeOpacity={0.7}
+              hitSlop={8}
+            >
+              <Ionicons name="pencil" size={14} color="#00853E" />
+            </TouchableOpacity>
+          </View>
           <Text style={styles.email}>{user.email}</Text>
-          <TouchableOpacity
-            style={styles.editBtn}
-            onPress={() => router.push('/profile/details' as any)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="pencil-outline" size={27} color="#fff" />
-            <Text style={styles.editBtnText}>Edit Profile</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Permit card */}
-        <View style={styles.permitCard}>
+        <View style={[styles.permitCard, { backgroundColor: permitCardStyle.bg, shadowColor: permitCardStyle.bg }]}>
+          {permitCardStyle.striped && <DiagonalStripes />}
           <View style={styles.permitTop}>
-            <View>
-              <Text style={styles.permitLabel}>PARKING PERMIT</Text>
-              <Text style={styles.permitType}>Type {user.permit.type}</Text>
+            <View style={styles.permitTopLeft}>
+              <Text style={[styles.permitLabel, { color: permitCardStyle.label }]}>
+                PARKING PERMIT
+              </Text>
+              <Text
+                style={[styles.permitType, { color: permitCardStyle.text }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.55}
+              >
+                {user.parkingProfile.permitType || 'Not Set'}
+              </Text>
             </View>
             <View style={[
               styles.permitBadge,
@@ -148,52 +207,6 @@ export function ProfileScreen({ showParking = true }: { showParking?: boolean })
           </View>
         </View>
 
-        {/* Personal information */}
-        <Section title="Personal Information">
-          <MenuRow
-            icon="person-outline"
-            label="Full Name"
-            value={user.name}
-            onPress={() => router.push('/profile/details' as any)}
-            showChevron={false}
-          />
-          <Divider />
-          <MenuRow
-            icon="mail-outline"
-            label="Email"
-            value={user.email}
-            onPress={() => router.push('/profile/details' as any)}
-            showChevron={false}
-          />
-          <Divider />
-          <MenuRow
-            icon="call-outline"
-            label="Phone"
-            value={user.phone}
-            onPress={() => router.push('/profile/details' as any)}
-            showChevron={false}
-          />
-        </Section>
-
-        {showParking && (
-          <Section title="Parking">
-            <MenuRow
-              icon="card-outline"
-              label="Permit Details"
-              value={`Type ${user.permit.type}`}
-              onPress={() => router.push('/profile/parking' as any)}
-              showChevron={false}
-            />
-            <Divider />
-            <MenuRow
-              icon="car-outline"
-              label="My Vehicles"
-              onPress={() => router.push('/profile/parking' as any)}
-              showChevron={false}
-            />
-          </Section>
-        )}
-
         {/* Preferences */}
         <Section title="Preferences">
           <View style={styles.row}>
@@ -210,9 +223,9 @@ export function ProfileScreen({ showParking = true }: { showParking?: boolean })
           </View>
           <Divider />
           <MenuRow
-            icon="settings-outline"
-            label="App Settings"
-            onPress={() => router.push('/profile/settings' as any)}
+            icon="car-sport-outline"
+            label="Profile Setting"
+            onPress={() => router.push('/profile/profile-setting' as any)}
           />
           <Divider />
           <MenuRow
@@ -265,50 +278,64 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  name: {
-    fontSize: 21,
-    fontWeight: '700',
-    color: '#1a1a1a',
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 3,
+  },
+  name: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1a1a1a',
+  },
+  editIconBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#e8f5ee',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   email: {
     fontSize: 14,
     color: '#888',
     marginBottom: 14,
   },
-  editBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#00853E',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 20,
-    gap: 5,
-  },
-  editBtnText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-
   // Permit card
   permitCard: {
-    backgroundColor: '#00853E',
     borderRadius: 16,
     marginHorizontal: 16,
     marginBottom: 16,
     padding: 18,
-    shadowColor: '#00853E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  stripesClip: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  stripe: {
+    position: 'absolute',
+    left: -80,
+    width: '180%',
+    height: 6,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    transform: [{ rotate: '45deg' }],
   },
   permitTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 8,
+  },
+  permitTopLeft: {
+    flex: 1,
+    marginRight: 10,
   },
   permitLabel: {
     fontSize: 11,
@@ -318,7 +345,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   permitType: {
-    fontSize: 26,
+    fontSize: 32,
     fontWeight: '800',
     color: '#fff',
   },
@@ -329,6 +356,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 20,
     gap: 5,
+    flexShrink: 0,
   },
   permitDot: {
     width: 7,
@@ -374,8 +402,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
     color: '#888',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
@@ -405,9 +433,9 @@ const styles = StyleSheet.create({
   },
   rowLabel: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
     color: '#1a1a1a',
-    fontWeight: '500',
+    fontWeight: '700',
   },
   rowLabelDanger: {
     color: '#D0021B',

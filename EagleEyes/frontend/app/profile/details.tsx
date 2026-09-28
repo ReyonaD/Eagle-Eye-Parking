@@ -20,14 +20,12 @@ export default function EditProfileScreen() {
 
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
-  const [phone, setPhone] = useState(user.phone);
   const [permitType, setPermitType] = useState(user.permit.type);
 
   const handleSave = () => {
     updateUser({
       name: name.trim(),
       email: email.trim(),
-      phone: phone.trim(),
       permit: { type: permitType.trim() },
     });
     router.back();
@@ -67,15 +65,6 @@ export default function EditProfileScreen() {
               placeholder="Email"
               autoCapitalize="none"
               keyboardType="email-address"
-            />
-
-            <Text style={styles.label}>Phone</Text>
-            <TextInput
-              style={styles.input}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Phone"
-              keyboardType="phone-pad"
             />
 
             <Text style={styles.label}>Permit Type</Text>
