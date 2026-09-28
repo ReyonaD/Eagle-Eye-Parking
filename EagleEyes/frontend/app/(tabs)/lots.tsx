@@ -49,7 +49,9 @@ function getNumColumns(width: number): number {
 
 // Pin a lot on web with a tap on its pin icon; on native, long-press the
 // card since there's no room for a persistent icon in the list row.
-const PINNED_LOTS_STORAGE_KEY = 'pinnedLotIds';
+// Exported so logout can clear it — pins aren't tied to an account server-side,
+// so without this a new login on the same device would inherit the old one's pins.
+export const PINNED_LOTS_STORAGE_KEY = 'pinnedLotIds';
 const PIN_HINT_SEEN_KEY = 'hasSeenPinHint';
 // Kept distinct from STATUS_COLOR so a pinned+Full lot doesn't read as one signal.
 const PIN_COLOR = '#2F6FED';

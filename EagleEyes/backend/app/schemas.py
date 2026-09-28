@@ -7,6 +7,13 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
+class UserPermitUpdate(BaseModel):
+    #must be one of the names returned by GET /api/permits
+    permit_type: str = Field(min_length=1, max_length=100)
+
+class UserNameUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
 class AlertCreate(BaseModel):
     title: str
     alert_type: str
