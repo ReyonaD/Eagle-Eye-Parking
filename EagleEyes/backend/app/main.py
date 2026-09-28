@@ -17,9 +17,9 @@ from . import models
 #imports custom files
 from app.database import get_db
 from app.models import User, Alert, PasswordResetToken
-from app.schemas import UserCreate, AlertResponse, AlertCreate, AlertApprove, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, AlertResponse, AlertCreate, AlertApprove, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
-from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin
+from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
 from typing import List, Optional
 Base.metadata.create_all(bind=engine)
@@ -29,6 +29,9 @@ with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'published'"))
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS lot_name VARCHAR"))
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS image_urls JSON"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS permit_type VARCHAR"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT FALSE"))
     _conn.commit()
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -170,14 +173,15 @@ def login(
             headers={"WWW-Authenticate": "Bearer"} ,
         )
     #create a JWT token with user's id as the payload
-    access_token = create_access_token(data={"sub": str(user.email), "role": user.role})
+    access_token = create_access_token(data={"sub": str(user.email), "role": user.role, "is_owner": user.is_owner})
 
     #hand the token to the mobile app
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "user_id": user.id,
-        "role": user.role
+        "role": user.role,
+        "is_owner": user.is_owner
         }
 
 
@@ -280,9 +284,37 @@ def read_current_user(current_user: User = Depends(get_current_user)):
     return {
         "id": current_user.id,
         "email": current_user.email,
+        "name": current_user.name,
         "role": current_user.role,
-        "is_active": current_user.is_active
+        "is_active": current_user.is_active,
+        "permit_type": current_user.permit_type,
+        "is_owner": current_user.is_owner
     }
+
+@app.put("/users/me/name")
+def update_current_user_name(
+    payload: UserNameUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Lets a logged-in user set or change their display name."""
+    current_user.name = payload.name.strip()
+    db.commit()
+    db.refresh(current_user)
+    return {"name": current_user.name}
+
+@app.put("/users/me/permit")
+def update_current_user_permit(
+    payload: UserPermitUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Lets a logged-in user set or change their parking permit, e.g. after
+    picking one from GET /api/permits."""
+    current_user.permit_type = payload.permit_type.strip()
+    db.commit()
+    db.refresh(current_user)
+    return {"permit_type": current_user.permit_type}
 
 async def get_parkzen_token(username: str, password: str, force_refresh: bool = False) -> str:
     """Return a valid ParkZen token, logging in only when the cached one is
@@ -314,44 +346,78 @@ async def get_parkzen_token(username: str, password: str, force_refresh: bool = 
     parkzen_auth_cache["expires_at"] = current_time + timedelta(minutes=10)
     return token
 
-@app.get("/api/lots")
-async def get_parking_lots():
-    """Fetches UNT lots drawn in Parkzen Dashboard"""
+def _get_parkzen_credentials() -> tuple[str, str, str]:
     client_id = os.getenv("PARKZEN_CLIENT_ID", "University of North Texas")
     username = os.getenv("PARKZEN_USERNAME")
     password = os.getenv("PARKZEN_PASSWORD")
-
     if not username or not password:
         raise HTTPException(status_code=500, detail="Missing ParkZen credentials in backend .env")
-    
-    try:
-        active_token = await get_parkzen_token(username, password)
+    return client_id, username, password
 
-        # FETCH THE LOTS ASYNCHRONOUSLY
-        lots_url = f"https://api.parkzenapp.com/api/lots?clientId={client_id}"
+async def _fetch_raw_lots() -> tuple[list, str]:
+    """Fetches the raw (unprocessed) lot list from ParkZen. Shared by /api/lots and
+    /api/permits so both stay in sync with whatever ParkZen actually returns."""
+    client_id, username, password = _get_parkzen_credentials()
+    active_token = await get_parkzen_token(username, password)
+
+    lots_url = f"https://api.parkzenapp.com/api/lots?clientId={client_id}"
+    headers = {"Authorization": f"Bearer {active_token}"}
+
+    async with httpx.AsyncClient() as client:
+        lots_response = await client.get(lots_url, headers=headers)
+
+    # A 401 here means the cached token was invalidated early (e.g., another
+    # login on the shared ParkZen account) — force one fresh login and retry.
+    if lots_response.status_code == 401:
+        active_token = await get_parkzen_token(username, password, force_refresh=True)
         headers = {"Authorization": f"Bearer {active_token}"}
-
         async with httpx.AsyncClient() as client:
             lots_response = await client.get(lots_url, headers=headers)
 
-        # A 401 here means the cached token was invalidated early (e.g., another
-        # login on the shared ParkZen account) — force one fresh login and retry.
-        if lots_response.status_code == 401:
-            active_token = await get_parkzen_token(username, password, force_refresh=True)
-            headers = {"Authorization": f"Bearer {active_token}"}
-            async with httpx.AsyncClient() as client:
-                lots_response = await client.get(lots_url, headers=headers)
+    if lots_response.status_code != 200:
+        raise HTTPException(lots_response.status_code, detail="Fail to fetch lots from ParkZen API")
 
-        if lots_response.status_code != 200:
-            raise HTTPException(lots_response.status_code, detail="Fail to fetch lots from ParkZen API")
-        
-        raws_lots_data = lots_response.json()
-        actual_lots_array = raws_lots_data.get("data") or raws_lots_data.get("lots") or raws_lots_data
+    raws_lots_data = lots_response.json()
+    actual_lots_array = raws_lots_data.get("data") or raws_lots_data.get("lots") or raws_lots_data
 
-        if not isinstance(actual_lots_array, list):
-            raise HTTPException(status_code=500, detail="Unexpected response format from ParkZen API")
-        
-        # 4. PROCESS THE DATA
+    if not isinstance(actual_lots_array, list):
+        raise HTTPException(status_code=500, detail="Unexpected response format from ParkZen API")
+
+    return actual_lots_array, active_token
+
+@app.get("/api/permits")
+async def get_permit_types():
+    """Returns the distinct list of real ParkZen permit names (drawn from every
+    lot's permit list), so the frontend's permit picker never drifts from what
+    ParkZen actually recognizes."""
+    try:
+        actual_lots_array, active_token = await _fetch_raw_lots()
+
+        raw_permit_ids: set[str] = set()
+        for lot in actual_lots_array:
+            for permit_id in lot.get("permits", []) or []:
+                raw_permit_ids.add(permit_id)
+
+        permit_names = set()
+        for permit_id in raw_permit_ids:
+            name = await get_permit_name(permit_id, active_token)
+            if name and name != "Unknown":
+                permit_names.add(name)
+
+        return sorted(permit_names)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
+
+@app.get("/api/lots")
+async def get_parking_lots():
+    """Fetches UNT lots drawn in Parkzen Dashboard"""
+    try:
+        actual_lots_array, active_token = await _fetch_raw_lots()
+
+        # PROCESS THE DATA
         for lot in actual_lots_array:
             raw_permit_ids = lot.get("permits", [])
             readable_permits = []
@@ -457,6 +523,66 @@ def promote_to_admin(
     db.commit()
 
     return {"message": f"User {target_email} has been successfully promoted to admin."}
+
+@app.get("/admin/admins")
+def list_admins(
+    db: Session = Depends(get_db),
+    is_owner: bool = Depends(require_owner)
+):
+    """Owner-only: the full admin roster, so an owner can see who else has
+    admin access and decide whether to grant/revoke it."""
+    admins = db.query(User).filter(User.role == "admin").order_by(User.email).all()
+    return [
+        {"id": a.id, "email": a.email, "name": a.name, "is_owner": a.is_owner}
+        for a in admins
+    ]
+
+@app.put("/admin/users/{target_email}/grant-owner")
+def grant_owner(
+    target_email: str,
+    db: Session = Depends(get_db),
+    is_owner: bool = Depends(require_owner)
+):
+    """Owner-only: gives an existing admin owner-level access (can manage
+    other admins too). The target must already be an admin."""
+    target_user = db.query(User).filter(User.email == target_email).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target_user.role != "admin":
+        raise HTTPException(status_code=400, detail="Only existing admins can be granted owner access.")
+
+    target_user.is_owner = True
+    db.commit()
+
+    return {"message": f"User {target_email} is now an owner."}
+
+@app.put("/admin/users/{target_email}/revoke")
+def revoke_admin(
+    target_email: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    is_owner: bool = Depends(require_owner)
+):
+    """Owner-only: strips a user's admin (and owner, if any) access back down
+    to a regular commuter account. Guards against an owner locking themselves
+    out and against leaving the system with zero owners."""
+    if target_email == current_user.email:
+        raise HTTPException(status_code=400, detail="You can't revoke your own access. Ask another owner to do it.")
+
+    target_user = db.query(User).filter(User.email == target_email).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target_user.is_owner:
+        remaining_owners = db.query(User).filter(User.is_owner == True, User.id != target_user.id).count()
+        if remaining_owners == 0:
+            raise HTTPException(status_code=400, detail="Can't remove the last remaining owner.")
+
+    target_user.role = "commuter"
+    target_user.is_owner = False
+    db.commit()
+
+    return {"message": f"User {target_email}'s admin access has been revoked."}
 
 @app.get("/alerts", response_model=List[AlertResponse])
 def get_alerts(

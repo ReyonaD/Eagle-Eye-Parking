@@ -1,60 +1,52 @@
-import React, {useEffect, useRef} from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 
-// Hide POI/transit clutter so the lot polygons are the visual focus; roads
-// and labels stay for orientation.
-const MAP_STYLES: google.maps.MapTypeStyle[] = [
+const MAP_STYLES: any[] = [
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
 ];
 
-function WebPolygon({paths, options, onClick}: {paths: any, options: any, onClick?: () => void}) {
-    const map = useMap();
-    const polygonRef = React.useRef<any>(null);
+function WebPolygon({ paths, options, onClick }: { paths: any; options: any; onClick?: () => void }) {
+  const map = useMap();
+  const polygonRef = React.useRef<any>(null);
 
-    useEffect(() => {
-        if (!map || !(window as any).google) return;
-        if (!polygonRef.current){
-            polygonRef.current = new (window as any).google.maps.Polygon();
-        }
+  useEffect(() => {
+    if (!map || !(window as any).google) return;
+    if (!polygonRef.current) {
+      polygonRef.current = new (window as any).google.maps.Polygon();
+    }
 
-        polygonRef.current.setMap(map);
-        const listener = polygonRef.current.addListener('click', onClick);
+    polygonRef.current.setMap(map);
+    const listener = polygonRef.current.addListener('click', onClick);
 
-        return () => {
-            listener.remove();
-            polygonRef.current?.setMap(null);
-        };
-    }, [map, onClick]);
+    return () => {
+      listener.remove();
+      polygonRef.current?.setMap(null);
+    };
+  }, [map, onClick]);
 
-    useEffect(() => {
-        if (!polygonRef.current) return;
-        polygonRef.current.setOptions({
-            ...options,
-            paths,
-        });
-    }, [paths, options]);
+  useEffect(() => {
+    if (!polygonRef.current) return;
+    polygonRef.current.setOptions({
+      ...options,
+      paths,
+    });
+  }, [paths, options]);
 
-    return null;
+  return null;
 }
 
-//Main-map component
 interface EagleMapProps {
   liveLots: any[];
 }
 
 export default function EagleMap({ liveLots }: EagleMapProps) {
-  // Center on UNT
   const untCenter = { lat: 33.2140, lng: -97.1475 };
-  
-  // Grab the API key from your .env file
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
   return (
     <View style={styles.container}>
-      
-      {/* WEB MAP */}
       {apiKey ? (
         <APIProvider apiKey={apiKey}>
           <Map
@@ -69,13 +61,13 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
 
               const webPaths = lot.coordinates.map((coord: any) => ({
                 lat: coord.latitude,
-                lng: coord.longitude
+                lng: coord.longitude,
               }));
-              
+
               return (
                 <React.Fragment key={lot.id}>
-                  <WebPolygon 
-                    paths={webPaths} 
+                  <WebPolygon
+                    paths={webPaths}
                     options={{
                       fillColor: lot.fillColor,
                       strokeColor: lot.strokeColor,
@@ -102,7 +94,6 @@ export default function EagleMap({ liveLots }: EagleMapProps) {
         </View>
       )}
 
-      {/* CAPACITY INDICATOR AT BOTTOM*/}
       <View style={styles.capacityContainer}>
         <View style={styles.capacityRow}>
           <View style={styles.capacityItem}>
@@ -132,12 +123,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#eaeaea'
+    backgroundColor: '#eaeaea',
   },
   errorText: {
     fontSize: 16,
     color: '#d32f2f',
-    fontWeight: 'bold'
+    fontWeight: 'bold',
   },
   capacityContainer: {
     position: "absolute",

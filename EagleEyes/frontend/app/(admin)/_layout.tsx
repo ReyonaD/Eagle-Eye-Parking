@@ -53,9 +53,19 @@ export default function AdminLayout() {
           options={{ href: null }}
         />
 
-        {/* Hidden screen — navigable via router.push but not shown in tab bar */}
+        {/* Hidden screens — navigable via router.push but not shown in tab bar */}
         <Tabs.Screen
           name="post-alert"
+          options={{ href: null }}
+        />
+
+        <Tabs.Screen
+          name="admin-management"
+          options={{ href: null }}
+        />
+
+        <Tabs.Screen
+          name="commuter-notes"
           options={{ href: null }}
         />
       </Tabs>

@@ -46,9 +46,10 @@ export const login = async (email, password) => {
         console.log("BACKEND REJECTION:", JSON.stringify(data, null, 2));
         throw new Error(errorMessage);
         } 
-        //save token and role to AsyncStorage
+        //save token, role, and owner status to AsyncStorage
         await AsyncStorage.setItem('token', data.access_token);
         await AsyncStorage.setItem('role', data.role);
+        await AsyncStorage.setItem('isOwner', data.is_owner ? 'true' : 'false');
         return data;
     } catch (error){
         throw error;
@@ -56,9 +57,65 @@ export const login = async (email, password) => {
 };
 //LOGOUT
 export const logout = async () => {
-    //destroy token and role to logout
+    //destroy token, role, and owner status to logout
     await AsyncStorage.removeItem('token');
     await AsyncStorage.removeItem('role');
+    await AsyncStorage.removeItem('isOwner');
+};
+//GET CURRENT USER - includes the permit saved on the account (null if never set)
+export const getCurrentUser = async () => {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) { throw new Error("No authorization token found"); }
+
+    const response = await apiFetch(`${BASE_URL}/users/me`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch account details');
+    return await response.json();
+};
+//GET PERMIT TYPES - the real, live list of ParkZen permit names (for the picker)
+export const getPermitTypes = async () => {
+    const response = await apiFetch(`${BASE_URL}/api/permits`);
+    if (!response.ok) throw new Error('Failed to fetch permit types');
+    return await response.json();
+};
+//UPDATE PERMIT - save the account's chosen permit type to the backend
+export const updatePermit = async (permitType) => {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) { throw new Error("No authorization token found"); }
+
+    const response = await apiFetch(`${BASE_URL}/users/me/permit`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ permit_type: permitType }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Failed to update permit');
+    }
+    return data;
+};
+//UPDATE NAME - save the account's display name to the backend
+export const updateName = async (name) => {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) { throw new Error("No authorization token found"); }
+
+    const response = await apiFetch(`${BASE_URL}/users/me/name`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Failed to update name');
+    }
+    return data;
 };
 //ADMIN TOOLS
 export const promoteToAdmin = async (targetEmail) => {
@@ -73,8 +130,53 @@ export const promoteToAdmin = async (targetEmail) => {
             'Authorization': `Bearer ${token}`
         },
     });
-
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Failed to promote user');
+    }
+    return data;
 }
+//GET ADMINS - owner-only: the full admin roster
+export const getAdmins = async () => {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) { throw new Error("No authorization token found"); }
+
+    const response = await apiFetch(`${BASE_URL}/admin/admins`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch admin list');
+    return await response.json();
+};
+//GRANT OWNER - owner-only: gives an existing admin owner-level access
+export const grantOwner = async (targetEmail) => {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) { throw new Error("No authorization token found"); }
+
+    const response = await apiFetch(`${BASE_URL}/admin/users/${encodeURIComponent(targetEmail)}/grant-owner`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Failed to grant owner access');
+    }
+    return data;
+};
+//REVOKE ADMIN - owner-only: strips a user's admin/owner access back to commuter
+export const revokeAdmin = async (targetEmail) => {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) { throw new Error("No authorization token found"); }
+
+    const response = await apiFetch(`${BASE_URL}/admin/users/${encodeURIComponent(targetEmail)}/revoke`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Failed to revoke admin access');
+    }
+    return data;
+};
 //FORGOT PASSWORD - request a reset email
 export const requestPasswordReset = async (email) => {
     const response = await apiFetch(`${BASE_URL}/forgot-password`, {
