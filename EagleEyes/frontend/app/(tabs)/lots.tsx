@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Image,
   Modal,
-  Alert,
   ActivityIndicator,
   ScrollView,
   Platform,
@@ -20,7 +19,10 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
+import { useUser } from '../../context/UserContext';
 import { openDirections } from '../../utils/navigation';
+import { GROUP_EMBLEMS, lotMatchesPermitType } from '../../utils/permits';
+import { Alert } from '../../utils/webCompat';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
 
 // Mobile loads just enough lots to fill the viewport, then appends more as
@@ -49,7 +51,9 @@ function getNumColumns(width: number): number {
 
 // Pin a lot on web with a tap on its pin icon; on native, long-press the
 // card since there's no room for a persistent icon in the list row.
-const PINNED_LOTS_STORAGE_KEY = 'pinnedLotIds';
+// Exported so logout can clear it — pins aren't tied to an account server-side,
+// so without this a new login on the same device would inherit the old one's pins.
+export const PINNED_LOTS_STORAGE_KEY = 'pinnedLotIds';
 const PIN_HINT_SEEN_KEY = 'hasSeenPinHint';
 // Kept distinct from STATUS_COLOR so a pinned+Full lot doesn't read as one signal.
 const PIN_COLOR = '#2F6FED';
@@ -71,6 +75,8 @@ const PERMIT_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
   'T':    { bg: '#E0D0B4', text: '#5F3A1E' },
   'PP':   { bg: '#F5E6C8', text: '#8B5E00' },
   'A37':  { bg: '#D4C8A8', text: '#5C4A1E' },
+  'RR':   { bg: '#C8C0E8', text: '#2E1E6A' },
+  'ST':   { bg: '#CFD8DC', text: '#263238' },
   'MC':   { bg: '#D8D8D8', text: '#444' },
   'SV':   { bg: '#C8D8C8', text: '#1A4A1A' },
   'VIS':  { bg: '#E8D0C8', text: '#6A2A1A' },
@@ -88,6 +94,8 @@ const PERMIT_ABBREVIATIONS: Record<string, string> = {
 };
 
 function abbreviatePermit(permit: string): string {
+  // Emblems for the lots listed in "Lots to be changed" (A-Reserved -> A, Resident Reserved -> RR, Street Parking -> ST)
+  if (GROUP_EMBLEMS[permit]) return GROUP_EMBLEMS[permit];
   if (PERMIT_ABBREVIATIONS[permit]) return PERMIT_ABBREVIATIONS[permit];
   // Strip parenthetical suffix: "PP(Visitor)" → "PP", "Premium Parking (V)" → "Premium Parking"
   const stripped = permit.replace(/\s*\(.*$/, '').trim();
@@ -351,7 +359,8 @@ export default function LotsScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const listRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
-  const { lots, isLoading, lastRefreshAt } = useLots();
+  const { lots, isLoading, lastRefreshAt, filterByPermit } = useLots();
+  const { user } = useUser();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const numColumns = getNumColumns(windowWidth);
@@ -418,16 +427,23 @@ export default function LotsScreen() {
     ? new Date(lastRefreshAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : 'Waiting for sync';
 
+  // "Only show my permit type" preference from Profile Setting, applied ahead
+  // of the on-screen search/permit/availability filters below.
+  const permitTypeLots = useMemo(() => {
+    if (!filterByPermit || !user.parkingProfile.permitType) return lots;
+    return lots.filter((lot) => lotMatchesPermitType(lot.permitList, user.parkingProfile.permitType));
+  }, [lots, filterByPermit, user.parkingProfile.permitType]);
+
   const uniquePermits = useMemo(() => {
     const set = new Set<string>();
-    lots.forEach((lot) => {
+    permitTypeLots.forEach((lot) => {
       (lot.permitList || []).forEach((p: string) => set.add(p.trim()));
     });
     return Array.from(set).sort();
-  }, [lots]);
+  }, [permitTypeLots]);
 
   const filtered = useMemo(() => {
-    return lots.filter((lot) => {
+    return permitTypeLots.filter((lot) => {
       const q = query.toLowerCase();
       const nameMatch = (lot.name?.toLowerCase() || '').includes(q);
       const permitMatch = (lot.permits?.toLowerCase() || '').includes(q);
@@ -441,7 +457,7 @@ export default function LotsScreen() {
       if (availabilityFilter !== 'all' && lot.status !== availabilityFilter) return false;
       return true;
     });
-  }, [lots, query, permitFilter, availabilityFilter]);
+  }, [permitTypeLots, query, permitFilter, availabilityFilter]);
 
   // Pinned lots render in their own fixed section above the scrollable list,
   // so they're always visible regardless of scroll position.
@@ -946,7 +962,7 @@ const styles = StyleSheet.create({
   },
   filterBtnText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#555',
     letterSpacing: 0.3,
   },
@@ -1188,7 +1204,7 @@ pageIndicator: {
   },
   percentText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   cardRight: {
     // No fixed width: "Near Capacity" needs to render on one line, so this
@@ -1205,7 +1221,7 @@ pageIndicator: {
   },
   statusText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     textAlign: 'left',
   },
   statusContainer: {

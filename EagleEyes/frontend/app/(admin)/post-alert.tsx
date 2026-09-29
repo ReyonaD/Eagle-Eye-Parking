@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { createAlert, uploadAlertImage } from '../../api/alerts';
 import LotPickerModal from '../../components/LotPickerModal';
@@ -26,6 +26,12 @@ const MAX_PHOTOS = 3;
 type PickedPhoto = { uri: string; file?: File };
 
 export default function PostAlertScreen() {
+  // This screen is a hidden tab route, so router.back() unreliably lands on the
+  // tab navigator's default tab (Hazards) instead of wherever it was actually
+  // pushed from. Callers pass ?from=... to say where "back" should really go.
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  const backDestination = from === 'profile' ? '/(admin)/profile' : '/(admin)/hazards';
+
   const [title, setTitle]               = useState('');
   const [memo, setMemo]                 = useState('');
   const [selectedType, setSelectedType] = useState<string | null>(null);
@@ -111,7 +117,7 @@ export default function PostAlertScreen() {
         image_urls: imageUrls.length ? imageUrls : undefined,
       });
       Alert.alert('Posted', 'Hazard alert has been posted.', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK', onPress: () => router.replace(backDestination) },
       ]);
     } catch {
       Alert.alert('Error', 'Could not post the alert. Please try again.');
@@ -126,7 +132,7 @@ export default function PostAlertScreen() {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace(backDestination)}>
           <Ionicons name="chevron-back" size={20} color="#00853E" />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>

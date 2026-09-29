@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput, Image, Modal, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Image, Modal, RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { getAlerts, getPendingAlerts, approveAlert, deleteAlert, uploadAlertImage, BASE_URL } from '../../api/alerts';
 import { useLots } from '../../context/LotsContext';
 import LotMiniMap from '../../components/LotMiniMap';
+import { Alert } from '../../utils/webCompat';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -438,7 +439,8 @@ export default function HazardsScreen() {
             onPress={() => router.push('/(admin)/post-alert')}
             accessibilityLabel="Post Alert"
           >
-            <Ionicons name="add" size={32} color="#fff" />
+            <Ionicons name="add" size={24} color="#fff" />
+            <Text style={styles.fabText}>Add Alert</Text>
           </TouchableOpacity>
         </>
       )}
@@ -523,9 +525,12 @@ const styles = StyleSheet.create({
     right: 20,
     bottom: 30,
     backgroundColor: '#00853E',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    minWidth: 140,
+    height: 56,
+    borderRadius: 28,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    gap: 6,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 8,
@@ -534,6 +539,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
   },
+  fabText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   // Detail
   backButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },

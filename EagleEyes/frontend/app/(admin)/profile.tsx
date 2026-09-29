@@ -12,52 +12,46 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from '../../utils/webCompat';
-
-const MOCK_USER = {
-  name: 'Admin User',
-  email: 'admin@unt.edu',
-  phone: '(000) 000-0000',
-};
+import { useUser } from '../../context/UserContext';
+import { PINNED_LOTS_STORAGE_KEY } from '../(tabs)/lots';
+import InitialsAvatar from '../../components/InitialsAvatar';
 
 interface MenuRowProps {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value?: string;
-  onPress: () => void;
-  danger?: boolean;
+  subtitle?: string;
+  onPress?: () => void;
 }
 
-function MenuRow({ icon, label, value, onPress, danger = false }: MenuRowProps) {
+// Each nav item is its own standalone pill/card (not grouped into a bordered
+// white section), matching the admin profile mockup. The leading icon gives
+// each row a scannable shape so admins can find the right action at a glance
+// instead of reading every label.
+function MenuRow({ icon, label, value, subtitle, onPress }: MenuRowProps) {
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.5}>
-      <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
-        <Ionicons name={icon} size={27} color={danger ? '#D0021B' : '#00853E'} />
+    <TouchableOpacity
+      style={styles.menuRow}
+      onPress={onPress}
+      disabled={!onPress}
+      activeOpacity={0.6}
+    >
+      <View style={styles.menuRowIcon}>
+        <Ionicons name={icon} size={20} color="#00853E" />
       </View>
-      <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
-      <View style={styles.rowRight}>
-        {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        {!danger && <Ionicons name="chevron-forward" size={27} color="#ccc" />}
+      <View style={styles.menuRowText}>
+        <Text style={styles.menuRowLabel}>{label}</Text>
+        {subtitle ? <Text style={styles.menuRowSubtitle}>{subtitle}</Text> : null}
       </View>
+      {value ? <Text style={styles.menuRowValue}>{value}</Text> : null}
+      <Ionicons name="chevron-forward" size={20} color="#c2c2c2" />
     </TouchableOpacity>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.card}>
-      {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
-      {children}
-    </View>
-  );
-}
-
-function Divider() {
-  return <View style={styles.divider} />;
-}
-
 export default function AdminProfileScreen() {
   const router = useRouter();
-  const [user] = useState(MOCK_USER);
+  const { user, refreshUser } = useUser();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const handleLogout = () => {
@@ -69,6 +63,10 @@ export default function AdminProfileScreen() {
         onPress: async () => {
           await AsyncStorage.removeItem('token');
           await AsyncStorage.removeItem('role');
+          await AsyncStorage.removeItem('isOwner');
+          //clears the cached profile and pinned lots too, so neither bleeds into the next login
+          await AsyncStorage.removeItem(PINNED_LOTS_STORAGE_KEY);
+          await refreshUser();
           router.replace('/login');
         },
       },
@@ -79,50 +77,62 @@ export default function AdminProfileScreen() {
     <SafeAreaView style={styles.screen} edges={['right', 'left']}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View style={styles.avatarCircle}>
-            <Ionicons name="person-circle" size={27} color="#00853E" />
+          <InitialsAvatar name={user.name} style={styles.avatar} />
+          <View style={styles.nameRow}>
+            <Text style={[styles.name, !user.name && styles.namePlaceholder]}>
+              {user.name || 'Add your name'}
+            </Text>
+            <TouchableOpacity
+              style={styles.editIconBtn}
+              onPress={() => router.push('/profile/edit-name' as any)}
+              activeOpacity={0.7}
+              hitSlop={8}
+            >
+              <Ionicons name="pencil" size={14} color="#00853E" />
+            </TouchableOpacity>
           </View>
-          <Text style={styles.name}>{user.name}</Text>
           <Text style={styles.email}>{user.email}</Text>
-          <TouchableOpacity
-            style={styles.editBtn}
-            onPress={() => router.push('/profile/details' as any)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="pencil-outline" size={27} color="#fff" />
-            <Text style={styles.editBtnText}>Edit Profile</Text>
-          </TouchableOpacity>
         </View>
 
-        <Section title="Personal Information">
+        <View style={styles.menuList}>
+          <Text style={[styles.sectionLabel, styles.sectionLabelFirst]}>QUICK ACTIONS</Text>
           <MenuRow
-            icon="person-outline"
-            label="Full Name"
-            value={user.name}
-            onPress={() => router.push('/profile/details' as any)}
+            icon="warning-outline"
+            label="Post New Alert"
+            subtitle="Report a new hazard for commuters"
+            onPress={() => router.push({ pathname: '/(admin)/post-alert', params: { from: 'profile' } })}
           />
-          <Divider />
           <MenuRow
-            icon="mail-outline"
-            label="Email"
-            value={user.email}
-            onPress={() => router.push('/profile/details' as any)}
+            icon="calendar-outline"
+            label="Add New Event"
+            subtitle="Create a new campus event"
+            onPress={() => router.push({ pathname: '/(admin)/events', params: { openAdd: '1' } })}
           />
-          <Divider />
-          <MenuRow
-            icon="call-outline"
-            label="Phone"
-            value={user.phone}
-            onPress={() => router.push('/profile/details' as any)}
-          />
-        </Section>
 
-        <Section title="Preferences">
-          <View style={styles.row}>
-            <View style={styles.rowIcon}>
-              <Ionicons name="notifications-outline" size={27} color="#00853E" />
+          <Text style={styles.sectionLabel}>COMMUTER REQUESTS</Text>
+          <MenuRow
+            icon="document-text-outline"
+            label="View Notes from Commuter"
+            subtitle="Read notes commuters sent to admins"
+            onPress={() => router.push('/(admin)/commuter-notes')}
+          />
+
+          <Text style={styles.sectionLabel}>ADMIN ACCESS</Text>
+          <MenuRow
+            icon="person-add-outline"
+            label="Admin Management"
+            subtitle="Promote commuters and manage admin access"
+            onPress={() => router.push('/(admin)/admin-management')}
+          />
+
+          <Text style={styles.sectionLabel}>PREFERENCES</Text>
+          <View style={styles.menuRow}>
+            <View style={styles.menuRowIcon}>
+              <Ionicons name="notifications-outline" size={20} color="#00853E" />
             </View>
-            <Text style={styles.rowLabel}>Notifications</Text>
+            <View style={styles.menuRowText}>
+              <Text style={styles.menuRowLabel}>Notifications</Text>
+            </View>
             <Switch
               value={notificationsEnabled}
               onValueChange={setNotificationsEnabled}
@@ -130,28 +140,12 @@ export default function AdminProfileScreen() {
               thumbColor="#fff"
             />
           </View>
-          <Divider />
-          <MenuRow
-            icon="settings-outline"
-            label="App Settings"
-            onPress={() => router.push('/profile/settings' as any)}
-          />
-          <Divider />
-          <MenuRow
-            icon="help-circle-outline"
-            label="Help & Support"
-            onPress={() => router.push('/profile/settings' as any)}
-          />
-        </Section>
+        </View>
 
-        <Section title="">
-          <MenuRow
-            icon="log-out-outline"
-            label="Log Out"
-            onPress={handleLogout}
-            danger
-          />
-        </Section>
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
+          <Ionicons name="log-out-outline" size={20} color="#D0021B" />
+          <Text style={styles.logoutBtnText}>Log Out</Text>
+        </TouchableOpacity>
 
         <Text style={styles.version}>EagleEyes v1.0.0 · UNT Capstone Project</Text>
       </ScrollView>
@@ -160,41 +154,85 @@ export default function AdminProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f2f2f7' },
+  screen: { flex: 1, backgroundColor: '#fff' },
   header: {
-    alignItems: 'center', backgroundColor: '#fff', paddingTop: 24, paddingBottom: 22,
-    marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#eee',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingTop: 24,
+    paddingBottom: 22,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  avatarCircle: {
-    width: 96, height: 96, borderRadius: 48, backgroundColor: '#e8f5ee',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 10,
+  avatar: {
+    marginBottom: 10,
   },
-  name: { fontSize: 21, fontWeight: '700', color: '#1a1a1a', marginBottom: 3 },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 3,
+  },
+  name: { fontSize: 24, fontWeight: '800', color: '#1a1a1a' },
+  namePlaceholder: { color: '#aaa', fontWeight: '700' },
+  editIconBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#e8f5ee',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   email: { fontSize: 14, color: '#888', marginBottom: 14 },
-  editBtn: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#00853E',
-    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20, gap: 5,
+  menuList: {
+    paddingHorizontal: 16,
   },
-  editBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  card: {
-    backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 16, marginBottom: 16,
-    paddingVertical: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#888',
+    letterSpacing: 1.5,
+    marginTop: 8,
+    marginBottom: 8,
+    marginLeft: 4,
   },
-  sectionTitle: {
-    fontSize: 12, fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: 0.8,
-    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 2,
+  sectionLabelFirst: {
+    marginTop: 0,
   },
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13 },
-  rowIcon: {
-    width: 34, height: 34, borderRadius: 8, backgroundColor: '#e8f5ee', justifyContent: 'center',
-    alignItems: 'center', marginRight: 12,
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 16,
+    gap: 8,
   },
-  rowIconDanger: { backgroundColor: '#fdecea' },
-  rowLabel: { flex: 1, fontSize: 15, color: '#1a1a1a', fontWeight: '500' },
-  rowLabelDanger: { color: '#D0021B' },
-  rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  rowValue: { fontSize: 13, color: '#aaa' },
-  divider: { height: 1, backgroundColor: '#f2f2f2', marginLeft: 62 },
+  menuRowIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#e8f5ee',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuRowText: {
+    flex: 1,
+  },
+  menuRowLabel: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
+  menuRowSubtitle: { fontSize: 13, color: '#888', marginTop: 2 },
+  menuRowValue: { fontSize: 15, color: '#888' },
+  logoutBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fdecea',
+    borderRadius: 14,
+    marginHorizontal: 16,
+    paddingVertical: 16,
+    gap: 8,
+  },
+  logoutBtnText: { color: '#D0021B', fontSize: 16, fontWeight: '700' },
   version: { textAlign: 'center', fontSize: 12, color: '#bbb', marginVertical: 20 },
 });

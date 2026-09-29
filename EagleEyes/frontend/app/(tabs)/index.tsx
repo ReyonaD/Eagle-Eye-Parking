@@ -3,11 +3,14 @@ import { View, StyleSheet, TouchableOpacity, Text, Image, FlatList, Platform } f
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
+import { useUser } from '../../context/UserContext';
 import EagleMap from '../../components/EagleMap';
+import { consolidatePermits, lotMatchesPermitType, A_RESERVED, RESIDENT_RESERVED, STREET_PARKING } from '../../utils/permits';
 //import { requestPermissions } from '../../modules/parkzen-core';
 import { SafeAreaView} from 'react-native-safe-area-context';
 //const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
+const MAP_HAZARD_FAB_BOTTOM = 80;
 
 // Top Bar Component
 // function TopBar() {
@@ -33,8 +36,10 @@ import { SafeAreaView} from 'react-native-safe-area-context';
 //   );
 // }
 export default function MapScreen() {
+  const router = useRouter();
   //consume the global data
-  const { lots, isLoading, lastRefreshAt } = useLots();
+  const { lots, isLoading, lastRefreshAt, filterByPermit } = useLots();
+  const { user } = useUser();
   console.log("MapScreen Render - isLoading:", isLoading, "Lots count:", lots?.length);
 
   const refreshLabel = lastRefreshAt
@@ -57,10 +62,10 @@ export default function MapScreen() {
   const campuses = ["Main campus", "Discovery Park", "Frisco Landing"];
   const permits = [
     "All Permits",
-    "Eagle", "Remote", "Faculty and Staff", "A-Reserved",
-    "Resident", "Resident Reserved", "Hall Director",
+    "Eagle", "Remote", "Faculty and Staff", A_RESERVED,
+    "Resident", RESIDENT_RESERVED, "Hall Director",
     "Visitor", "Motorcycle", "Evening", "Night",
-    "HSG", "Premium Parking", "Zip Car"
+    "HSG", "Premium Parking", "Zip Car", STREET_PARKING
   ];
   const filteredLots = (lots || []).map((lot: any) => {
     if (selectedPermit === "All Permits") return { ...lot, isVisible: true };
@@ -68,9 +73,22 @@ export default function MapScreen() {
     // 1. Guard against empty data, but REMOVE the Array.isArray strict check
     if (!lot?.permits) return { ...lot, isVisible: false };
 
+    // Lots listed in "Lots to be changed" use their consolidated groups (A-Reserved, Resident Reserved, Street Parking)
+    if (lot.category) {
+      const groups: string[] = Array.isArray(lot.permitList) ? lot.permitList : consolidatePermits(lot.permits);
+      if (selectedPermit === A_RESERVED || selectedPermit === RESIDENT_RESERVED || selectedPermit === STREET_PARKING) {
+        return { ...lot, isVisible: groups.includes(selectedPermit) };
+      }
+    }
+
     // FIXED: Handle both Arrays AND Comma-Separated Strings
     let permitsArray = [];
-    if (Array.isArray(lot.permits)) {
+    if (lot.category) {
+      // Listed lots: match other permits, but don't let "Resident" pick up "Resident Reserved", etc.
+      permitsArray = (lot.permitList || []).filter(
+        (p: string) => p !== A_RESERVED && p !== RESIDENT_RESERVED && p !== STREET_PARKING
+      );
+    } else if (Array.isArray(lot.permits)) {
       permitsArray = lot.permits;
     } else if (typeof lot.permits === 'string') {
       permitsArray = lot.permits.split(','); // Split "Eagle, Faculty" into ["Eagle", " Faculty"]
@@ -111,6 +129,24 @@ export default function MapScreen() {
 
     return { ...lot, isVisible };
   });
+
+  // "Only show my permit type" preference from Profile Setting, applied on top
+  // of the CAMPUS/PERMIT dropdowns above rather than replacing them.
+  const permitTypeFilteredLots = (filterByPermit && user.parkingProfile.permitType)
+    ? filteredLots.map((lot) => ({
+        ...lot,
+        isVisible: lot.isVisible && lotMatchesPermitType(lot.permitList, user.parkingProfile.permitType),
+      }))
+    : filteredLots;
+
+  // The PERMIT dropdown still reads "All Permits" while the preference above is
+  // quietly narrowing the map underneath it — show the user's own permit type
+  // instead so the label matches what's actually visible.
+  const permitDropdownLabel =
+    filterByPermit && user.parkingProfile.permitType && selectedPermit === 'All Permits'
+      ? user.parkingProfile.permitType
+      : selectedPermit;
+
   return (
      <SafeAreaView style={styles.container} edges={['right', 'left']}>
 
@@ -132,7 +168,7 @@ export default function MapScreen() {
         <View style={[styles.dropdownWrapper, { marginLeft: 8 }]}>
           <Text style={styles.dropdownLabel}>PERMIT</Text>
           <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenPermit(!openPermit); setOpenCampus(false); }}>
-            <Text style={styles.dropdownText}>{selectedPermit}</Text>
+            <Text style={styles.dropdownText}>{permitDropdownLabel}</Text>
             <Ionicons name={openPermit ? "chevron-up" : "chevron-down"} size={27} color="#333" />
           </TouchableOpacity>
         </View>
@@ -146,9 +182,18 @@ export default function MapScreen() {
       {/* THE MAP AREA */}
       <View style={styles.mapArea} pointerEvents={(openCampus || openPermit) ? "none" : "auto"}>
         <EagleMap
-          liveLots={filteredLots}
+          liveLots={permitTypeFilteredLots}
           selectedCampus={selectedCampus}
         />
+        <TouchableOpacity
+          style={styles.hazardFab}
+          onPress={() => router.push('/report-options')}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Report a hazard"
+        >
+          <Ionicons name="warning" size={38} color="#FACC15" />
+        </TouchableOpacity>
       </View>
 
       {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
@@ -300,6 +345,22 @@ const styles = StyleSheet.create({
     flex: 1,
     zIndex: 1,
     elevation: 1,
+  },
+  hazardFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: MAP_HAZARD_FAB_BOTTOM,
+    width: 58,
+    height: 58,
+    borderRadius: 8,
+    backgroundColor: '#00853E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
   },
   leftGroup: {
   flexDirection: 'row',
