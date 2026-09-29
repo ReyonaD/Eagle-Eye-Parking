@@ -50,6 +50,9 @@ export default function MapScreen() {
   const [openCampus, setOpenCampus] = useState(false);
   const [selectedPermit, setSelectedPermit] = useState("All Permits");
   const [openPermit, setOpenPermit] = useState(false);
+  // Once the user explicitly picks a permit from the dropdown (even "All Permits"
+  // again), that choice wins over the "only show my permit type" preference below.
+  const [permitManuallySelected, setPermitManuallySelected] = useState(false);
   // Measured bottom edge of the dropdown row; overlays anchor to it on any screen size
   const [dropdownRowBottom, setDropdownRowBottom] = useState(0);
   if (isLoading) {
@@ -60,79 +63,41 @@ export default function MapScreen() {
     );
   }
   const campuses = ["Main campus", "Discovery Park", "Frisco Landing"];
+  // Every option here must exactly match a real ParkZen permit name (after
+  // normalizePermit's aliasing) or nothing will ever match it. Previously
+  // "HSG", "Zip Car" and "Visitor"/"Premium Parking" didn't match any real
+  // lot data and were dead selections — verified against a live permit pull.
   const permits = [
     "All Permits",
     "Eagle", "Remote", "Faculty and Staff", A_RESERVED,
     "Resident", RESIDENT_RESERVED, "Hall Director",
-    "Visitor", "Motorcycle", "Evening", "Night",
-    "HSG", "Premium Parking", "Zip Car", STREET_PARKING
+    "Motorcycle", "Evening", "Night",
+    "Highland Street Garage Commuter", "Premium Parking (Visitor)", "Zip Car",
+    "Business/Vendor", "Union Circle Garage",
+    STREET_PARKING
   ];
   const filteredLots = (lots || []).map((lot: any) => {
     if (selectedPermit === "All Permits") return { ...lot, isVisible: true };
-    
-    // 1. Guard against empty data, but REMOVE the Array.isArray strict check
     if (!lot?.permits) return { ...lot, isVisible: false };
 
-    // Lots listed in "Lots to be changed" use their consolidated groups (A-Reserved, Resident Reserved, Street Parking)
-    if (lot.category) {
-      const groups: string[] = Array.isArray(lot.permitList) ? lot.permitList : consolidatePermits(lot.permits);
-      if (selectedPermit === A_RESERVED || selectedPermit === RESIDENT_RESERVED || selectedPermit === STREET_PARKING) {
-        return { ...lot, isVisible: groups.includes(selectedPermit) };
-      }
-    }
+    // Listed lots' permitList is already consolidated (category + normalized
+    // permits); other lots' raw permits need normalizing here. Either way this
+    // ends up exact-matched below, same as the Lots tab's own permit filter —
+    // no loose substring matching, so "Resident" can't accidentally pick up
+    // lookalikes like "HSR-Resident" or "Resident Reserved".
+    const groups: string[] = lot.category && Array.isArray(lot.permitList)
+      ? lot.permitList
+      : consolidatePermits(lot.permits);
 
-    // FIXED: Handle both Arrays AND Comma-Separated Strings
-    let permitsArray = [];
-    if (lot.category) {
-      // Listed lots: match other permits, but don't let "Resident" pick up "Resident Reserved", etc.
-      permitsArray = (lot.permitList || []).filter(
-        (p: string) => p !== A_RESERVED && p !== RESIDENT_RESERVED && p !== STREET_PARKING
-      );
-    } else if (Array.isArray(lot.permits)) {
-      permitsArray = lot.permits;
-    } else if (typeof lot.permits === 'string') {
-      permitsArray = lot.permits.split(','); // Split "Eagle, Faculty" into ["Eagle", " Faculty"]
-    } else {
-      return { ...lot, isVisible: false }; 
-    }
-
-    const permitMap: { [key: string]: string[] } = {
-      "Faculty and Staff": ["fs", "f/s", "faculty", "staff"],
-      "A-Reserved": ["areserved", "a"],
-      "Eagle": ["eagle", "e"],
-      "Resident": ["resident", "res"],
-      "Resident Reserved": ["residentreserved"],
-      "Remote": ["remote"],
-    };
-
-    const clean = (s: any) => {
-      if (typeof s !== 'string') return '';
-      return s.toLowerCase()
-              .replace(/\s+/g, '')             // Remove spaces
-              .replace(/\([a-z0-9]\)/g, '')    // Remove (N), (D)
-              .replace(/[^a-z0-9]/g, '')       // Remove symbols
-              .trim();
-    };
-
-    const target = clean(selectedPermit);
-    const allowedCodes = permitMap[selectedPermit] 
-      ? permitMap[selectedPermit].map(c => clean(c)) 
-      : [target];
-
-    // Loop over our new safe permitsArray
-    const isVisible = permitsArray.some((p: any) => {
-      const lotPermitCleaned = clean(p);
-      
-      // Match if exact or if the backend string contains our target
-      return allowedCodes.includes(lotPermitCleaned) || lotPermitCleaned.includes(target);
-    });
-
+    const isVisible = groups.some((p: string) => p.trim() === selectedPermit);
     return { ...lot, isVisible };
   });
 
   // "Only show my permit type" preference from Profile Setting, applied on top
-  // of the CAMPUS/PERMIT dropdowns above rather than replacing them.
-  const permitTypeFilteredLots = (filterByPermit && user.parkingProfile.permitType)
+  // of the CAMPUS/PERMIT dropdowns above rather than replacing them — but only
+  // until the user explicitly picks something from the PERMIT dropdown, since
+  // they should always be able to opt back into seeing every permit.
+  const permitTypeFilteredLots = (filterByPermit && user.parkingProfile.permitType && !permitManuallySelected)
     ? filteredLots.map((lot) => ({
         ...lot,
         isVisible: lot.isVisible && lotMatchesPermitType(lot.permitList, user.parkingProfile.permitType),
@@ -141,9 +106,10 @@ export default function MapScreen() {
 
   // The PERMIT dropdown still reads "All Permits" while the preference above is
   // quietly narrowing the map underneath it — show the user's own permit type
-  // instead so the label matches what's actually visible.
+  // instead so the label matches what's actually visible, until they've made
+  // their own explicit choice.
   const permitDropdownLabel =
-    filterByPermit && user.parkingProfile.permitType && selectedPermit === 'All Permits'
+    filterByPermit && user.parkingProfile.permitType && selectedPermit === 'All Permits' && !permitManuallySelected
       ? user.parkingProfile.permitType
       : selectedPermit;
 
@@ -226,7 +192,7 @@ export default function MapScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.dropdownItem}
-              onPress={() => { setSelectedPermit(item); setOpenPermit(false); }}
+              onPress={() => { setSelectedPermit(item); setPermitManuallySelected(true); setOpenPermit(false); }}
             >
               <Text style={styles.dropdownItemText}>{item}</Text>
             </TouchableOpacity>

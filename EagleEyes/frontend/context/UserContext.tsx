@@ -93,7 +93,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
         ...DEFAULT_USER,
         name: account.name || '',
         email: account.email || '',
-        parkingProfile: { ...DEFAULT_USER.parkingProfile, permitType: account.permit_type || '' },
+        parkingProfile: {
+          ...DEFAULT_USER.parkingProfile,
+          permitType: account.permit_type || '',
+          plateState: account.plate_state || DEFAULT_USER.parkingProfile.plateState,
+          plateNumber: account.plate_number || '',
+        },
       };
       setUser(fresh);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));

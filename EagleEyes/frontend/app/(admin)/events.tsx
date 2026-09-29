@@ -6,19 +6,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { getAlerts, createAlert } from '../../api/alerts';
 import { SafeAreaView} from 'react-native-safe-area-context';
 import { Alert } from '../../utils/webCompat';
-
-const getIconForCategory = (category: string) => {
-  switch (category?.toLowerCase()) {
-    case 'gameday': return 'american-football';
-    case 'tailgate': return 'flame';
-    case 'concert': return 'musical-notes';
-    case 'career': return 'briefcase';
-    default: return 'calendar';
-  }
-};
-
-// Matches the categories getIconForCategory() already knows how to draw an icon for.
-const EVENT_CATEGORIES = ['Gameday', 'Tailgate', 'Concert', 'Career', 'Other'];
+import { getEventVisual, EVENT_CATEGORIES } from '../../utils/alertVisuals';
 //backend stores timestamps in UTC without a "Z" suffix; append it before
 //parsing so comparisons and displayed times use the device's local time
 const parseUTC = (isoString: string) =>
@@ -171,32 +159,35 @@ export default function EventsScreen() {
             ) : activeEvents.length === 0 ? (
               <Text style={styles.emptyText}>No events scheduled for this date.</Text>
             ) : (
-              activeEvents.map((eventItem) => (
-                <TouchableOpacity 
-                  key={eventItem.id} 
-                  style={styles.card}
-                  onPress={() => Alert.alert('Event Details', `Interested in this event? (ID: ${eventItem.id})`)}
-                >
-                  <View style={styles.cardHeader}>
-                    <View style={styles.titleRow}>
-                      <View style={styles.iconBox}>
-                        <Ionicons name={getIconForCategory(eventItem.category)} size={24} color="#333" />
+              activeEvents.map((eventItem) => {
+                const visual = getEventVisual(eventItem.category);
+                return (
+                  <TouchableOpacity
+                    key={eventItem.id}
+                    style={styles.card}
+                    onPress={() => Alert.alert('Event Details', `Interested in this event? (ID: ${eventItem.id})`)}
+                  >
+                    <View style={styles.cardHeader}>
+                      <View style={styles.titleRow}>
+                        <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
+                          <Ionicons name={visual.icon as any} size={24} color={visual.iconColor} />
+                        </View>
+                        <Text style={styles.cardTitle}>{eventItem.title}</Text>
                       </View>
-                      <Text style={styles.cardTitle}>{eventItem.title}</Text>
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{eventItem.upvotes}</Text>
+                      </View>
                     </View>
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{eventItem.upvotes}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.cardTime}>
-                    {parseUTC(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
-                  {eventItem.description && (
-                     <Text style={styles.cardDesc}>{eventItem.description}</Text>
-                  )}
-                  <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
-                </TouchableOpacity>
-              ))
+                    <Text style={styles.cardTime}>
+                      {parseUTC(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                    {eventItem.description && (
+                       <Text style={styles.cardDesc}>{eventItem.description}</Text>
+                    )}
+                    <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+                  </TouchableOpacity>
+                );
+              })
             )}
 
           </View>

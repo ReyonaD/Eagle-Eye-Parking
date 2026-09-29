@@ -16,6 +16,7 @@ import { useUser } from '../../context/UserContext';
 import { Alert } from '../../utils/webCompat';
 import { PINNED_LOTS_STORAGE_KEY } from './lots';
 import InitialsAvatar from '../../components/InitialsAvatar';
+import { getPermitCardStyle } from '../../utils/permitColors';
 // function TopBar() {
 //   const router = useRouter();
 //   return (
@@ -76,35 +77,6 @@ function Divider() {
   return <View style={styles.divider} />;
 }
 
-// Permit card colors, sampled from yemma's UNT parking map reference (visual
-// approximations, not official UNT hex codes). Text colors are picked to meet
-// WCAG contrast against each background.
-interface PermitCardStyle {
-  bg: string;
-  text: string;
-  label: string;
-  striped?: boolean;
-}
-
-const PERMIT_CARD_STYLES: Record<string, PermitCardStyle> = {
-  'Eagle': { bg: '#CDA357', text: '#fff', label: 'rgba(255,255,255,0.7)' },
-  'A-Reserved': { bg: '#2E6643', text: '#fff', label: 'rgba(255,255,255,0.7)' },
-  'Faculty and Staff': { bg: '#3D5AA3', text: '#fff', label: 'rgba(255,255,255,0.7)' },
-  'Resident': { bg: '#DC8542', text: '#1a1a1a', label: 'rgba(26,26,26,0.65)' },
-  'Resident Reserved': { bg: '#DC8542', text: '#1a1a1a', label: 'rgba(26,26,26,0.65)', striped: true },
-  'Visitor': { bg: '#AC3376', text: '#fff', label: 'rgba(255,255,255,0.7)' },
-  'Motorcycle': { bg: '#637BB5', text: '#fff', label: 'rgba(255,255,255,0.7)' },
-};
-
-const DEFAULT_PERMIT_CARD_STYLE: PermitCardStyle = {
-  bg: '#6B7280',
-  text: '#fff',
-  label: 'rgba(255,255,255,0.7)',
-};
-
-function getPermitCardStyle(permitType: string): PermitCardStyle {
-  return PERMIT_CARD_STYLES[permitType] || DEFAULT_PERMIT_CARD_STYLE;
-}
 
 // Diagonal orange/black stripe pattern for Resident Reserved, matching the
 // UNT parking map. Built from rotated Views since no SVG/gradient lib is installed.
@@ -175,7 +147,11 @@ export function ProfileScreen() {
         {/* Permit card */}
         {hasPermit ? (
           <TouchableOpacity
-            style={[styles.permitCard, { backgroundColor: permitCardStyle.bg, shadowColor: permitCardStyle.bg }]}
+            style={[
+              styles.permitCard,
+              { backgroundColor: permitCardStyle.bg, shadowColor: permitCardStyle.bg },
+              permitCardStyle.border ? { borderWidth: 1, borderColor: permitCardStyle.border } : null,
+            ]}
             activeOpacity={0.85}
             onPress={() => router.push('/profile/profile-setting' as any)}
           >

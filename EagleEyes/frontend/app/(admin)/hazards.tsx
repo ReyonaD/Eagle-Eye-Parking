@@ -10,6 +10,7 @@ import { getAlerts, getPendingAlerts, approveAlert, deleteAlert, uploadAlertImag
 import { useLots } from '../../context/LotsContext';
 import LotMiniMap from '../../components/LotMiniMap';
 import { Alert } from '../../utils/webCompat';
+import { getHazardVisual } from '../../utils/alertVisuals';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,17 +41,6 @@ const formatDateTime = (isoString: string) => {
   return `${dateStr} ${time}`;
 };
 
-const getCategoryStyle = (category: string) => {
-  switch (category?.toLowerCase()) {
-    case 'snow':         return { icon: 'snow-outline',    bg: '#A8C8E8', iconColor: '#2C5F8A' };
-    case 'flood':        return { icon: 'rainy-outline',   bg: '#4A90D9', iconColor: '#fff' };
-    case 'traffic jam':  return { icon: 'bus-outline',     bg: '#E74C3C', iconColor: '#fff' };
-    case 'tree branch':  return { icon: 'leaf-outline',    bg: '#27AE60', iconColor: '#fff' };
-    case 'item on road': return { icon: 'cube-outline',    bg: '#7F8C8D', iconColor: '#fff' };
-    default:             return { icon: 'warning-outline', bg: '#95A5A6', iconColor: '#fff' };
-  }
-};
-
 // ─── HazardCard ───────────────────────────────────────────────────────────────
 
 function HazardCard({
@@ -62,7 +52,7 @@ function HazardCard({
   isNew: boolean;
   onPress: () => void;
 }) {
-  const { icon, bg, iconColor } = getCategoryStyle(hazard.category);
+  const { icon, bg, iconColor } = getHazardVisual(hazard.category);
   return (
     <TouchableOpacity
       style={[styles.card, !isNew && styles.cardOlder]}
