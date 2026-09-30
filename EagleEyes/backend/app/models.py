@@ -12,12 +12,22 @@ class User(Base):
     #user information
     email = Column(String, unique=True, index=True, nullable=False)
 
+    #display name, set by the user from the profile screen (not collected at registration)
+    name = Column(String, nullable=True)
+
     #store the scrambled hash, not the plaintext password   
     hashed_password = Column(String, nullable=False)
 
     role = Column(String, default="commuter")
 
     is_active = Column(Boolean, default=True)
+
+    #owners are admins who can also see the full admin roster and grant/revoke
+    #other accounts' admin access; a regular admin cannot manage other admins
+    is_owner = Column(Boolean, default=False, nullable=False)
+
+    #ParkZen permit name (e.g. "Eagle", "Faculty and Staff"), set by the user from /api/permits
+    permit_type = Column(String, nullable=True)
 
 class Alert(Base):
     __tablename__ = "alerts"

@@ -102,9 +102,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   circleButton: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.95,
     borderColor: '#00853E',

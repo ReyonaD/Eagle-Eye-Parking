@@ -3,11 +3,13 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 import { router } from 'expo-router';
 import { login } from '../api/auth';
 import { Alert } from '../utils/webCompat';
+import { useUser } from '../context/UserContext';
 
 export default function LoginScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const { refreshUser } = useUser();
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -17,6 +19,9 @@ export default function LoginScreen() {
         setIsLoading(true);
         try {
             const userData = await login(email, password);
+            //pull this account's own profile so a previous session's cached
+            //name/email/permit can never leak into the newly logged-in account
+            await refreshUser();
             //route the user based on the role provided in the JWT token
             if (userData.role === 'admin'){
               router.replace('/(admin)');

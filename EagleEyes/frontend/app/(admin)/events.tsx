@@ -2,19 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
-import { getAlerts } from '../../api/alerts';
+import { useLocalSearchParams } from 'expo-router';
+import { getAlerts, createAlert } from '../../api/alerts';
 import { SafeAreaView} from 'react-native-safe-area-context';
 import { Alert } from '../../utils/webCompat';
 
 const getIconForCategory = (category: string) => {
   switch (category?.toLowerCase()) {
-    case 'gameday': return 'american-football'; 
+    case 'gameday': return 'american-football';
     case 'tailgate': return 'flame';
     case 'concert': return 'musical-notes';
     case 'career': return 'briefcase';
     default: return 'calendar';
   }
 };
+
+// Matches the categories getIconForCategory() already knows how to draw an icon for.
+const EVENT_CATEGORIES = ['Gameday', 'Tailgate', 'Concert', 'Career', 'Other'];
 //backend stores timestamps in UTC without a "Z" suffix; append it before
 //parsing so comparisons and displayed times use the device's local time
 const parseUTC = (isoString: string) =>
@@ -29,10 +33,11 @@ const toLocalDateString = (d: Date) => {
 
 const getTodayDateString = () => toLocalDateString(new Date());
 export default function EventsScreen() {
+  const { openAdd } = useLocalSearchParams<{ openAdd?: string }>();
   const [selected, setSelected] = useState(getTodayDateString());
   const [events, setEvents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const fetchEvents = async () => {
     setIsLoading(true);
     try {
@@ -50,7 +55,15 @@ export default function EventsScreen() {
   }, []);
   
   const [showAddEventModal, setShowAddEventModal] = useState(false);
+
+  // Lets the Profile tab's "Add New Event" action reuse this same modal instead
+  // of duplicating the form, by deep-linking here with ?openAdd=1.
+  useEffect(() => {
+    if (openAdd) setShowAddEventModal(true);
+  }, [openAdd]);
+
   const [eventName, setEventName] = useState('');
+  const [category, setCategory] = useState<string | null>(null);
   const [startDate, setStartDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [startTimePeriod, setStartTimePeriod] = useState('AM');
@@ -58,6 +71,7 @@ export default function EventsScreen() {
   const [endTime, setEndTime] = useState('');
   const [endTimePeriod, setEndTimePeriod] = useState('AM');
   const [description, setDescription] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
@@ -72,18 +86,39 @@ export default function EventsScreen() {
   );
   // ADD EVENT
 
-  const handleSaveEvent = () => {
-    if (!eventName || !startDate || !startTime || !endDate || !endTime) {
+  const handleSaveEvent = async () => {
+    if (!eventName || !category || !startDate || !startTime || !endDate || !endTime) {
       Alert.alert('Validation Error', 'Please fill in all required fields');
       return;
     }
-    Alert.alert('Success', 'Event created successfully');
-    setShowAddEventModal(false);
-    resetForm();
+    setIsSaving(true);
+    try {
+      //there's no dedicated start/end column on Alert, so the schedule is folded
+      //into the description text instead of being silently dropped
+      const schedule = `When: ${startDate} ${startTime} ${startTimePeriod} – ${endDate} ${endTime} ${endTimePeriod}`;
+      const fullDescription = description.trim() ? `${schedule}\n\n${description.trim()}` : schedule;
+
+      await createAlert({
+        title: eventName.trim(),
+        alert_type: 'event',
+        category,
+        description: fullDescription,
+      });
+
+      Alert.alert('Success', 'Event created successfully');
+      setShowAddEventModal(false);
+      resetForm();
+      fetchEvents();
+    } catch (error) {
+      Alert.alert('Error', 'Could not create the event. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const resetForm = () => {
     setEventName('');
+    setCategory(null);
     setStartDate('');
     setStartTime('');
     setStartTimePeriod('AM');
@@ -188,6 +223,10 @@ export default function EventsScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <ScrollView showsVerticalScrollIndicator={false}>
+              <TouchableOpacity style={styles.modalBackButton} onPress={handleCancel} disabled={isSaving}>
+                <Ionicons name="chevron-back" size={20} color="#00853E" />
+                <Text style={styles.modalBackText}>Back</Text>
+              </TouchableOpacity>
               <Text style={styles.modalTitle}>Add Event</Text>
 
               <Text style={styles.fieldLabel}>Enter Event Name:</Text>
@@ -198,6 +237,21 @@ export default function EventsScreen() {
                 onChangeText={setEventName}
                 placeholderTextColor="#999"
               />
+
+              <Text style={styles.fieldLabel}>Category:</Text>
+              <View style={styles.categoryRow}>
+                {EVENT_CATEGORIES.map((c) => (
+                  <TouchableOpacity
+                    key={c}
+                    style={[styles.categoryButton, category === c && styles.categoryButtonActive]}
+                    onPress={() => setCategory(c)}
+                  >
+                    <Text style={[styles.categoryButtonText, category === c && styles.categoryButtonTextActive]}>
+                      {c}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               <Text style={styles.fieldLabel}>Start date:</Text>
               <TextInput
@@ -275,11 +329,19 @@ export default function EventsScreen() {
               />
 
               <View style={styles.buttonRow}>
-                <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                <TouchableOpacity style={styles.cancelButton} onPress={handleCancel} disabled={isSaving}>
+                  <Text style={styles.cancelButtonText}>CANCEL</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.saveButton} onPress={handleSaveEvent}>
-                  <Text style={styles.saveButtonText}>Save</Text>
+                <TouchableOpacity
+                  style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                  onPress={handleSaveEvent}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>SAVE</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -313,11 +375,16 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: '#666', fontStyle: 'italic', marginBottom: 8 },
   
   card: {
-    backgroundColor: '#e8e8e8',
-    padding: 16,
+    backgroundColor: '#fff',
+    padding: 14,
     borderRadius: 10,
-    marginBottom: 16,
+    marginBottom: 12,
     position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -331,31 +398,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   iconBox: {
-    backgroundColor: '#d4edda', 
+    backgroundColor: '#e8f5ee',
     padding: 8,
     borderRadius: 8,
     marginRight: 12,
   },
-  cardTitle: { fontSize: 16, fontWeight: '900', color: '#000', flexShrink: 1 },
+  cardTitle: { fontSize: 15, fontWeight: '900', color: '#1a1a1a', flexShrink: 1 },
   badge: {
-    backgroundColor: '#007AFF', 
-    minWidth: 28,
-    height: 28,
-    borderRadius: 14,
+    backgroundColor: '#E74C3C',
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'absolute',
     top: -8,
     right: -8,
     borderWidth: 2,
-    borderColor: '#e8e8e8',
+    borderColor: '#f5f5f5',
     zIndex: 1,
     paddingHorizontal: 6,
   },
-  badgeText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  cardTime: { fontSize: 12, color: '#555', marginBottom: 8, fontWeight: '600', textTransform: 'uppercase' },
+  badgeText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
+  cardTime: { fontSize: 12, color: '#555', marginBottom: 4, fontWeight: '600', textTransform: 'uppercase' },
   cardDesc: { fontSize: 14, color: '#444', marginBottom: 12, lineHeight: 20 },
-  clickDetails: { fontSize: 11, color: '#666', fontStyle: 'italic', textAlign: 'right', fontWeight: 'bold' },
+  clickDetails: { fontSize: 10, color: '#999', fontStyle: 'italic', textAlign: 'right', fontWeight: 'bold' },
 
   pastEventsWrapper: { marginTop: 8 },
   divider: { height: 1, backgroundColor: '#ddd', marginBottom: 16 },
@@ -410,20 +477,30 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    backgroundColor: '#f5f5f5',
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 30,
-    maxHeight: '90%',
+    height: '100%',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 26,
+    fontWeight: '800',
     color: '#00853E',
-    marginBottom: 20,
+    marginBottom: 4,
     textAlign: 'center',
+  },
+  modalBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    marginBottom: 16,
+  },
+  modalBackText: {
+    color: '#00853E',
+    fontSize: 16,
+    fontWeight: '600',
   },
   fieldLabel: {
     fontSize: 14,
@@ -433,17 +510,15 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   textInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#e0e0e0',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    padding: 16,
     fontSize: 14,
     color: '#333',
-    backgroundColor: '#f9f9f9',
+    marginBottom: 16,
   },
   descriptionInput: {
-    height: 100,
+    height: 140,
     textAlignVertical: 'top',
   },
   timeRow: {
@@ -457,11 +532,9 @@ const styles = StyleSheet.create({
   },
   periodButton: {
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    backgroundColor: '#f9f9f9',
+    paddingVertical: 14,
+    borderRadius: 8,
+    backgroundColor: '#e0e0e0',
     marginRight: 6,
   },
   periodButtonActive: {
@@ -476,6 +549,29 @@ const styles = StyleSheet.create({
   periodButtonTextActive: {
     color: '#fff',
   },
+  categoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  categoryButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#e0e0e0',
+  },
+  categoryButtonActive: {
+    backgroundColor: '#00853E',
+    borderColor: '#00853E',
+  },
+  categoryButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+  },
+  categoryButtonTextActive: {
+    color: '#fff',
+  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -484,28 +580,33 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     marginRight: 8,
     backgroundColor: '#E8E8E8',
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
   },
   cancelButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '900',
+    letterSpacing: 1,
     color: '#666',
   },
   saveButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     marginLeft: 8,
     backgroundColor: '#00853E',
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '900',
+    letterSpacing: 1,
     color: '#fff',
   },
 });
