@@ -168,7 +168,6 @@ export default function ParkingProfileScreen() {
               />
             </View>
           </View>
-
           <TouchableOpacity
             style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
             onPress={handleSave}
