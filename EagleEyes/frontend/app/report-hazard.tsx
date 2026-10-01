@@ -282,7 +282,6 @@ const styles = StyleSheet.create({
 
   screenTitle: { fontSize: 26, fontWeight: '800', color: '#00853E', marginBottom: 4 },
   screenSubtitle: { fontSize: 14, color: '#666', marginBottom: 24 },
-
   titleInput: {
     backgroundColor: '#e0e0e0',
     borderRadius: 8,

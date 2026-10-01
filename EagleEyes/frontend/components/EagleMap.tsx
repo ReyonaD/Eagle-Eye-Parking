@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import LotDetailsSheet from './LotDetailsSheet';
@@ -197,13 +197,53 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
   };
 
   const labelFontSize = Math.max(10, Math.min(15, 15 - mapRegion.latitudeDelta * 500));
-  const lot20Zones = liveLots.filter(
-    (lot) => lot.isVisible !== false && getLotNumberLabel(lot) === 'Lot 20',
-  );
-  const lot20LabelLot = lot20Zones.find((lot) =>
-    getLotLabelCoordinate(lot.coordinates || [], 'Lot 20', labelFontSize, mapSize, mapRegion),
-  ) || lot20Zones[0];
-  const lot20LabelId = lot20LabelLot?.id;
+
+  const lot20LabelId = useMemo(() => {
+    const lot20Zones = liveLots.filter(
+      (lot) => lot.isVisible !== false && getLotNumberLabel(lot) === 'Lot 20',
+    );
+    const lot20LabelLot = lot20Zones.find((lot) =>
+      getLotLabelCoordinate(lot.coordinates || [], 'Lot 20', labelFontSize, mapSize, mapRegion),
+    ) || lot20Zones[0];
+    return lot20LabelLot?.id;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveLots, labelFontSize, mapSize.width, mapSize.height, mapRegion.latitudeDelta, mapRegion.longitudeDelta]);
+
+  const lotLabels = useMemo(() => {
+    if (liveLots.length === 0 || mapRegion.latitudeDelta > 0.01) return [];
+
+    return liveLots.reduce<{ lot: any; coordinate: { latitude: number; longitude: number } }[]>((acc, lot) => {
+      if (lot.isVisible === false) return acc;
+
+      const lotName = getLotNumberLabel(lot);
+      if (!lotName) return acc;
+      if (lotName === 'Lot 20' && lot.id !== lot20LabelId) return acc;
+
+      const labelCoordinate = getLotLabelCoordinate(
+        lot.coordinates || [],
+        lotName,
+        labelFontSize,
+        mapSize,
+        mapRegion,
+      );
+      const markerCoordinate = labelCoordinate || (
+        lotName === 'Lot 20' ? getPolygonCenter(lot.coordinates || []) : null
+      );
+      if (!markerCoordinate) return acc;
+
+      const offset = LOT_LABEL_OFFSETS[lotName];
+      const displayCoordinate = offset
+        ? {
+            latitude: markerCoordinate.latitude + offset.latitude,
+            longitude: markerCoordinate.longitude + offset.longitude,
+          }
+        : markerCoordinate;
+
+      acc.push({ lot, coordinate: displayCoordinate });
+      return acc;
+    }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveLots, labelFontSize, mapSize.width, mapSize.height, mapRegion.latitudeDelta, mapRegion.longitudeDelta, lot20LabelId]);
 
   return (
     <View style={styles.container}>
@@ -213,9 +253,15 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
         provider={PROVIDER_GOOGLE}
         initialRegion={untRegion}
         onLayout={(event) => setMapSize(event.nativeEvent.layout)}
-        onRegionChangeComplete={(region) => setMapRegion({
-          latitudeDelta: region.latitudeDelta,
-          longitudeDelta: region.longitudeDelta,
+        onRegionChangeComplete={(region) => setMapRegion((prev) => {
+          const unchanged =
+            Math.abs(prev.latitudeDelta - region.latitudeDelta) < 1e-7 &&
+            Math.abs(prev.longitudeDelta - region.longitudeDelta) < 1e-7;
+          if (unchanged) return prev;
+          return {
+            latitudeDelta: region.latitudeDelta,
+            longitudeDelta: region.longitudeDelta,
+          };
         })}
         showsUserLocation={true}
         customMapStyle={MAP_STYLES}
@@ -234,54 +280,25 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
             }}
           />
         ))}
-        {liveLots.length > 0 && liveLots.map((lot) => {
-          if (lot.isVisible === false) return null;
-
-          const lotName = getLotNumberLabel(lot);
-          const fontSize = labelFontSize;
-          if (!lotName || mapRegion.latitudeDelta > 0.01) return null;
-          if (lotName === 'Lot 20' && lot.id !== lot20LabelId) return null;
-
-          const labelCoordinate = getLotLabelCoordinate(
-            lot.coordinates || [],
-            lotName,
-            fontSize,
-            mapSize,
-            mapRegion,
-          );
-          const markerCoordinate = labelCoordinate || (
-            lotName === 'Lot 20' ? getPolygonCenter(lot.coordinates || []) : null
-          );
-          if (!markerCoordinate) return null;
-
-          const offset = LOT_LABEL_OFFSETS[lotName];
-          const displayCoordinate = offset
-            ? {
-                latitude: markerCoordinate.latitude + offset.latitude,
-                longitude: markerCoordinate.longitude + offset.longitude,
-              }
-            : markerCoordinate;
-
-          return (
-            <Marker
-              key={`${lot.id}-label-${displayCoordinate.latitude.toFixed(6)}-${displayCoordinate.longitude.toFixed(6)}`}
-              coordinate={displayCoordinate}
-              anchor={{ x: 0.5, y: 0.5 }}
-              onPress={() => setSheetLot(lot)}
-            >
-              <View style={styles.lotLabel}>
-                <Text style={{
-                  color: lot.fillColor || '#1f1f1f',
-                  fontSize,
-                  fontWeight: '800',
-                  lineHeight: fontSize + 2,
-                  textAlign: 'center',
-                  includeFontPadding: false,
-                }}>{lotName}</Text>
-              </View>
-            </Marker>
-          );
-        })}
+        {lotLabels.map(({ lot, coordinate }) => (
+          <Marker
+            key={`${lot.id}-label`}
+            coordinate={coordinate}
+            anchor={{ x: 0.5, y: 0.5 }}
+            onPress={() => setSheetLot(lot)}
+          >
+            <View style={styles.lotLabel}>
+              <Text style={{
+                color: lot.strokeColor || lot.fillColor || '#1f1f1f',
+                fontSize: labelFontSize,
+                fontWeight: '800',
+                lineHeight: labelFontSize + 2,
+                textAlign: 'center',
+                includeFontPadding: false,
+              }}>{getLotNumberLabel(lot)}</Text>
+            </View>
+          </Marker>
+        ))}
       </MapView>
 
       <LotDetailsSheet
@@ -292,11 +309,11 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
 
       <View style={styles.zoomControls}>
         <TouchableOpacity style={styles.zoomButton} onPress={handleZoomIn}>
-          <Ionicons name="add" size={24} color="#333" />
+          <Ionicons name="add" size={24} color="#00853e" />
         </TouchableOpacity>
         <View style={styles.zoomDivider} />
         <TouchableOpacity style={styles.zoomButton} onPress={handleZoomOut}>
-          <Ionicons name="remove" size={24} color="#333" />
+          <Ionicons name="remove" size={24} color="#00853e" />
         </TouchableOpacity>
       </View>
 
@@ -334,7 +351,7 @@ const styles = StyleSheet.create({
   zoomControls: {
     position: 'absolute',
     right: 16,
-    bottom: 150,
+    bottom: 175,
     backgroundColor: 'white',
     borderRadius: 8,
     shadowColor: '#000',

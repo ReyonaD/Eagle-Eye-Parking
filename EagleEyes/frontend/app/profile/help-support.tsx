@@ -1,0 +1,100 @@
+import React from 'react';
+import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+
+export default function HelpSupportScreen() {
+  return (
+    <SafeAreaView style={styles.screen}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={22} color="#00853E" />
+          <Text style={styles.backText}>Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>Help &amp; Support</Text>
+      </View>
+
+      <View style={styles.choices}>
+        <TouchableOpacity
+          style={styles.choice}
+          onPress={() => router.push('/report-hazard')}
+          activeOpacity={0.75}
+        >
+          <View style={styles.circleButton}>
+            <Ionicons name="warning-outline" size={30} color="#E3A008" />
+          </View>
+          <Text style={styles.choiceText}>Report a Hazard</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.choice}
+          onPress={() => router.push('/report-note')}
+          activeOpacity={0.75}
+        >
+          <View style={styles.circleButton}>
+            <Ionicons name="chatbubble-ellipses-outline" size={28} color="#3976B9" />
+          </View>
+          <Text style={styles.choiceText}>Note to Admin</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 35,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+  },
+  backText: {
+    color: '#00853E',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  title: {
+    color: '#00853E',
+    fontSize: 28,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 12,
+  },
+  choices: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    marginTop: 44,
+    paddingHorizontal: 24,
+  },
+  choice: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 8,
+  },
+  circleButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.95,
+    borderColor: '#00853E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  choiceText: {
+    maxWidth: 140,
+    color: '#30363B',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+});

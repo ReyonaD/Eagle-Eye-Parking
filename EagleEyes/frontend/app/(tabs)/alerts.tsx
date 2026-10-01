@@ -308,8 +308,10 @@ export default function AlertsScreen() {
         style={styles.fab}
         onPress={() => router.push('/report-options')}
         activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel="Report a hazard"
       >
-        <Ionicons name="add" size={30} color="#fff" />
+        <Ionicons name="warning" size={30} color="#FACC15" />
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -325,10 +327,10 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 24,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    bottom: 80,
+    width: 48,
+    height: 48,
+    borderRadius: 8,
     backgroundColor: '#00853E',
     alignItems: 'center',
     justifyContent: 'center',
