@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDirections } from '../utils/navigation';
+import { getPermitCardStyle } from '../utils/permitColors';
 
 const STATUS_COLOR = {
   'Available': '#00853E',
@@ -75,11 +76,18 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
           <View style={styles.permitsBlock}>
             <Text style={styles.permitsTitle}>Permits</Text>
             <ScrollView style={styles.permitsScroll} contentContainerStyle={styles.permitsWrap}>
-              {permits.map((p, i) => (
-                <View key={i} style={styles.permitChip}>
-                  <Text style={styles.permitChipText}>{String(p).trim()}</Text>
-                </View>
-              ))}
+              {permits.map((p, i) => {
+                const label = String(p).trim();
+                const permitStyle = getPermitCardStyle(label);
+                const borderStyle = permitStyle.border
+                  ? { borderWidth: 1, borderColor: permitStyle.border }
+                  : null;
+                return (
+                  <View key={i} style={[styles.permitChip, { backgroundColor: permitStyle.bg }, borderStyle]}>
+                    <Text style={[styles.permitChipText, { color: permitStyle.text }]}>{label}</Text>
+                  </View>
+                );
+              })}
             </ScrollView>
           </View>
         )}
