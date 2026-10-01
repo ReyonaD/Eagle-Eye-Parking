@@ -26,7 +26,7 @@ export default function ReportOptionsScreen() {
             activeOpacity={0.75}
           >
             <View style={styles.circleButton}>
-              <Ionicons name="warning-outline" size={30} color="#E3A008" />
+              <Ionicons name="warning-outline" size={40} color="#E3A008" />
             </View>
             <Text style={styles.choiceText}>Report a Hazard</Text>
           </TouchableOpacity>
@@ -37,7 +37,7 @@ export default function ReportOptionsScreen() {
             activeOpacity={0.75}
           >
             <View style={styles.circleButton}>
-              <Ionicons name="chatbubble-ellipses-outline" size={28} color="#3976B9" />
+              <Ionicons name="chatbubble-ellipses-outline" size={40} color="#3976B9" />
             </View>
             <Text style={styles.choiceText}>Note to Admin</Text>
           </TouchableOpacity>

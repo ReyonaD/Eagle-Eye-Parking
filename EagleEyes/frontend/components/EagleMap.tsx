@@ -320,15 +320,15 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
       <View style={styles.capacityContainer}>
         <View style={styles.capacityRow}>
           <View style={styles.capacityItem}>
-            <View style={[styles.capacityDot, { backgroundColor: "#2ECC71" }]} />
+            <View style={[styles.capacityDot, { backgroundColor: "#27AE60" }]} />
             <Text style={styles.capacityText}>AVAILABLE</Text>
           </View>
           <View style={styles.capacityItem}>
-            <View style={[styles.capacityDot, { backgroundColor: "#F39C12" }]} />
+            <View style={[styles.capacityDot, { backgroundColor: "#D68910" }]} />
             <Text style={styles.capacityText}>NEAR CAPACITY</Text>
           </View>
           <View style={styles.capacityItem}>
-            <View style={[styles.capacityDot, { backgroundColor: "#E74C3C" }]} />
+            <View style={[styles.capacityDot, { backgroundColor: "#C0392B" }]} />
             <Text style={styles.capacityText}>FULL</Text>
           </View>
         </View>

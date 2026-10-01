@@ -10,6 +10,11 @@ export type AlertVisual = {
   icon: string;
   bg: string;
   iconColor: string;
+  iconFamily?: 'materialCommunity';
+  overlayIcon?: string;
+  overlayFamily?: 'materialCommunity';
+  overlayPlacement?: 'center' | 'bottom';
+  overlayColor?: string;
 };
 
 // Hazard categories a commuter or admin can pick when reporting/posting a hazard.
@@ -23,10 +28,19 @@ export const HAZARD_CATEGORIES: { label: string; value: string }[] = [
 
 const HAZARD_VISUALS: Record<string, AlertVisual> = {
   snow: { icon: 'snow-outline', bg: '#DBEAFE', iconColor: '#2C5F8A' },
-  flood: { icon: 'water-outline', bg: '#CFE8FB', iconColor: '#1D6FA5' },
+  flood: {
+    icon: 'rainy-outline',
+    bg: '#CFE8FB',
+    iconColor: '#1D6FA5',
+  },
   'traffic jam': { icon: 'car-outline', bg: '#FBDADA', iconColor: '#C0392B' },
   'tree branch': { icon: 'leaf-outline', bg: '#DCFCE7', iconColor: '#1F8A4C' },
-  'item on road': { icon: 'cube-outline', bg: '#E5E7EB', iconColor: '#4B5563' },
+  'item on road': {
+    icon: 'traffic-cone',
+    iconFamily: 'materialCommunity',
+    bg: '#E5E7EB',
+    iconColor: '#4B5563',
+  },
 };
 const DEFAULT_HAZARD_VISUAL: AlertVisual = { icon: 'warning-outline', bg: '#FDECC8', iconColor: '#D89B1D' };
 
@@ -36,13 +50,14 @@ export function getHazardVisual(category?: string | null): AlertVisual {
 }
 
 // Event categories an admin can pick when scheduling a campus event.
-export const EVENT_CATEGORIES: string[] = ['Gameday', 'Tailgate', 'Concert', 'Career', 'Other'];
+export const EVENT_CATEGORIES: string[] = ['Gameday', 'Tailgate', 'Concert', 'Career', 'Lot Closure', 'Other'];
 
 const EVENT_VISUALS: Record<string, AlertVisual> = {
   gameday: { icon: 'american-football-outline', bg: '#FDE7D8', iconColor: '#C2560B' },
   tailgate: { icon: 'flame-outline', bg: '#FDE1DC', iconColor: '#D3452D' },
   concert: { icon: 'musical-notes-outline', bg: '#EAE0FB', iconColor: '#7C3AED' },
   career: { icon: 'briefcase-outline', bg: '#DCE7FB', iconColor: '#2755B8' },
+  'lot closure': { icon: 'ban-outline', bg: '#FDE2E2', iconColor: '#B42318' },
 };
 const DEFAULT_EVENT_VISUAL: AlertVisual = { icon: 'megaphone-outline', bg: '#DCFCE7', iconColor: '#1F8A4C' };
 

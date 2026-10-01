@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Image, Modal, RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs, router, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getAlerts, getPendingAlerts, approveAlert, deleteAlert, uploadAlertImage, BASE_URL } from '../../api/alerts';
@@ -52,7 +52,7 @@ function HazardCard({
   isNew: boolean;
   onPress: () => void;
 }) {
-  const { icon, bg, iconColor } = getHazardVisual(hazard.category);
+  const { icon, bg, iconColor, iconFamily } = getHazardVisual(hazard.category);
   return (
     <TouchableOpacity
       style={[styles.card, !isNew && styles.cardOlder]}
@@ -66,7 +66,11 @@ function HazardCard({
       )}
       <View style={styles.cardContent}>
         <View style={[styles.iconBox, { backgroundColor: bg }]}>
-          <Ionicons name={icon as any} size={22} color={iconColor} />
+          {iconFamily === 'materialCommunity' ? (
+            <MaterialCommunityIcons name={icon as any} size={22} color={iconColor} />
+          ) : (
+            <Ionicons name={icon as any} size={22} color={iconColor} />
+          )}
         </View>
         <View style={styles.cardText}>
           <Text style={[styles.cardTitle, !isNew && styles.olderText]} numberOfLines={1}>
