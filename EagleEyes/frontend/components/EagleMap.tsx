@@ -289,7 +289,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
           >
             <View style={styles.lotLabel}>
               <Text style={{
-                color: lot.fillColor || '#1f1f1f',
+                color: lot.strokeColor || lot.fillColor || '#1f1f1f',
                 fontSize: labelFontSize,
                 fontWeight: '800',
                 lineHeight: labelFontSize + 2,
@@ -309,11 +309,11 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
 
       <View style={styles.zoomControls}>
         <TouchableOpacity style={styles.zoomButton} onPress={handleZoomIn}>
-          <Ionicons name="add" size={24} color="#333" />
+          <Ionicons name="add" size={24} color="#00853e" />
         </TouchableOpacity>
         <View style={styles.zoomDivider} />
         <TouchableOpacity style={styles.zoomButton} onPress={handleZoomOut}>
-          <Ionicons name="remove" size={24} color="#333" />
+          <Ionicons name="remove" size={24} color="#00853e" />
         </TouchableOpacity>
       </View>
 
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   zoomControls: {
     position: 'absolute',
     right: 16,
-    bottom: 150,
+    bottom: 175,
     backgroundColor: 'white',
     borderRadius: 8,
     shadowColor: '#000',

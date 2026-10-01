@@ -239,7 +239,7 @@ export function ProfileScreen() {
           <MenuRow
             icon="help-circle-outline"
             label="Help & Support"
-            onPress={() => router.push('/profile/settings' as any)}
+            onPress={() => router.push('/profile/help-support' as any)}
           />
         </Section>
 
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#1a1a1a',
-    fontWeight: '500',
+    fontWeight: '700',
   },
   rowLabelDanger: {
     color: '#D0021B',

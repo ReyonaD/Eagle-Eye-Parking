@@ -158,7 +158,7 @@ export default function MapScreen() {
           accessibilityRole="button"
           accessibilityLabel="Report a hazard"
         >
-          <Ionicons name="warning" size={38} color="#FACC15" />
+          <Ionicons name="warning" size={30} color="#FACC15" />
         </TouchableOpacity>
       </View>
 
@@ -316,8 +316,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 20,
     bottom: MAP_HAZARD_FAB_BOTTOM,
-    width: 58,
-    height: 58,
+    width: 48,
+    height: 48,
     borderRadius: 8,
     backgroundColor: '#00853E',
     alignItems: 'center',

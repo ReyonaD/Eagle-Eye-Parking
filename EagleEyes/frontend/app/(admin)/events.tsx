@@ -214,6 +214,10 @@ export default function EventsScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <ScrollView showsVerticalScrollIndicator={false}>
+              <TouchableOpacity style={styles.modalBackButton} onPress={handleCancel} disabled={isSaving}>
+                <Ionicons name="chevron-back" size={20} color="#00853E" />
+                <Text style={styles.modalBackText}>Back</Text>
+              </TouchableOpacity>
               <Text style={styles.modalTitle}>Add Event</Text>
 
               <Text style={styles.fieldLabel}>Enter Event Name:</Text>
@@ -464,20 +468,30 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    backgroundColor: '#f5f5f5',
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 30,
-    maxHeight: '90%',
+    height: '100%',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 26,
+    fontWeight: '800',
     color: '#00853E',
-    marginBottom: 20,
+    marginBottom: 4,
     textAlign: 'center',
+  },
+  modalBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    marginBottom: 16,
+  },
+  modalBackText: {
+    color: '#00853E',
+    fontSize: 16,
+    fontWeight: '600',
   },
   fieldLabel: {
     fontSize: 14,
@@ -487,17 +501,15 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   textInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#e0e0e0',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    padding: 16,
     fontSize: 14,
     color: '#333',
-    backgroundColor: '#f9f9f9',
+    marginBottom: 16,
   },
   descriptionInput: {
-    height: 100,
+    height: 140,
     textAlignVertical: 'top',
   },
   timeRow: {
@@ -511,11 +523,9 @@ const styles = StyleSheet.create({
   },
   periodButton: {
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    backgroundColor: '#f9f9f9',
+    paddingVertical: 14,
+    borderRadius: 8,
+    backgroundColor: '#e0e0e0',
     marginRight: 6,
   },
   periodButtonActive: {
@@ -538,10 +548,8 @@ const styles = StyleSheet.create({
   categoryButton: {
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
     borderRadius: 20,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#e0e0e0',
   },
   categoryButtonActive: {
     backgroundColor: '#00853E',
