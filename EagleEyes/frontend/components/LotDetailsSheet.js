@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, ScrollView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDirections } from '../utils/navigation';
 import { getPermitCardStyle } from '../utils/permitColors';
+import { getPremiumParkingLink, dedupePermitLabels } from '../utils/permits';
 
 const STATUS_COLOR = {
   'Available': '#00853E',
@@ -34,11 +35,13 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
   if (!lot) return null;
 
   const statusColor = STATUS_COLOR[lot.status] || STATUS_COLOR['Available'];
-  const permits = Array.isArray(lot.permitList) && lot.permitList.length > 0
+  const rawPermits = Array.isArray(lot.permitList) && lot.permitList.length > 0
     ? lot.permitList
     : (typeof lot.permits === 'string' ? lot.permits.split(',') : []);
+  const permits = dedupePermitLabels(rawPermits);
   const hasParkzenCaptureTime = lot.sourceTimestampProvidedByParkzen === true;
   const captureTimeValue = hasParkzenCaptureTime ? formatLotTimestamp(lot.lastUpdatedAt) : 'No time available';
+  const premiumParkingLink = getPremiumParkingLink(lot.name, lot.permitList);
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
       {/* dark backdrop, tap to close */}
@@ -76,8 +79,7 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
           <View style={styles.permitsBlock}>
             <Text style={styles.permitsTitle}>Permits</Text>
             <ScrollView style={styles.permitsScroll} contentContainerStyle={styles.permitsWrap}>
-              {permits.map((p, i) => {
-                const label = String(p).trim();
+              {permits.map((label, i) => {
                 const permitStyle = getPermitCardStyle(label);
                 const borderStyle = permitStyle.border
                   ? { borderWidth: 1, borderColor: permitStyle.border }
@@ -90,6 +92,16 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
               })}
             </ScrollView>
           </View>
+        )}
+
+        {premiumParkingLink && (
+          <TouchableOpacity
+            style={styles.payButton}
+            onPress={() => Linking.openURL(premiumParkingLink)}
+          >
+            <Ionicons name="card-outline" size={22} color="#fff" />
+            <Text style={styles.directionsText}>Pay for Parking</Text>
+          </TouchableOpacity>
         )}
 
         <TouchableOpacity
@@ -128,11 +140,15 @@ const styles = StyleSheet.create({
   permitsTitle: { fontSize: 14, color: '#777', marginBottom: 8 },
   permitsScroll: { maxHeight: 240 },
   permitsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  permitChip: { backgroundColor: '#f0f0f0', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
+  permitChip: { backgroundColor: '#f0f0f0', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, overflow: 'hidden' },
   permitChipText: { fontSize: 12, color: '#555', fontWeight: '500' },
+  payButton: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    backgroundColor: '#D6332A', height: 50, borderRadius: 10, marginTop: 18, gap: 8,
+  },
   directionsButton: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    backgroundColor: '#00853E', height: 50, borderRadius: 10, marginTop: 18, gap: 8,
+    backgroundColor: '#00853E', height: 50, borderRadius: 10, marginTop: 10, gap: 8,
   },
   directionsText: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
 });
