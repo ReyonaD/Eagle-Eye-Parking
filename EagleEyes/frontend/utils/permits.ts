@@ -140,11 +140,28 @@ export function normalizePermit(raw: unknown): string {
 }
 
 /** Whether a lot's permit groups include the given permit type (exact match, case-insensitive). */
-export function lotMatchesPermitType(permitList: unknown, permitType: string): boolean {
-  if (!permitType.trim()) return true;
-  if (!Array.isArray(permitList)) return false;
-  const target = permitType.trim().toLowerCase();
-  return permitList.some((p) => typeof p === 'string' && p.trim().toLowerCase() === target);
+/**
+ * `rawPermitList` (a lot's unconsolidated ParkZen codes) is optional, but
+ * needed to correctly match a specific per-lot pick like "A24" or "Lot 16
+ * Resident Reserve" — those never survive into the consolidated
+ * `permitList`, which only ever keeps the shared "A-Reserved"/"Resident
+ * Reserved" category, so without it a user who picked a specific lot would
+ * never match any lot here.
+ */
+export function lotMatchesPermitType(permitList: unknown, permitType: string, rawPermitList?: unknown): boolean {
+  const trimmedType = permitType.trim();
+  if (!trimmedType) return true;
+
+  if (Array.isArray(permitList)) {
+    const target = trimmedType.toLowerCase();
+    if (permitList.some((p) => typeof p === 'string' && p.trim().toLowerCase() === target)) return true;
+  }
+
+  if (isPerLotPermitCode(trimmedType) && Array.isArray(rawPermitList)) {
+    return rawPermitList.some((p) => typeof p === 'string' && p.trim() === trimmedType);
+  }
+
+  return false;
 }
 
 /** Normalizes a list of raw permits and removes duplicates, keeping first-seen order. */
@@ -164,4 +181,126 @@ export function consolidatePermits(list: unknown): string[] {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Per-lot permit grouping — shared by any screen that lists live ParkZen
+// permit types in a picker (Profile Setting, the Map tab's PERMIT dropdown).
+// ---------------------------------------------------------------------------
+
+// ParkZen's live /api/permits returns each A-Reserved space's specific permit
+// as its raw code ("A01", "A02", ... "A95"), plus the generic, not-tied-to-
+// one-lot permit as literal "A-Reserved" (confirmed against a live response —
+// ParkZen does NOT resolve these to friendly "Lot NN Reserved" names the way
+// it does for some other permit types). Flat and alphabetized, that's ~16
+// near-identical "A0N" codes buried among a dozen unrelated permit types — so
+// group them under a single "A-Reserved" row instead.
+const A_RESERVED_CODE_RE = /^a\s*-?\s*(\d{2,3})$/i;
+const A_RESERVED_GENERIC_VALUE = 'a-reserved';
+const A_RESERVED_GROUP_LABEL = 'A-Reserved';
+
+// Live ParkZen data names each Resident Reserved lot's permit literally
+// "Lot 16 Resident Reserve" (verified against a live permit pull) — 13 of
+// these plus a generic "Resident Reserved" would otherwise clutter the flat
+// dropdown the same way the ungrouped "A01".."A95" codes used to.
+const RESIDENT_RESERVED_LOT_RE = /^lot\s+(\d{1,3})\s+resident\s+reserved?\b/i;
+const RESIDENT_RESERVED_GENERIC_VALUE = 'resident reserved';
+const RESIDENT_RESERVED_GROUP_LABEL = 'Resident Reserved';
+
+export type PermitOption =
+  | { kind: 'simple'; value: string }
+  | { kind: 'group'; label: string; options: { value: string; label: string }[] };
+
+// Collapses a permit type list's per-lot codes for one group (e.g. every
+// "A01".."A95" or "Lot NN Resident Reserve") into a single dropdown row that
+// opens a lot picker, instead of listing each lot as its own flat entry.
+function groupPerLotCodes(
+  types: string[],
+  lotCodeRe: RegExp,
+  genericValueLower: string,
+  groupLabel: string,
+): { group: PermitOption | null; rest: string[] } {
+  const lotEntries: { value: string; label: string; num: number }[] = [];
+  const genericEntries: string[] = [];
+  const rest: string[] = [];
+
+  types.forEach((raw) => {
+    const trimmed = raw.trim();
+    const codeMatch = trimmed.match(lotCodeRe);
+    if (codeMatch) {
+      const num = parseInt(codeMatch[1], 10);
+      lotEntries.push({ value: raw, label: `Lot ${String(num).padStart(2, '0')}`, num });
+    } else if (trimmed.toLowerCase() === genericValueLower) {
+      genericEntries.push(raw);
+    } else {
+      rest.push(raw);
+    }
+  });
+
+  if (!lotEntries.length && !genericEntries.length) return { group: null, rest };
+
+  lotEntries.sort((a, b) => a.num - b.num);
+  return {
+    group: {
+      kind: 'group',
+      label: groupLabel,
+      options: [
+        ...genericEntries.map((value) => ({ value, label: groupLabel })),
+        ...lotEntries.map((e) => ({ value: e.value, label: e.label })),
+      ],
+    },
+    rest,
+  };
+}
+
+/**
+ * Groups a flat list of live ParkZen permit type strings into dropdown-ready
+ * options: ordinary permits stay as 'simple' rows, while A-Reserved and
+ * Resident Reserved per-lot codes collapse into 'group' rows that open a
+ * secondary lot picker. `extraSimple` adds entries that aren't real ParkZen
+ * permit types (e.g. this app's own "Street Parking" category).
+ */
+export function buildPermitOptions(types: string[], extraSimple: string[] = []): PermitOption[] {
+  const aReserved = groupPerLotCodes(types, A_RESERVED_CODE_RE, A_RESERVED_GENERIC_VALUE, A_RESERVED_GROUP_LABEL);
+  const residentReserved = groupPerLotCodes(
+    aReserved.rest,
+    RESIDENT_RESERVED_LOT_RE,
+    RESIDENT_RESERVED_GENERIC_VALUE,
+    RESIDENT_RESERVED_GROUP_LABEL,
+  );
+
+  const options: PermitOption[] = [...residentReserved.rest, ...extraSimple].map((value) => ({ kind: 'simple', value }));
+  if (aReserved.group) options.push(aReserved.group);
+  if (residentReserved.group) options.push(residentReserved.group);
+
+  return options.sort((a, b) => {
+    const labelA = a.kind === 'group' ? a.label : a.value;
+    const labelB = b.kind === 'group' ? b.label : b.value;
+    return labelA.localeCompare(labelB);
+  });
+}
+
+/** Looks up the friendly label for whatever's currently selected (e.g. "A-Reserved · Lot 01"). */
+export function getPermitDisplayLabel(value: string, options: PermitOption[]): string {
+  for (const opt of options) {
+    if (opt.kind === 'simple' && opt.value === value) return opt.value;
+    if (opt.kind === 'group') {
+      const sub = opt.options.find((o) => o.value === value);
+      if (!sub) continue;
+      // A specific lot ("Lot 16") shortens to its own code ("RR16"/"A01")
+      // instead of "Resident Reserved · Lot 16" — long enough to crowd the
+      // dropdown's chevron out of the box. The generic entry's label is
+      // already just the bare group name, so it's left as-is.
+      const lotNumber = sub.label.match(/^Lot\s+(\d+)$/i)?.[1];
+      const shortCode = GROUP_EMBLEMS[opt.label];
+      return lotNumber && shortCode ? `${shortCode}${lotNumber}` : sub.label;
+    }
+  }
+  return value;
+}
+
+/** Whether `value` is one of A-Reserved/Resident Reserved's per-lot raw codes (e.g. "A24", "Lot 16 Resident Reserve"). */
+export function isPerLotPermitCode(value: string): boolean {
+  const trimmed = value.trim();
+  return A_RESERVED_CODE_RE.test(trimmed) || RESIDENT_RESERVED_LOT_RE.test(trimmed);
 }
