@@ -13,7 +13,7 @@
 // data (RM/R fold into "Resident", RR into "Resident Reserved") or don't
 // appear in it at all (TF, HF, SV), so they're skipped.
 
-import { normalizePermit } from './permits';
+import { normalizePermit, STREET_PARKING } from './permits';
 
 export interface PermitCardStyle {
   bg: string;
@@ -44,6 +44,13 @@ export const PERMIT_CARD_STYLES: Record<string, PermitCardStyle> = {
   // "RM" on the official chart, confirmed against real UNT signage — a
   // magenta close to "Visitor"'s color, but kept distinct as its own entry.
   'Remote': { bg: '#E166A7', text: '#fff', label: 'rgba(255,255,255,0.7)' },
+
+  // Not on the official chart (faculty/staff-only, separate from the
+  // all-audiences "Evening" permit) — given its own dark navy so it doesn't
+  // fall through to the default gray and look identical to an unstyled permit.
+  'Night': { bg: '#1B2A4A', text: '#fff', label: 'rgba(255,255,255,0.7)' },
+
+  [STREET_PARKING]: { bg: '#1B998B', text: '#fff', label: 'rgba(255,255,255,0.7)' },
 };
 
 export const DEFAULT_PERMIT_CARD_STYLE: PermitCardStyle = {

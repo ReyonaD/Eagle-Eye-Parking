@@ -20,6 +20,7 @@ import { useUser } from '../../context/UserContext';
 import { useLots } from '../../context/LotsContext';
 import { getPermitTypes, updatePermit, updatePlate } from '../../api/auth';
 import { Alert } from '../../utils/webCompat';
+import { buildPermitOptions, getPermitDisplayLabel, PermitOption } from '../../utils/permits';
 
 // Fallback list used only if the live ParkZen fetch fails (e.g. offline),
 // so the picker still has something to show.
@@ -30,90 +31,26 @@ const FALLBACK_PERMIT_TYPES = [
   'HSG', 'Premium Parking', 'Zip Car',
 ];
 
-// ParkZen's live /api/permits returns each A-Reserved space's specific permit
-// as its raw code ("A01", "A02", ... "A95"), plus the generic, not-tied-to-
-// one-lot permit as literal "A-Reserved" (confirmed against a live response —
-// ParkZen does NOT resolve these to friendly "Lot NN Reserved" names the way
-// it does for some other permit types). Flat and alphabetized, that's ~16
-// near-identical "A0N" codes buried among a dozen unrelated permit types — so
-// group them under a single "A-Reserved" row instead.
-const A_RESERVED_CODE_RE = /^a\s*-?\s*(\d{2,3})$/i;
-const A_RESERVED_GENERIC_VALUE = 'a-reserved';
-const A_RESERVED_GROUP_LABEL = 'A-Reserved';
-
-type PermitOption =
-  | { kind: 'simple'; value: string }
-  | { kind: 'group'; label: string; options: { value: string; label: string }[] };
-
-function buildPermitOptions(types: string[]): PermitOption[] {
-  const lotEntries: { value: string; label: string; num: number }[] = [];
-  const genericEntries: string[] = [];
-  const rest: string[] = [];
-
-  types.forEach((raw) => {
-    const trimmed = raw.trim();
-    const codeMatch = trimmed.match(A_RESERVED_CODE_RE);
-    if (codeMatch) {
-      const num = parseInt(codeMatch[1], 10);
-      lotEntries.push({ value: raw, label: `Lot ${String(num).padStart(2, '0')}`, num });
-    } else if (trimmed.toLowerCase() === A_RESERVED_GENERIC_VALUE) {
-      genericEntries.push(raw);
-    } else {
-      rest.push(raw);
-    }
-  });
-
-  const options: PermitOption[] = rest.map((value) => ({ kind: 'simple', value }));
-
-  if (lotEntries.length || genericEntries.length) {
-    lotEntries.sort((a, b) => a.num - b.num);
-    options.push({
-      kind: 'group',
-      label: A_RESERVED_GROUP_LABEL,
-      options: [
-        ...genericEntries.map((value) => ({ value, label: 'Any A-Reserved lot' })),
-        ...lotEntries.map((e) => ({ value: e.value, label: e.label })),
-      ],
-    });
-  }
-
-  return options.sort((a, b) => {
-    const labelA = a.kind === 'group' ? a.label : a.value;
-    const labelB = b.kind === 'group' ? b.label : b.value;
-    return labelA.localeCompare(labelB);
-  });
-}
-
-// Looks up the friendly label for whatever's currently selected, so the closed
-// trigger reads "A-Reserved · Lot 01" instead of the raw code "A01".
-function getPermitDisplayLabel(value: string, options: PermitOption[]): string {
-  for (const opt of options) {
-    if (opt.kind === 'simple' && opt.value === value) return opt.value;
-    if (opt.kind === 'group') {
-      const sub = opt.options.find((o) => o.value === value);
-      if (sub) return `${opt.label} · ${sub.label}`;
-    }
-  }
-  return value;
-}
-
 export default function ParkingProfileScreen() {
   const router = useRouter();
   const { user, updateUser } = useUser();
-  const { filterByPermit, setFilterByPermit } = useLots();
+  const { filterByPermit, setFilterByPermit, mapType, setMapType } = useLots();
   const { parkingProfile } = user;
 
   const [plateState, setPlateState] = useState(parkingProfile.plateState);
   const [plateNumber, setPlateNumber] = useState(parkingProfile.plateNumber);
   const [permitType, setPermitType] = useState(parkingProfile.permitType);
   const [permitTypeOpen, setPermitTypeOpen] = useState(false);
-  const [aReservedPickerVisible, setAReservedPickerVisible] = useState(false);
+  // Which group's lot picker is open (e.g. "A-Reserved", "Resident Reserved"), or null.
+  const [openGroupLabel, setOpenGroupLabel] = useState<string | null>(null);
   const [permitTypes, setPermitTypes] = useState<string[]>(FALLBACK_PERMIT_TYPES);
   const [permitTypesLoading, setPermitTypesLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const permitOptions = useMemo(() => buildPermitOptions(permitTypes), [permitTypes]);
-  const aReservedGroup = permitOptions.find((o) => o.kind === 'group');
+  const openGroup = permitOptions.find((o): o is Extract<PermitOption, { kind: 'group' }> =>
+    o.kind === 'group' && o.label === openGroupLabel
+  );
 
   useEffect(() => {
     getPermitTypes()
@@ -195,7 +132,7 @@ export default function ParkingProfileScreen() {
               activeOpacity={0.7}
               disabled={permitTypesLoading}
             >
-              <Text style={[styles.dropdownText, !permitType && styles.dropdownPlaceholder]}>
+              <Text style={[styles.dropdownText, !permitType && styles.dropdownPlaceholder]} numberOfLines={1}>
                 {permitTypesLoading
                   ? 'Loading permit types…'
                   : (permitType ? getPermitDisplayLabel(permitType, permitOptions) : 'Select permit type')}
@@ -230,7 +167,7 @@ export default function ParkingProfileScreen() {
                     <TouchableOpacity
                       key={opt.label}
                       style={styles.dropdownItem}
-                      onPress={() => setAReservedPickerVisible(true)}
+                      onPress={() => setOpenGroupLabel(opt.label)}
                     >
                       <Text style={styles.dropdownItemText}>
                         {opt.label}
@@ -249,7 +186,7 @@ export default function ParkingProfileScreen() {
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
               <Text style={styles.purchasePermitText}>
-                Don't have a permit?{' '}
+                Don&apos;t have a permit?{' '}
                 <Text style={styles.purchasePermitLink}>Purchase one</Text>
               </Text>
             </TouchableOpacity>
@@ -274,6 +211,41 @@ export default function ParkingProfileScreen() {
               />
             </View>
           </View>
+
+          <View style={[styles.card, styles.visibilityCard]}>
+            <Text style={styles.toggleLabel}>Map type</Text>
+            <Text style={styles.toggleHint}>Choose how the map renders on the Map and Lots tabs.</Text>
+            <View style={styles.mapTypeRow}>
+              {(['standard', 'satellite'] as const).map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.mapTypeOption, mapType === type && styles.mapTypeOptionActive]}
+                  onPress={() => setMapType(type)}
+                >
+                  <Ionicons
+                    name={type === 'standard' ? 'map-outline' : 'globe-outline'}
+                    size={16}
+                    color={mapType === type ? '#fff' : '#555'}
+                  />
+                  <Text style={[styles.mapTypeOptionText, mapType === type && styles.mapTypeOptionTextActive]}>
+                    {type === 'standard' ? 'Standard' : 'Satellite'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={[styles.card, styles.visibilityCard]}>
+            <View style={styles.infoHeaderRow}>
+              <Ionicons name="moon" size={16} color="#00853E" />
+              <Text style={styles.toggleLabel}>Day / Night permit preview</Text>
+            </View>
+            <Text style={styles.toggleHint}>
+              Permit rules change at night. Tap the map&apos;s settings icon (top-right)
+              to preview Day or Night rules before you drive over.
+            </Text>
+          </View>
+
           <TouchableOpacity
             style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
             onPress={handleSave}
@@ -292,29 +264,28 @@ export default function ParkingProfileScreen() {
       <Modal
         transparent
         animationType="slide"
-        visible={aReservedPickerVisible}
-        onRequestClose={() => setAReservedPickerVisible(false)}
+        visible={openGroup !== undefined}
+        onRequestClose={() => setOpenGroupLabel(null)}
       >
         <TouchableOpacity
           style={styles.pickerOverlay}
           activeOpacity={1}
-          onPress={() => setAReservedPickerVisible(false)}
+          onPress={() => setOpenGroupLabel(null)}
         >
           <View style={styles.pickerSheet}>
-            <Text style={styles.pickerTitle}>Which A-Reserved permit do you have?</Text>
+            <Text style={styles.pickerTitle}>Which {openGroup?.label} permit do you have?</Text>
             <Text style={styles.pickerSubtitle}>
-              Some A-Reserved permits are only good in one specific lot. Pick your lot below,
-              or "Any A-Reserved lot" if yours isn't tied to just one.
+              Some {openGroup?.label} permits are only good in one specific lot. Pick your lot below,
+              or just &quot;{openGroup?.label}&quot; if yours isn&apos;t tied to just one.
             </Text>
             <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
-              {aReservedGroup?.kind === 'group' &&
-                aReservedGroup.options.map((item) => (
+              {openGroup?.options.map((item) => (
                   <TouchableOpacity
                     key={item.value}
                     style={styles.pickerOption}
                     onPress={() => {
                       setPermitType(item.value);
-                      setAReservedPickerVisible(false);
+                      setOpenGroupLabel(null);
                       setPermitTypeOpen(false);
                     }}
                   >
@@ -394,10 +365,45 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
     marginBottom: 3,
   },
+  infoHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
   toggleHint: {
     fontSize: 12,
     color: '#888',
     lineHeight: 16,
+  },
+  mapTypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  mapTypeOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#f9f9f9',
+  },
+  mapTypeOptionActive: {
+    backgroundColor: '#00853E',
+    borderColor: '#00853E',
+  },
+  mapTypeOptionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#555',
+  },
+  mapTypeOptionTextActive: {
+    color: '#fff',
   },
   label: {
     fontSize: 12,
@@ -439,6 +445,8 @@ const styles = StyleSheet.create({
   dropdownText: {
     fontSize: 15,
     color: '#1a1a1a',
+    flexShrink: 1,
+    marginRight: 6,
   },
   dropdownPlaceholder: {
     color: '#999',

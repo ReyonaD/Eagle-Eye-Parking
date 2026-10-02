@@ -209,7 +209,7 @@ export function ProfileScreen() {
             </View>
             <View style={styles.permitEmptyTextWrap}>
               <Text style={styles.permitEmptyTitle}>Add Your Parking Permit</Text>
-              <Text style={styles.permitEmptySubtitle}>See where you're allowed to park</Text>
+              <Text style={styles.permitEmptySubtitle}>See where you&apos;re allowed to park</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.85)" />
           </TouchableOpacity>

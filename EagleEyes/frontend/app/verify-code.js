@@ -65,7 +65,7 @@ export default function VerifyCodeScreen() {
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/forgot-password')}>
-        <Text style={styles.backButtonText}>Didn't get it? Send a new code</Text>
+        <Text style={styles.backButtonText}>Didn&apos;t get it? Send a new code</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
