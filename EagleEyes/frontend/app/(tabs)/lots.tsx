@@ -21,7 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
 import { useUser } from '../../context/UserContext';
 import { openDirections } from '../../utils/navigation';
-import { GROUP_EMBLEMS, lotMatchesPermitType } from '../../utils/permits';
+import { GROUP_EMBLEMS, consolidatePermits, lotMatchesPermitType } from '../../utils/permits';
 import { getPermitCardStyle } from '../../utils/permitColors';
 import { Alert } from '../../utils/webCompat';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
@@ -443,13 +443,15 @@ export default function LotsScreen() {
 
   // Built from the full, unnarrowed lot list so every permit is always
   // selectable in the picker, even while the default view is narrowed to the
-  // user's own permit type.
+  // user's own permit type. ParkZen lists individual reserved spaces (A01, A02
+  // ... A95, "Lot 19 Resident Reserve", ...) as separate permits, so group them
+  // so the dropdown shows each permit type once.
   const uniquePermits = useMemo(() => {
     const set = new Set<string>();
     lots.forEach((lot) => {
-      (lot.permitList || []).forEach((p: string) => set.add(p.trim()));
+      consolidatePermits(lot.permitList).forEach((p) => set.add(p.trim()));
     });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [lots]);
 
   const filtered = useMemo(() => {
@@ -459,8 +461,8 @@ export default function LotsScreen() {
       const permitMatch = (lot.permits?.toLowerCase() || '').includes(q);
       if (!nameMatch && !permitMatch) return false;
       if (permitFilter !== 'all') {
-        const hasPermit = (lot.permitList || []).some(
-          (p: string) => p.trim() === permitFilter
+        const hasPermit = consolidatePermits(lot.permitList).some(
+          (p) => p.trim() === permitFilter
         );
         if (!hasPermit) return false;
       }
@@ -728,12 +730,14 @@ export default function LotsScreen() {
               <Text style={[styles.pickerOptionText, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
               {permitFilter === 'all' && <Ionicons name="checkmark" size={27} color="#00853E" />}
             </TouchableOpacity>
-            {uniquePermits.map((p) => (
-              <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
-                <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
-                {permitFilter === p && <Ionicons name="checkmark" size={27} color="#00853E" />}
-              </TouchableOpacity>
-            ))}
+            <ScrollView style={{ maxHeight: windowHeight * 0.6 }}>
+              {uniquePermits.map((p) => (
+                <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
+                  <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
+                  {permitFilter === p && <Ionicons name="checkmark" size={27} color="#00853E" />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
