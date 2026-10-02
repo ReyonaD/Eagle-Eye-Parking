@@ -7,7 +7,7 @@ import { useUser } from '../../context/UserContext';
 import EagleMap from '../../components/EagleMap';
 import { getPermitTypes } from '../../api/auth';
 import {
-  consolidatePermits, lotMatchesPermitType, STREET_PARKING,
+  consolidatePermits, lotMatchesPermitType, STREET_PARKING, PREMIUM_PARKING,
   buildPermitOptions, getPermitDisplayLabel, isPerLotPermitCode, PermitOption,
 } from '../../utils/permits';
 //import { requestPermissions } from '../../modules/parkzen-core';
@@ -71,8 +71,8 @@ export default function MapScreen() {
   const [permitTypes, setPermitTypes] = useState<string[]>([
     "Eagle", "Remote", "Faculty and Staff", "A-Reserved",
     "Resident", "Resident Reserved", "Hall Director", "Motorcycle",
-    "Evening", "Night", "Highland Street Garage Commuter",
-    "Premium Parking (Visitor)", "Zip Car", "Business/Vendor", "Union Circle Garage",
+    "Evening", "Night", "HSG-Commuter",
+    PREMIUM_PARKING, "Zip Car", "Business/Vendor", "Union Circle Garage",
   ]);
   // Which group's lot picker is open (e.g. "A-Reserved"), or null.
   const [openGroupLabel, setOpenGroupLabel] = useState<string | null>(null);

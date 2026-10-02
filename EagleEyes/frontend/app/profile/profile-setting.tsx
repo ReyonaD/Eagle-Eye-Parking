@@ -20,7 +20,7 @@ import { useUser } from '../../context/UserContext';
 import { useLots } from '../../context/LotsContext';
 import { getPermitTypes, updatePermit, updatePlate } from '../../api/auth';
 import { Alert } from '../../utils/webCompat';
-import { buildPermitOptions, getPermitDisplayLabel, PermitOption } from '../../utils/permits';
+import { buildPermitOptions, getPermitDisplayLabel, PermitOption, PREMIUM_PARKING } from '../../utils/permits';
 
 // Fallback list used only if the live ParkZen fetch fails (e.g. offline),
 // so the picker still has something to show.
@@ -28,7 +28,7 @@ const FALLBACK_PERMIT_TYPES = [
   'Eagle', 'Remote', 'Faculty and Staff', 'A-Reserved',
   'Resident', 'Resident Reserved', 'Hall Director',
   'Visitor', 'Motorcycle', 'Evening', 'Night',
-  'HSG', 'Premium Parking', 'Zip Car',
+  'HSG', PREMIUM_PARKING, 'Zip Car',
 ];
 
 export default function ParkingProfileScreen() {
@@ -177,6 +177,24 @@ export default function ParkingProfileScreen() {
                     </TouchableOpacity>
                   );
                 })}
+              </View>
+            )}
+
+            {permitType === PREMIUM_PARKING && (
+              <View style={styles.premiumParkingNote}>
+                <Ionicons name="information-circle-outline" size={16} color="#D6332A" />
+                <Text style={styles.premiumParkingNoteText}>
+                  Not prepaid — pay via the lot&apos;s QR code, or tap your lot on the Map or
+                  Lots tab for a direct{' '}
+                  <Text style={styles.purchasePermitLinkStatic}>Pay for Parking</Text> link.
+                  General lookup:{' '}
+                  <Text
+                    style={styles.purchasePermitLink}
+                    onPress={() => Linking.openURL('https://www.premiumparking.com/')}
+                  >
+                    premiumparking.com
+                  </Text>.
+                </Text>
               </View>
             )}
 
@@ -468,6 +486,29 @@ const styles = StyleSheet.create({
     color: '#00853E',
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  // Emphasizes a UI element the note refers to (e.g. a button on another
+  // screen) without implying it's tappable right here, unlike the external
+  // link style above.
+  purchasePermitLinkStatic: {
+    fontWeight: '700',
+  },
+  premiumParkingNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(214, 51, 42, 0.1)',
+    borderWidth: 1,
+    borderColor: '#D6332A',
+  },
+  premiumParkingNoteText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#D6332A',
+    lineHeight: 17,
   },
   dropdownItem: {
     flexDirection: 'row',

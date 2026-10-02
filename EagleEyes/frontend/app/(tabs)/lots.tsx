@@ -12,6 +12,7 @@ import {
   ScrollView,
   Platform,
   useWindowDimensions,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +22,7 @@ import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
 import { useUser } from '../../context/UserContext';
 import { openDirections } from '../../utils/navigation';
-import { GROUP_EMBLEMS, lotMatchesPermitType } from '../../utils/permits';
+import { GROUP_EMBLEMS, lotMatchesPermitType, getPremiumParkingLink, dedupePermitLabels, isPerLotPermitCode, normalizePermitPreservingCode } from '../../utils/permits';
 import { getPermitCardStyle } from '../../utils/permitColors';
 import { NAME_TO_CODE } from '../../utils/nightPermitRules';
 import { Alert } from '../../utils/webCompat';
@@ -144,7 +145,12 @@ function getPermitBadgeInfo(permitList: string[], lotName?: string) {
     return { label: '?', bg: '#E0E0E0', text: '#666' };
   }
   const raw = permitList[0].trim();
-  const label = abbreviatePermit(raw);
+  // A numbered A-Reserved/Resident-Reserved lot's own permitList now leads
+  // with its raw specific code (e.g. "Lot 16 Resident Reserve") instead of
+  // the generic bucket name — shorten it the same way the detail view does
+  // ("RR16") instead of falling through to abbreviatePermit's generic
+  // initials logic, which would otherwise mangle it.
+  const label = isPerLotPermitCode(raw) ? normalizePermitPreservingCode(raw) : abbreviatePermit(raw);
   // Same color source as the Profile permit card and lot details sheet, so a
   // given permit reads as the same color everywhere in the app. "border"
   // only comes through for near-white fills (e.g. Evening) so the badge
@@ -888,6 +894,16 @@ export default function LotsScreen() {
                 </View>
               </View>
 
+              {getPremiumParkingLink(selectedLot.name, selectedLot.permitList) && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: '#D6332A', marginBottom: 12 }]}
+                  onPress={() => Linking.openURL(getPremiumParkingLink(selectedLot.name, selectedLot.permitList)!)}
+                >
+                  <Ionicons name="card-outline" size={27} color="#fff" />
+                  <Text style={styles.actionButtonText}>Pay for Parking</Text>
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity style={styles.actionButton} onPress={() => openDirections(selectedLot)}>
                 <Ionicons name="navigate" size={27} color="#fff" />
                 <Text style={styles.actionButtonText}>Get Directions</Text>
@@ -919,8 +935,7 @@ export default function LotsScreen() {
                     <View style={{ marginTop: 6 }}>
                       <Text style={styles.detailLabel}>Permits:</Text>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                        {selectedLot.permitList.map((p: string, i: number) => {
-                          const label = p.trim();
+                        {dedupePermitLabels(selectedLot.permitList).map((label, i) => {
                           const permitStyle = getPermitCardStyle(label);
                           return (
                             <View
@@ -930,6 +945,7 @@ export default function LotsScreen() {
                                 borderRadius: 12,
                                 paddingHorizontal: 10,
                                 paddingVertical: 4,
+                                overflow: 'hidden',
                                 ...(permitStyle.border ? { borderWidth: 1, borderColor: permitStyle.border } : null),
                               }}
                             >
@@ -1283,6 +1299,7 @@ pageIndicator: {
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   permitBadgeText: {
     fontSize: 13,

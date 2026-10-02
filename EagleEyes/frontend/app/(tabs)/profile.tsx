@@ -78,22 +78,6 @@ function Divider() {
 }
 
 
-// Diagonal orange/black stripe pattern for Resident Reserved, matching the
-// UNT parking map. Built from rotated Views since no SVG/gradient lib is installed.
-// Covers the full card (including behind the text/badge) at low opacity so
-// the text still pops on top.
-function DiagonalStripes() {
-  const stripeCount = 28;
-  const spacing = 34;
-  return (
-    <View style={styles.stripesClip} pointerEvents="none">
-      {Array.from({ length: stripeCount }).map((_, i) => (
-        <View key={i} style={[styles.stripe, { top: i * spacing - 460 }]} />
-      ))}
-    </View>
-  );
-}
-
 // Main screen
 export function ProfileScreen() {
   const router = useRouter();
@@ -155,7 +139,6 @@ export function ProfileScreen() {
             activeOpacity={0.85}
             onPress={() => router.push('/profile/profile-setting' as any)}
           >
-            {permitCardStyle.striped && <DiagonalStripes />}
             <View style={styles.permitTop}>
               <View style={styles.permitTopLeft}>
                 <Text style={[styles.permitLabel, { color: permitCardStyle.label }]}>
@@ -320,18 +303,6 @@ const styles = StyleSheet.create({
     elevation: 5,
     position: 'relative',
     overflow: 'hidden',
-  },
-  stripesClip: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
-  stripe: {
-    position: 'absolute',
-    left: -80,
-    width: '180%',
-    height: 6,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    transform: [{ rotate: '45deg' }],
   },
   permitTop: {
     flexDirection: 'row',
