@@ -98,6 +98,25 @@ export const updatePermit = async (permitType) => {
     }
     return data;
 };
+//UPDATE PLATE - save the account's vehicle license plate to the backend
+export const updatePlate = async (plateState, plateNumber) => {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) { throw new Error("No authorization token found"); }
+
+    const response = await apiFetch(`${BASE_URL}/users/me/plate`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ plate_state: plateState, plate_number: plateNumber }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Failed to update plate');
+    }
+    return data;
+};
 //UPDATE NAME - save the account's display name to the backend
 export const updateName = async (name) => {
     const token = await AsyncStorage.getItem('token');

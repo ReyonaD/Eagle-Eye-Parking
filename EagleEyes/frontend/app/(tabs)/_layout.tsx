@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname } from 'expo-router';
 import React from 'react';
 import { View } from 'react-native';
 
@@ -11,10 +11,14 @@ import TopBar from '../../components/TopBar'
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  // Alerts has its own back button + title, so the brand topbar (logo + bell)
+  // would just stack redundant chrome above it — hide it on that screen only.
+  const pathname = usePathname();
+  const showTopBar = pathname !== '/alerts';
 
   return (
     <View style={{ flex: 1 }}>
-          <TopBar role="commuter" /> 
+          {showTopBar && <TopBar role="commuter" />}
     <Tabs
       screenOptions={{
         // Hardcoding the exact UNT Green from your mockup for the active tab

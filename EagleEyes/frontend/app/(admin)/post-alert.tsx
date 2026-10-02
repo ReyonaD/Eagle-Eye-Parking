@@ -10,14 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { createAlert, uploadAlertImage } from '../../api/alerts';
 import LotPickerModal from '../../components/LotPickerModal';
 import { Alert } from '../../utils/webCompat';
-
-const ALERT_TYPES = [
-  { label: 'Snow',         value: 'snow' },
-  { label: 'Flood',        value: 'flood' },
-  { label: 'Traffic Jam',  value: 'traffic jam' },
-  { label: 'Tree Branch',  value: 'tree branch' },
-  { label: 'Item on Road', value: 'item on road' },
-];
+import { HAZARD_CATEGORIES as ALERT_TYPES } from '../../utils/alertVisuals';
 
 const MAX_PHOTOS = 3;
 

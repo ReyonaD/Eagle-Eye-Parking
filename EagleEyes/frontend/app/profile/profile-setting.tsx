@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,15 @@ import {
   Platform,
   ActivityIndicator,
   Switch,
+  Modal,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useUser } from '../../context/UserContext';
 import { useLots } from '../../context/LotsContext';
-import { getPermitTypes, updatePermit } from '../../api/auth';
+import { getPermitTypes, updatePermit, updatePlate } from '../../api/auth';
 import { Alert } from '../../utils/webCompat';
 
 // Fallback list used only if the live ParkZen fetch fails (e.g. offline),
@@ -28,6 +30,73 @@ const FALLBACK_PERMIT_TYPES = [
   'HSG', 'Premium Parking', 'Zip Car',
 ];
 
+// ParkZen's live /api/permits returns each A-Reserved space's specific permit
+// as its raw code ("A01", "A02", ... "A95"), plus the generic, not-tied-to-
+// one-lot permit as literal "A-Reserved" (confirmed against a live response —
+// ParkZen does NOT resolve these to friendly "Lot NN Reserved" names the way
+// it does for some other permit types). Flat and alphabetized, that's ~16
+// near-identical "A0N" codes buried among a dozen unrelated permit types — so
+// group them under a single "A-Reserved" row instead.
+const A_RESERVED_CODE_RE = /^a\s*-?\s*(\d{2,3})$/i;
+const A_RESERVED_GENERIC_VALUE = 'a-reserved';
+const A_RESERVED_GROUP_LABEL = 'A-Reserved';
+
+type PermitOption =
+  | { kind: 'simple'; value: string }
+  | { kind: 'group'; label: string; options: { value: string; label: string }[] };
+
+function buildPermitOptions(types: string[]): PermitOption[] {
+  const lotEntries: { value: string; label: string; num: number }[] = [];
+  const genericEntries: string[] = [];
+  const rest: string[] = [];
+
+  types.forEach((raw) => {
+    const trimmed = raw.trim();
+    const codeMatch = trimmed.match(A_RESERVED_CODE_RE);
+    if (codeMatch) {
+      const num = parseInt(codeMatch[1], 10);
+      lotEntries.push({ value: raw, label: `Lot ${String(num).padStart(2, '0')}`, num });
+    } else if (trimmed.toLowerCase() === A_RESERVED_GENERIC_VALUE) {
+      genericEntries.push(raw);
+    } else {
+      rest.push(raw);
+    }
+  });
+
+  const options: PermitOption[] = rest.map((value) => ({ kind: 'simple', value }));
+
+  if (lotEntries.length || genericEntries.length) {
+    lotEntries.sort((a, b) => a.num - b.num);
+    options.push({
+      kind: 'group',
+      label: A_RESERVED_GROUP_LABEL,
+      options: [
+        ...genericEntries.map((value) => ({ value, label: 'Any A-Reserved lot' })),
+        ...lotEntries.map((e) => ({ value: e.value, label: e.label })),
+      ],
+    });
+  }
+
+  return options.sort((a, b) => {
+    const labelA = a.kind === 'group' ? a.label : a.value;
+    const labelB = b.kind === 'group' ? b.label : b.value;
+    return labelA.localeCompare(labelB);
+  });
+}
+
+// Looks up the friendly label for whatever's currently selected, so the closed
+// trigger reads "A-Reserved · Lot 01" instead of the raw code "A01".
+function getPermitDisplayLabel(value: string, options: PermitOption[]): string {
+  for (const opt of options) {
+    if (opt.kind === 'simple' && opt.value === value) return opt.value;
+    if (opt.kind === 'group') {
+      const sub = opt.options.find((o) => o.value === value);
+      if (sub) return `${opt.label} · ${sub.label}`;
+    }
+  }
+  return value;
+}
+
 export default function ParkingProfileScreen() {
   const router = useRouter();
   const { user, updateUser } = useUser();
@@ -38,9 +107,13 @@ export default function ParkingProfileScreen() {
   const [plateNumber, setPlateNumber] = useState(parkingProfile.plateNumber);
   const [permitType, setPermitType] = useState(parkingProfile.permitType);
   const [permitTypeOpen, setPermitTypeOpen] = useState(false);
+  const [aReservedPickerVisible, setAReservedPickerVisible] = useState(false);
   const [permitTypes, setPermitTypes] = useState<string[]>(FALLBACK_PERMIT_TYPES);
   const [permitTypesLoading, setPermitTypesLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  const permitOptions = useMemo(() => buildPermitOptions(permitTypes), [permitTypes]);
+  const aReservedGroup = permitOptions.find((o) => o.kind === 'group');
 
   useEffect(() => {
     getPermitTypes()
@@ -59,16 +132,17 @@ export default function ParkingProfileScreen() {
       if (permitType) {
         await updatePermit(permitType);
       }
+      const plate = await updatePlate(plateState.trim().toUpperCase(), plateNumber.trim());
       updateUser({
         parkingProfile: {
-          plateState: plateState.trim().toUpperCase(),
-          plateNumber: plateNumber.trim(),
+          plateState: plate.plate_state,
+          plateNumber: plate.plate_number,
           permitType,
         },
       });
       router.back();
     } catch (error: any) {
-      Alert.alert('Could not save permit', error.message || 'Please try again.');
+      Alert.alert('Could not save profile', error.message || 'Please try again.');
     } finally {
       setSaving(false);
     }
@@ -122,7 +196,9 @@ export default function ParkingProfileScreen() {
               disabled={permitTypesLoading}
             >
               <Text style={[styles.dropdownText, !permitType && styles.dropdownPlaceholder]}>
-                {permitTypesLoading ? 'Loading permit types…' : (permitType || 'Select permit type')}
+                {permitTypesLoading
+                  ? 'Loading permit types…'
+                  : (permitType ? getPermitDisplayLabel(permitType, permitOptions) : 'Select permit type')}
               </Text>
               {permitTypesLoading ? (
                 <ActivityIndicator size="small" color="#333" />
@@ -132,21 +208,51 @@ export default function ParkingProfileScreen() {
             </TouchableOpacity>
             {permitTypeOpen && (
               <View style={styles.dropdownList}>
-                {permitTypes.map((item) => (
-                  <TouchableOpacity
-                    key={item}
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setPermitType(item);
-                      setPermitTypeOpen(false);
-                    }}
-                  >
-                    <Text style={styles.dropdownItemText}>{item}</Text>
-                    {permitType === item && <Ionicons name="checkmark" size={18} color="#00853E" />}
-                  </TouchableOpacity>
-                ))}
+                {permitOptions.map((opt) => {
+                  if (opt.kind === 'simple') {
+                    return (
+                      <TouchableOpacity
+                        key={opt.value}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setPermitType(opt.value);
+                          setPermitTypeOpen(false);
+                        }}
+                      >
+                        <Text style={styles.dropdownItemText}>{opt.value}</Text>
+                        {permitType === opt.value && <Ionicons name="checkmark" size={18} color="#00853E" />}
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  const selectedSub = opt.options.find((o) => o.value === permitType);
+                  return (
+                    <TouchableOpacity
+                      key={opt.label}
+                      style={styles.dropdownItem}
+                      onPress={() => setAReservedPickerVisible(true)}
+                    >
+                      <Text style={styles.dropdownItemText}>
+                        {opt.label}
+                        {selectedSub ? ` · ${selectedSub.label}` : ''}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={18} color={selectedSub ? '#00853E' : '#999'} />
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
+
+            <TouchableOpacity
+              style={styles.purchasePermitRow}
+              onPress={() => Linking.openURL('https://unt.aimsparking.com/')}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+            >
+              <Text style={styles.purchasePermitText}>
+                Don&apos;t have a permit?{' '}
+                <Text style={styles.purchasePermitLink}>Purchase one</Text>
+              </Text>
+            </TouchableOpacity>
           </View>
 
           <View style={[styles.card, styles.visibilityCard]}>
@@ -183,6 +289,51 @@ export default function ParkingProfileScreen() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={aReservedPickerVisible}
+        onRequestClose={() => setAReservedPickerVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.pickerOverlay}
+          activeOpacity={1}
+          onPress={() => setAReservedPickerVisible(false)}
+        >
+          <View style={styles.pickerSheet}>
+            <Text style={styles.pickerTitle}>Which A-Reserved permit do you have?</Text>
+            <Text style={styles.pickerSubtitle}>
+              Some A-Reserved permits are only good in one specific lot. Pick your lot below,
+              or &quot;Any A-Reserved lot&quot; if yours isn&apos;t tied to just one.
+            </Text>
+            <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+              {aReservedGroup?.kind === 'group' &&
+                aReservedGroup.options.map((item) => (
+                  <TouchableOpacity
+                    key={item.value}
+                    style={styles.pickerOption}
+                    onPress={() => {
+                      setPermitType(item.value);
+                      setAReservedPickerVisible(false);
+                      setPermitTypeOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.pickerOptionText,
+                        permitType === item.value && styles.pickerOptionActive,
+                      ]}
+                    >
+                      {item.label}
+                    </Text>
+                    {permitType === item.value && <Ionicons name="checkmark" size={20} color="#00853E" />}
+                  </TouchableOpacity>
+                ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -299,6 +450,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#f2f2f7',
     overflow: 'hidden',
   },
+  purchasePermitRow: {
+    marginTop: 10,
+  },
+  purchasePermitText: {
+    fontSize: 13,
+    color: '#666',
+  },
+  purchasePermitLink: {
+    color: '#00853E',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   dropdownItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -311,6 +474,51 @@ const styles = StyleSheet.create({
   dropdownItemText: {
     fontSize: 14,
     color: '#333',
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  pickerSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  pickerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1a1a1a',
+    marginBottom: 6,
+  },
+  pickerSubtitle: {
+    fontSize: 13,
+    color: '#888',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  pickerScroll: {
+    maxHeight: 360,
+  },
+  pickerOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  pickerOptionText: {
+    fontSize: 15,
+    color: '#333',
+    fontWeight: '500',
+  },
+  pickerOptionActive: {
+    color: '#00853E',
+    fontWeight: '700',
   },
   saveBtn: {
     backgroundColor: '#00853E',

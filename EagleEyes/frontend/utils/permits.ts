@@ -21,7 +21,12 @@ export const GROUP_EMBLEMS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 // Lots named "Lot N - A Reserved"
-const A_RESERVED_LOT_NUMBERS = [1, 2, 3, 4, 8, 24, 37, 50];
+// Confirmed against ParkZen's live A-Reserved permit-code table (A01..A95).
+// Lot 27 is deliberately left out: it's already in RESIDENT_RESERVED_LOT_NUMBERS
+// below per the "Lots to be changed" doc, which this file's own comment says
+// takes priority over ParkZen — even though ParkZen also lists an "A27" code
+// for it. That conflict needs a human call, not a silent override here.
+const A_RESERVED_LOT_NUMBERS = [1, 2, 3, 4, 8, 9, 10, 24, 28, 37, 50, 83, 90, 91, 95];
 
 // Lots named "Lot N - Resident Reserved"
 const RESIDENT_RESERVED_LOT_NUMBERS = [16, 17, 19, 23, 27, 29, 31, 32, 33, 42, 43, 44, 81];
@@ -90,6 +95,33 @@ const RESIDENT_RESERVED_RE = /\bres(ident)?\s*-?\s*reserved?\b/i; // "Reserved" 
 const A_RESERVED_ANY_RE = /(^|[\s-])a\s*-?\s*reserved?\b/i;
 const RR_CODE_RE = /^rr(\s*[-_#]?\s*\d{1,3}[a-z]?)?$/i;
 
+// Short/inconsistently-cased raw ParkZen codes that mean the same permit as a
+// longer or differently-cased name shown elsewhere (dropdowns, filters).
+// Keyed lowercase. The abbreviation expansions (hd, ada, dv, hsg-commuter)
+// are confirmed against ParkZen's own permit records, which pair each short
+// `name` with a fuller `type` — e.g. name "HD" has type "Hall Director".
+// Only added where `type` is genuinely a longer name for the same permit,
+// not where it describes eligibility instead (e.g. "Eagle" -> type "Commuter
+// Student" — that's who's allowed to use it, not another name for it, so
+// entries like that are deliberately left alone). "zip car" and "premium
+// parking" are casing/shorthand fixes, not type-based expansions.
+// "HSR-Resident" is also deliberately not aliased to "Resident": its type is
+// "Highland Street Garage Resident Students", a genuinely different permit
+// from plain "Resident" (type "Resident Hall students").
+const PERMIT_ALIASES: Record<string, string> = {
+  'f/s': 'Faculty and Staff',
+  'fs': 'Faculty and Staff',
+  'hd': 'Hall Director',
+  'ada': 'Americans with Disabilities Act',
+  'dv': 'Disabled Veteran',
+  'hsg-commuter': 'Highland Street Garage Commuter',
+  'zip car': 'Zip Car',
+  // stripSuffix() removes the "(paid visitor)" parenthetical before this
+  // lookup runs, so the raw ParkZen name "Premium Parking (paid visitor)"
+  // reaches here as just "premium parking".
+  'premium parking': 'Premium Parking (Visitor)',
+};
+
 /** Returns the consolidated permit group name for a single raw permit string. */
 export function normalizePermit(raw: unknown): string {
   if (typeof raw !== 'string') return '';
@@ -100,6 +132,9 @@ export function normalizePermit(raw: unknown): string {
   if (A_RESERVED_RE.test(base)) return A_RESERVED;
   if (RESIDENT_RESERVED_RE.test(base) || RR_CODE_RE.test(base)) return RESIDENT_RESERVED;
   if (A_RESERVED_ANY_RE.test(base)) return A_RESERVED;
+
+  const alias = PERMIT_ALIASES[base.toLowerCase()];
+  if (alias) return alias;
 
   return trimmed;
 }
