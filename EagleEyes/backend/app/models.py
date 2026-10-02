@@ -29,6 +29,10 @@ class User(Base):
     #ParkZen permit name (e.g. "Eagle", "Faculty and Staff"), set by the user from /api/permits
     permit_type = Column(String, nullable=True)
 
+    #vehicle license plate, set by the user from the profile screen
+    plate_state = Column(String, nullable=True)
+    plate_number = Column(String, nullable=True)
+
 class Alert(Base):
     __tablename__ = "alerts"
 

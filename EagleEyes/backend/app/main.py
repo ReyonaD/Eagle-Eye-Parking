@@ -17,7 +17,7 @@ from . import models
 #imports custom files
 from app.database import get_db
 from app.models import User, Alert, PasswordResetToken
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, AlertResponse, AlertCreate, AlertApprove, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
@@ -32,6 +32,8 @@ with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS permit_type VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT FALSE"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plate_state VARCHAR"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
     _conn.commit()
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -288,7 +290,9 @@ def read_current_user(current_user: User = Depends(get_current_user)):
         "role": current_user.role,
         "is_active": current_user.is_active,
         "permit_type": current_user.permit_type,
-        "is_owner": current_user.is_owner
+        "is_owner": current_user.is_owner,
+        "plate_state": current_user.plate_state,
+        "plate_number": current_user.plate_number
     }
 
 @app.put("/users/me/name")
@@ -315,6 +319,19 @@ def update_current_user_permit(
     db.commit()
     db.refresh(current_user)
     return {"permit_type": current_user.permit_type}
+
+@app.put("/users/me/plate")
+def update_current_user_plate(
+    payload: UserPlateUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Lets a logged-in user set, change, or clear their vehicle license plate."""
+    current_user.plate_state = payload.plate_state.strip().upper()
+    current_user.plate_number = payload.plate_number.strip()
+    db.commit()
+    db.refresh(current_user)
+    return {"plate_state": current_user.plate_state, "plate_number": current_user.plate_number}
 
 async def get_parkzen_token(username: str, password: str, force_refresh: bool = False) -> str:
     """Return a valid ParkZen token, logging in only when the cached one is

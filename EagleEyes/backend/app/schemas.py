@@ -14,6 +14,11 @@ class UserPermitUpdate(BaseModel):
 class UserNameUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
+class UserPlateUpdate(BaseModel):
+    #empty string allowed — a user can clear a previously-saved plate
+    plate_state: str = Field(default="", max_length=10)
+    plate_number: str = Field(default="", max_length=20)
+
 class AlertCreate(BaseModel):
     title: str
     alert_type: str

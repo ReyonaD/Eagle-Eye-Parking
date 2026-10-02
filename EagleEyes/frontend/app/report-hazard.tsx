@@ -10,14 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { createAlert, uploadAlertImage } from '../api/alerts';
 import LotPickerModal from '../components/LotPickerModal';
 import { Alert } from '../utils/webCompat';
-
-const ALERT_TYPES = [
-  { label: 'Snow',         value: 'snow' },
-  { label: 'Flood',        value: 'flood' },
-  { label: 'Traffic Jam',  value: 'traffic jam' },
-  { label: 'Tree Branch',  value: 'tree branch' },
-  { label: 'Item on Road', value: 'item on road' },
-];
+import { HAZARD_CATEGORIES as ALERT_TYPES } from '../utils/alertVisuals';
 
 const MAX_PHOTOS = 3;
 
@@ -26,7 +19,6 @@ const MAX_PHOTOS = 3;
 type PickedPhoto = { uri: string; file?: File };
 
 export default function ReportHazardScreen() {
-  const [title, setTitle]               = useState('');
   const [memo, setMemo]                 = useState('');
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedLot, setSelectedLot]   = useState<string | null>(null);
@@ -100,10 +92,6 @@ export default function ReportHazardScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!title.trim()) {
-      Alert.alert('Missing Title', 'Please add a short title for your report.');
-      return;
-    }
     if (!selectedType) {
       Alert.alert('Missing Type', 'Please select a hazard type.');
       return;
@@ -118,7 +106,9 @@ export default function ReportHazardScreen() {
       }
 
       await createAlert({
-        title: title.trim(),
+        //default title is the hazard type the commuter picked (e.g. "Snow");
+        //admins can rename it during review if a report needs something clearer
+        title: selectedLabel ?? selectedType,
         alert_type: 'hazard',
         category: selectedType,
         description: memo.trim() || undefined,
@@ -153,15 +143,6 @@ export default function ReportHazardScreen() {
         <Text style={styles.screenSubtitle}>
           Spotted something in a parking lot? Let the parking team know.
         </Text>
-
-        <TextInput
-          style={styles.titleInput}
-          placeholder="ADD THE ALERT TITLE"
-          placeholderTextColor="#aaa"
-          value={title}
-          onChangeText={setTitle}
-          autoCapitalize="characters"
-        />
 
         <TextInput
           style={styles.memoInput}

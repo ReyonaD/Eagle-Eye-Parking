@@ -22,6 +22,7 @@ import { useLots } from '../../context/LotsContext';
 import { useUser } from '../../context/UserContext';
 import { openDirections } from '../../utils/navigation';
 import { GROUP_EMBLEMS, lotMatchesPermitType } from '../../utils/permits';
+import { getPermitCardStyle } from '../../utils/permitColors';
 import { Alert } from '../../utils/webCompat';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
 
@@ -352,6 +353,10 @@ export default function LotsScreen() {
   const [moreInfoVisible, setMoreInfoVisible] = useState(false);
   const [permitFilter, setPermitFilter] = useState('all');
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
+  // Once the user explicitly touches the permit filter (even choosing "All
+  // Permits" again), that choice wins over the "only show my permit type"
+  // preference below, instead of silently re-narrowing back to it.
+  const [permitManuallySelected, setPermitManuallySelected] = useState(false);
   const [permitPickerVisible, setPermitPickerVisible] = useState(false);
   const [availabilityPickerVisible, setAvailabilityPickerVisible] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
@@ -428,19 +433,24 @@ export default function LotsScreen() {
     : 'Waiting for sync';
 
   // "Only show my permit type" preference from Profile Setting, applied ahead
-  // of the on-screen search/permit/availability filters below.
+  // of the on-screen search/permit/availability filters below — but only until
+  // the user explicitly picks a permit themselves, since they should always be
+  // able to opt back into seeing every permit.
   const permitTypeLots = useMemo(() => {
-    if (!filterByPermit || !user.parkingProfile.permitType) return lots;
+    if (!filterByPermit || !user.parkingProfile.permitType || permitManuallySelected) return lots;
     return lots.filter((lot) => lotMatchesPermitType(lot.permitList, user.parkingProfile.permitType));
-  }, [lots, filterByPermit, user.parkingProfile.permitType]);
+  }, [lots, filterByPermit, user.parkingProfile.permitType, permitManuallySelected]);
 
+  // Built from the full, unnarrowed lot list so every permit is always
+  // selectable in the picker, even while the default view is narrowed to the
+  // user's own permit type.
   const uniquePermits = useMemo(() => {
     const set = new Set<string>();
-    permitTypeLots.forEach((lot) => {
+    lots.forEach((lot) => {
       (lot.permitList || []).forEach((p: string) => set.add(p.trim()));
     });
     return Array.from(set).sort();
-  }, [permitTypeLots]);
+  }, [lots]);
 
   const filtered = useMemo(() => {
     return permitTypeLots.filter((lot) => {
@@ -551,7 +561,7 @@ export default function LotsScreen() {
         onChangeQuery={setQuery}
         permitFilter={permitFilter}
         availabilityFilter={availabilityFilter}
-        onAllPermits={() => { setPermitFilter('all'); setAvailabilityFilter('all'); }}
+        onAllPermits={() => { setPermitFilter('all'); setAvailabilityFilter('all'); setPermitManuallySelected(true); }}
         onPermitPress={() => setPermitPickerVisible(true)}
         onAvailabilityPress={() => setAvailabilityPickerVisible(true)}
       />
@@ -698,7 +708,7 @@ export default function LotsScreen() {
                 </>
               ) : (
                 <Text style={styles.paginationEndText}>
-                  You've reached the end — {filtered.length} lot{filtered.length === 1 ? '' : 's'} total
+                  You&apos;ve reached the end — {filtered.length} lot{filtered.length === 1 ? '' : 's'} total
                 </Text>
               )}
             </View>
@@ -714,12 +724,12 @@ export default function LotsScreen() {
         <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setPermitPickerVisible(false)}>
           <View style={styles.pickerSheet}>
             <Text style={styles.pickerTitle}>Filter by Permit</Text>
-            <TouchableOpacity style={styles.pickerOption} onPress={() => { setPermitFilter('all'); setPermitPickerVisible(false); }}>
+            <TouchableOpacity style={styles.pickerOption} onPress={() => { setPermitFilter('all'); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
               <Text style={[styles.pickerOptionText, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
               {permitFilter === 'all' && <Ionicons name="checkmark" size={27} color="#00853E" />}
             </TouchableOpacity>
             {uniquePermits.map((p) => (
-              <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitPickerVisible(false); }}>
+              <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
                 <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
                 {permitFilter === p && <Ionicons name="checkmark" size={27} color="#00853E" />}
               </TouchableOpacity>
@@ -833,11 +843,24 @@ export default function LotsScreen() {
                     <View style={{ marginTop: 6 }}>
                       <Text style={styles.detailLabel}>Permits:</Text>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                        {selectedLot.permitList.map((p: string, i: number) => (
-                          <View key={i} style={{ backgroundColor: '#f0f0f0', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
-                            <Text style={{ fontSize: 12, color: '#555', fontWeight: '500' }}>{p.trim()}</Text>
-                          </View>
-                        ))}
+                        {selectedLot.permitList.map((p: string, i: number) => {
+                          const label = p.trim();
+                          const permitStyle = getPermitCardStyle(label);
+                          return (
+                            <View
+                              key={i}
+                              style={{
+                                backgroundColor: permitStyle.bg,
+                                borderRadius: 12,
+                                paddingHorizontal: 10,
+                                paddingVertical: 4,
+                                ...(permitStyle.border ? { borderWidth: 1, borderColor: permitStyle.border } : null),
+                              }}
+                            >
+                              <Text style={{ fontSize: 12, color: permitStyle.text, fontWeight: '500' }}>{label}</Text>
+                            </View>
+                          );
+                        })}
                       </View>
                     </View>
                   )}
