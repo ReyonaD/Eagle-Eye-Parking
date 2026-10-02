@@ -708,7 +708,7 @@ export default function LotsScreen() {
                 </>
               ) : (
                 <Text style={styles.paginationEndText}>
-                  You've reached the end — {filtered.length} lot{filtered.length === 1 ? '' : 's'} total
+                  You&apos;ve reached the end — {filtered.length} lot{filtered.length === 1 ? '' : 's'} total
                 </Text>
               )}
             </View>

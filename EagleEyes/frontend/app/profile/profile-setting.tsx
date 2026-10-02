@@ -249,7 +249,7 @@ export default function ParkingProfileScreen() {
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
               <Text style={styles.purchasePermitText}>
-                Don't have a permit?{' '}
+                Don&apos;t have a permit?{' '}
                 <Text style={styles.purchasePermitLink}>Purchase one</Text>
               </Text>
             </TouchableOpacity>
@@ -304,7 +304,7 @@ export default function ParkingProfileScreen() {
             <Text style={styles.pickerTitle}>Which A-Reserved permit do you have?</Text>
             <Text style={styles.pickerSubtitle}>
               Some A-Reserved permits are only good in one specific lot. Pick your lot below,
-              or "Any A-Reserved lot" if yours isn't tied to just one.
+              or &quot;Any A-Reserved lot&quot; if yours isn&apos;t tied to just one.
             </Text>
             <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
               {aReservedGroup?.kind === 'group' &&
