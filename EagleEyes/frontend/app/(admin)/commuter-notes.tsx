@@ -155,7 +155,7 @@ export default function CommuterNotesScreen() {
         <TouchableOpacity onPress={() => router.replace('/(admin)/profile')} hitSlop={10}>
           <Ionicons name="chevron-back" size={27} color="#00853E" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notes from Commuters</Text>
+        <Text style={[styles.headerTitle, styles.headerTitleGreen]}>Notes from Commuters</Text>
         <View style={{ width: 27 }} />
       </View>
 
@@ -214,14 +214,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    backgroundColor: '#f5f5f5',
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 20,
     fontWeight: '700',
     color: '#1a1a1a',
+  },
+  headerTitleGreen: {
+    fontSize: 26,
+    color: '#00853E',
   },
   content: {
     padding: 16,
