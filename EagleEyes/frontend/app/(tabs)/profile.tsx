@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#1a1a1a',
-    fontWeight: '700',
+    fontWeight: '500',
   },
   rowLabelDanger: {
     color: '#D0021B',
