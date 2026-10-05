@@ -3,12 +3,14 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAlertsBadge } from '../context/AlertsBadgeContext';
 interface TopBarProps {
   role?: 'admin' | 'commuter'; 
 }
 export default function TopBar({ role = 'commuter' }: TopBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { unseenCount } = useAlertsBadge();
   return (
     <View style={[styles.topBar, { paddingTop: insets.top }]}>
       
@@ -33,7 +35,14 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
           style={styles.bellWrapper}
           onPress={() => router.push('/(tabs)/alerts')}
         >
-          <Ionicons name="notifications-outline" size={27} color="#333" />
+          <View>
+            <Ionicons name="notifications-outline" size={27} color="#333" />
+            {unseenCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unseenCount > 9 ? '9+' : unseenCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       )}
     </View>
@@ -78,5 +87,25 @@ const styles = StyleSheet.create({
     width: 50, 
     alignItems: 'flex-end',
     justifyContent: 'center' 
+  },
+
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: '#E02D2D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
   },
 });

@@ -2,6 +2,7 @@ import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-rout
 import { useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LotsProvider } from '../context/LotsContext';
+import { AlertsBadgeProvider } from '../context/AlertsBadgeContext';
 import { UserProvider } from '../context/UserContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -54,6 +55,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <LotsProvider>
+        <AlertsBadgeProvider>
         <UserProvider>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
@@ -73,6 +75,7 @@ export default function RootLayout() {
             <Stack.Screen name="reset-password" />
           </Stack>
         </UserProvider>
+        </AlertsBadgeProvider>
       </LotsProvider>
     </GestureHandlerRootView>
   );

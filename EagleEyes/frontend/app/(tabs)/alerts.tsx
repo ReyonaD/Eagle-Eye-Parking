@@ -13,8 +13,9 @@ import {
 import { getAlerts, BASE_URL } from '../../api/alerts';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { getAlertVisual, getCategoryLabel } from '../../utils/alertVisuals';
+import { useAlertsBadge } from '../../context/AlertsBadgeContext';
 
 type FilterType = 'All' | 'Hazard' | 'Event';
 
@@ -308,6 +309,17 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
 
 export default function AlertsScreen() {
   const router = useRouter();
+  const { refreshBadge, markAlertsSeen } = useAlertsBadge();
+
+  //entering this tab counts as "seen": refresh the latest max id, then clear the bell badge
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        await refreshBadge();
+        await markAlertsSeen();
+      })();
+    }, [refreshBadge, markAlertsSeen])
+  );
   const [filter, setFilter] = useState<FilterType>('All');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
