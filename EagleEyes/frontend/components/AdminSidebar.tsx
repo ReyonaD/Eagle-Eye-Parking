@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
+import { useAdminNotesBadge } from '../context/AdminNotesBadgeContext';
 
 //web-only replacement for the bottom tab bar - the primary admin
 //destinations, as a collapsible left rail under the logo (set by TopBar above
@@ -20,6 +21,7 @@ export default function AdminSidebar({
   onToggleCollapsed: () => void;
 }) {
   const pathname = usePathname();
+  const { pendingCount } = useAdminNotesBadge();
 
   return (
     <View style={[styles.sidebar, collapsed && styles.sidebarCollapsed]}>
@@ -38,13 +40,21 @@ export default function AdminSidebar({
         //highlighted while on them too.
         const matchPath = item.route.replace('/(admin)', '');
         const isActive = pathname === matchPath || pathname.startsWith(`${matchPath}/`);
+        const badgeCount = item.route === '/(admin)/commuter-notes' ? pendingCount : 0;
         return (
           <TouchableOpacity
             key={item.route}
             style={[styles.navItem, isActive && styles.navItemActive]}
             onPress={() => router.push(item.route as any)}
           >
-            <Ionicons name={item.icon as any} size={22} color={isActive ? '#00853E' : '#666'} />
+            <View>
+              <Ionicons name={item.icon as any} size={22} color={isActive ? '#00853E' : '#666'} />
+              {badgeCount > 0 && (
+                <View style={styles.navBadge}>
+                  <Text style={styles.navBadgeText}>{badgeCount > 9 ? '9+' : badgeCount}</Text>
+                </View>
+              )}
+            </View>
             {!collapsed && (
               <Text style={[styles.navLabel, isActive && styles.navLabelActive]} numberOfLines={1}>
                 {item.label}
@@ -109,5 +119,24 @@ const styles = StyleSheet.create({
   },
   navLabelActive: {
     color: '#00853E',
+  },
+  navBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: '#E02D2D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
+  navBadgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
   },
 });

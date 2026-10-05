@@ -56,17 +56,42 @@ class Alert(Base):
     #row was submitted. Null for hazards and for events created before this existed.
     event_start = Column(DateTime, nullable=True)
     event_end = Column(DateTime, nullable=True)
-    #admin reviewed a "Note to Admin" and acknowledged it; stays in 'pending'
-    #status either way (acknowledging never publishes a private note to
-    #commuters) - this is the separate signal the admin UI buckets notes on
-    acknowledged_at = Column(DateTime, nullable=True)
     #emails of every distinct commuter who reported/confirmed this; lets admins
     #see who to follow up with and is how we tell a genuine second confirmation
     #from the same person re-submitting the same report
     reporter_emails = Column(JSON, nullable=True, default=list)
 
 
+class Note(Base):
+    """
+    A private commuter -> admin message (e.g. "my car broke down in Lot 20,
+    back by 5pm"). Deliberately a separate table from Alert, not another
+    alert_type/category value:
+    - it's never meant to be published/broadcast, unlike hazards and events
+    - each note is one person's own situation, so the Alert dedup/merge
+      logic (multiple commuters confirming the SAME incident) doesn't apply
+      here and would incorrectly combine two unrelated people's notes about
+      the same lot
+    - fields like phone_number only ever make sense for a note, not for any
+      Alert category
+    """
+    __tablename__ = "notes"
 
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    description = Column(String, nullable=True)
+    lot_name = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    image_urls = Column(JSON, nullable=True, default=list)
+    #the commuter-provided window this note applies to (e.g. "car parked here
+    #until Friday 5pm")
+    event_start = Column(DateTime, nullable=True)
+    event_end = Column(DateTime, nullable=True)
+    reporter_email = Column(String, nullable=False)
+    #set when an admin reviews/acknowledges the note; null until then. Admin
+    #UI buckets notes into Pending/Active/Expired from this + event_end.
+    acknowledged_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"

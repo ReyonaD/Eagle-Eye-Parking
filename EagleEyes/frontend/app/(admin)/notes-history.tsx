@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { getPendingAlerts } from '../../api/alerts';
+import { getNotes } from '../../api/notes';
 import { Alert } from '../../utils/webCompat';
 import { toLocalDateString, formatDate, getEventRange } from '../../utils/eventDates';
 
@@ -22,10 +22,10 @@ export default function NotesHistoryScreen() {
   const fetchNotes = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      const all = await getPendingAlerts('event').catch(() => []);
+      const all = await getNotes();
       const now = Date.now();
       const expired = all
-        .filter((n: any) => n.category === 'Note to Admin' && getEventRange(n).end.getTime() < now)
+        .filter((n: any) => getEventRange(n).end.getTime() < now)
         .sort((a: any, b: any) => getEventRange(b).end.getTime() - getEventRange(a).end.getTime());
       setNotes(expired);
     } catch {

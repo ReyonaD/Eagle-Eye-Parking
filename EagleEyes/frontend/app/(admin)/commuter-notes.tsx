@@ -1,14 +1,18 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Platform,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Platform, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Alert } from '../../utils/webCompat';
-import { getPendingAlerts, acknowledgeAlert } from '../../api/alerts';
+import { BASE_URL } from '../../api/alerts';
+import { getNotes, acknowledgeNote } from '../../api/notes';
 import { useFocusPolling } from '../../hooks/use-focus-polling';
-import { parseUTC, toLocalDateString, getTodayDateString, formatDate, getEventRange } from '../../utils/eventDates';
+import {
+  parseUTC, toLocalDateString, getTodayDateString, formatDate, getEventRange,
+  classifyNote, NoteBucket,
+} from '../../utils/eventDates';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -30,16 +34,8 @@ const formatDateTime = (isoString?: string | null) => {
   return `${dateStr} ${time}`;
 };
 
-type Bucket = 'pending' | 'active' | 'expired';
-
-//a note's lane: its commuter-provided timeline (event_start/event_end) wins
-//over acknowledgement - once the window has passed it's Expired regardless,
-//otherwise it's Active once acknowledged, or still waiting on review
-function classify(note: any): Bucket {
-  const { end } = getEventRange(note);
-  if (end.getTime() < Date.now()) return 'expired';
-  return note.acknowledged_at ? 'active' : 'pending';
-}
+type Bucket = NoteBucket;
+const classify = classifyNote;
 
 // ─── NoteCard ─────────────────────────────────────────────────────────────────
 
@@ -136,6 +132,9 @@ function NoteDetail({
           <Text style={styles.locationLabel}>
             LOT: <Text style={styles.locationValue}>{note.lot_name ?? 'Not specified'}</Text>
           </Text>
+          <Text style={styles.locationLabel}>
+            PHONE: <Text style={styles.locationValue}>{note.phone_number || 'Not provided'}</Text>
+          </Text>
           <Text style={styles.locationLabel}>MESSAGE:</Text>
           <Text style={styles.locationValue}>{note.description || 'No message provided'}</Text>
         </View>
@@ -149,9 +148,17 @@ function NoteDetail({
           </Text>
         </View>
 
-        {Array.isArray(note.reporter_emails) && note.reporter_emails.length > 0 && (
+        {Array.isArray(note.image_urls) && note.image_urls.length > 0 && (
+          <View style={styles.photoRow}>
+            {note.image_urls.map((url: string) => (
+              <Image key={url} source={{ uri: `${BASE_URL}${url}` }} style={styles.photoThumb} />
+            ))}
+          </View>
+        )}
+
+        {!!note.reporter_email && (
           <Text style={styles.reporterEmails} numberOfLines={2}>
-            REPORTED BY: {note.reporter_emails.join(', ')}
+            REPORTED BY: {note.reporter_email}
           </Text>
         )}
       </ScrollView>
@@ -184,11 +191,7 @@ export default function CommuterNotesScreen() {
   const fetchNotes = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      //notes-to-admin are created by commuters, so they always land as
-      //alert_type='event', status='pending' - and stay 'pending' forever,
-      //since acknowledging one never publishes it to the commuter feed
-      const all = await getPendingAlerts('event').catch(() => []);
-      setNotes(all.filter((n: any) => n.category === 'Note to Admin'));
+      setNotes(await getNotes());
     } catch {
       Alert.alert('Error', 'Could not load notes from commuters.');
     } finally {
@@ -225,7 +228,7 @@ export default function CommuterNotesScreen() {
 
   const handleAcknowledge = async (note: any) => {
     try {
-      await acknowledgeAlert(note.id);
+      await acknowledgeNote(note.id);
       setSelectedNote(null);
       fetchNotes();
     } catch {
@@ -255,7 +258,8 @@ export default function CommuterNotesScreen() {
           <TouchableOpacity onPress={() => router.replace('/(admin)/profile')} hitSlop={10}>
             <Ionicons name="chevron-back" size={27} color="#00853E" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Notes from Commuters</Text>
+          {/* matches the approved prototype's measured scale/color for this title */}
+          <Text style={[styles.headerTitle, styles.headerTitleGreen]}>Notes from Commuters</Text>
           <View style={{ width: 27 }} />
         </View>
       )}
@@ -354,11 +358,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    backgroundColor: '#f5f5f5',
   },
   headerTitle: { fontSize: 17, fontWeight: '700', color: '#1a1a1a' },
+  //matches the approved prototype's measured scale for this title
+  headerTitleGreen: { fontSize: 26, color: '#00853E' },
   screenTitle: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 4 },
   subtitle: { fontSize: 14, color: '#666', marginBottom: 20, marginTop: 16, paddingHorizontal: 16 },
 
@@ -471,6 +475,8 @@ const styles = StyleSheet.create({
   locationLabel: { fontSize: 13, fontWeight: '700', color: '#555', textTransform: 'uppercase', marginBottom: 14 },
   locationValue: { fontWeight: '400', textTransform: 'none', color: '#333' },
   reporterEmails: { fontSize: 12, color: '#777', marginTop: 4 },
+  photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
+  photoThumb: { width: 100, height: 100, borderRadius: 8, backgroundColor: '#e8e8e8' },
   actionRow: {
     paddingHorizontal: 16,
     paddingTop: 12,

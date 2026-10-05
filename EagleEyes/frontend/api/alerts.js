@@ -145,21 +145,3 @@ export const upvoteAlert = async (alertId) => {
         throw error;
     }
 }
-
-// PUT: Admin acknowledges a "Note to Admin" (admin-only). Never changes
-// status - a note stays 'pending' forever since it's a private message,
-// not something to publish to the commuter feed.
-export const acknowledgeAlert = async (alertId) => {
-    const token = await AsyncStorage.getItem('token');
-    try {
-        const response = await apiFetch(`${BASE_URL}/alerts/${alertId}/acknowledge`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (!response.ok) throw new Error('Failed to acknowledge note');
-        return await response.json();
-    } catch (error) {
-        console.error("API Error (acknowledgeAlert):", error);
-        throw error;
-    }
-};

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAlertsBadge } from '../context/AlertsBadgeContext';
+import { useAdminNotesBadge } from '../context/AdminNotesBadgeContext';
 import AdminAccountMenu from './AdminAccountMenu';
 
 const IS_WEB = Platform.OS === 'web';
@@ -15,9 +16,12 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { unseenCount } = useAlertsBadge();
+  //safe to call even on the commuter side, where no provider is mounted -
+  //see useAdminNotesBadge's own comment for why
+  const { pendingCount } = useAdminNotesBadge();
   return (
     <View style={[styles.topBar, { paddingTop: insets.top }]}>
-      
+
       <View style={styles.leftGroup}>
         <Image
           source={require('../assets/images/updated_logo_Oct.webp')}
@@ -36,7 +40,14 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
               onPress={() => router.push('/(admin)/commuter-notes')}
               accessibilityLabel="Notes from Commuters"
             >
-              <Ionicons name="document-text-outline" size={27} color="#333" />
+              <View>
+                <Ionicons name="document-text-outline" size={27} color="#333" />
+                {pendingCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{pendingCount > 9 ? '9+' : pendingCount}</Text>
+                  </View>
+                )}
+              </View>
             </TouchableOpacity>
           )}
           {/* mobile keeps the Profile tab (with its own Log Out) untouched;
@@ -63,33 +74,33 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
 }
 
 const styles = StyleSheet.create({
-  // Top Bar Container 
-  topBar: { 
-    flexDirection: 'row', 
-    alignItems: 'center',  
-    backgroundColor: '#fff', 
-    paddingHorizontal: 12, 
-    paddingVertical: 8, 
-    //paddingTop: 50, 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#eee', 
+  // Top Bar Container
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    //paddingTop: 50,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
     zIndex: 20,
-    justifyContent: 'space-between' 
+    justifyContent: 'space-between'
   },
-  
+
   // New wrapper to keep them side-by-side on the left
   leftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  
+
   //new lockup is a wide icon+wordmark image (1994x789, ~2.53:1), unlike the
   //old square icon-only mark, so it carries its own "EagleEyes" name now
   logo: {
     width: 196,
     height: 77,
   },
-  
+
   bellWrapper: {
     width: 50,
     alignItems: 'flex-end',

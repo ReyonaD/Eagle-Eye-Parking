@@ -51,3 +51,16 @@ export const stripScheduleFromDescription = (description: string): string => {
   const splitAt = description.indexOf('\n\n');
   return splitAt === -1 ? '' : description.slice(splitAt + 2);
 };
+
+export type NoteBucket = 'pending' | 'active' | 'expired';
+
+//a "Note to Admin"'s lane: its commuter-provided timeline (event_start/
+//event_end) wins over acknowledgement - once the window has passed it's
+//Expired regardless, otherwise it's Active once acknowledged, or still
+//waiting on review. Shared by the Notes screen and the admin badge count,
+//so both always agree on what counts as "needs review."
+export const classifyNote = (note: any): NoteBucket => {
+  const { end } = getEventRange(note);
+  if (end.getTime() < Date.now()) return 'expired';
+  return note.acknowledged_at ? 'active' : 'pending';
+};

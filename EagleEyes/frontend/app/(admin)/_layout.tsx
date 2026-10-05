@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import TopBar from '../../components/TopBar';
 import AdminSidebar from '../../components/AdminSidebar';
+import { AdminNotesBadgeProvider } from '../../context/AdminNotesBadgeContext';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -12,6 +13,7 @@ export default function AdminLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
+    <AdminNotesBadgeProvider>
     <View style={{ flex: 1 }}>
       <TopBar role="admin" />
 
@@ -104,6 +106,7 @@ export default function AdminLayout() {
         </View>
       </View>
     </View>
+    </AdminNotesBadgeProvider>
   );
 }
 

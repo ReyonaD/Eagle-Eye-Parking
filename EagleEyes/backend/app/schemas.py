@@ -46,8 +46,29 @@ class AlertResponse(BaseModel):
     event_end: Optional[datetime] = None
     #emails of every distinct commuter who reported/confirmed this; admin-only context, not shown to commuters
     reporter_emails: Optional[List[str]] = []
-    #set when an admin acknowledges a "Note to Admin"; null until then
+
+class NoteCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    lot_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    #URLs returned by POST /alerts/upload-image, attached before the note is created
+    image_urls: Optional[List[str]] = None
+    event_start: Optional[datetime] = None
+    event_end: Optional[datetime] = None
+
+class NoteResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    lot_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    image_urls: Optional[List[str]] = []
+    event_start: Optional[datetime] = None
+    event_end: Optional[datetime] = None
+    reporter_email: str
     acknowledged_at: Optional[datetime] = None
+    created_at: datetime
 
 class AlertApprove(BaseModel):
     #optional edits the admin can make while approving a pending report

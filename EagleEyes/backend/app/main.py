@@ -16,8 +16,8 @@ from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
-from app.models import User, Alert, PasswordResetToken
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.models import User, Alert, Note, PasswordResetToken
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, NoteCreate, NoteResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
@@ -32,7 +32,6 @@ with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reporter_emails JSON"))
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS event_start TIMESTAMP"))
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS event_end TIMESTAMP"))
-    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMP"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS permit_type VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT FALSE"))
@@ -689,10 +688,13 @@ def create_alert(
 
     alert_type = alert_data.alert_type.lower()
 
-    #a lot-less report can't be confirmed as "the same incident" as another
-    #lot-less report, so only dedupe when a lot was actually picked
+    #dedup/merge models "multiple different commuters independently reporting
+    #the same hazard" - it never applies to admin posts (there's no multi-
+    #reporter confirmation signal when it's the same admin posting twice),
+    #and a lot-less report can't be confirmed as "the same incident" as
+    #another lot-less report, so only dedupe for commuters with a lot picked
     existing = None
-    if alert_data.lot_name:
+    if current_user.role != "admin" and alert_data.lot_name:
         existing = db.query(Alert).filter(
             Alert.alert_type == alert_type,
             Alert.category == alert_data.category,
@@ -761,25 +763,57 @@ def upvote_alert(
 
     return alert
 
-@app.put("/alerts/{alert_id}/acknowledge", response_model=AlertResponse)
-def acknowledge_alert(
-    alert_id: int,
+#─── Notes (private commuter -> admin messages; see Note model for why this
+#is its own table instead of another Alert category) ────────────────────────
+
+@app.post("/notes", response_model=NoteResponse)
+def create_note(
+    note_data: NoteCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if note_data.image_urls and len(note_data.image_urls) > MAX_IMAGES_PER_ALERT:
+        raise HTTPException(status_code=400, detail=f"A note can include at most {MAX_IMAGES_PER_ALERT} photos")
+
+    new_note = Note(
+        title=note_data.title.strip(),
+        description=note_data.description,
+        lot_name=note_data.lot_name,
+        phone_number=note_data.phone_number,
+        image_urls=note_data.image_urls or [],
+        event_start=note_data.event_start,
+        event_end=note_data.event_end,
+        reporter_email=current_user.email,
+    )
+    db.add(new_note)
+    db.commit()
+    db.refresh(new_note)
+    return new_note
+
+@app.get("/notes", response_model=List[NoteResponse])
+def get_notes(
     db: Session = Depends(get_db),
     current_role: str = Depends(require_admin)
 ):
-    """
-    Admin acknowledges a 'Note to Admin'. Deliberately does NOT change
-    status - these stay 'pending' forever since they're private messages to
-    admins, never something that should get published to the commuter feed.
-    """
-    alert = db.query(Alert).filter(Alert.id == alert_id).first()
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alert not found or already resolved.")
+    """Admin-only: every note to admin, newest first. The admin UI buckets
+    these into Acknowledgment Pending/Active/Expired client-side from
+    event_end and acknowledged_at - there's no server-side status filter."""
+    return db.query(Note).order_by(desc(Note.created_at)).all()
 
-    alert.acknowledged_at = datetime.now(timezone.utc)
+@app.put("/notes/{note_id}/acknowledge", response_model=NoteResponse)
+def acknowledge_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    note = db.query(Note).filter(Note.id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found.")
+
+    note.acknowledged_at = datetime.now(timezone.utc)
     db.commit()
-    db.refresh(alert)
-    return alert
+    db.refresh(note)
+    return note
 
 @app.put("/alerts/{alert_id}/approve", response_model=AlertResponse)
 def approve_alert(
