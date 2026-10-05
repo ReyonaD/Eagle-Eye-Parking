@@ -12,6 +12,7 @@ import LotPickerModal from '../../components/LotPickerModal';
 import { Alert } from '../../utils/webCompat';
 import { HAZARD_CATEGORIES as ALERT_TYPES } from '../../utils/alertVisuals';
 
+const IS_WEB = Platform.OS === 'web';
 const MAX_PHOTOS = 3;
 
 //on native, uri alone is enough for RN's fetch polyfill; on web, expo-image-picker
@@ -125,9 +126,10 @@ export default function PostAlertScreen() {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
+        {IS_WEB && <Text style={styles.screenTitle}>Post New Alert</Text>}
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace(backDestination)}>
-          <Ionicons name="chevron-back" size={20} color="#00853E" />
-          <Text style={styles.backText}>Back</Text>
+          {!IS_WEB && <Ionicons name="chevron-back" size={20} color="#00853E" />}
+          <Text style={styles.backText}>{IS_WEB ? 'Cancel' : 'Back'}</Text>
         </TouchableOpacity>
 
         {/* Alert title */}
@@ -258,6 +260,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   scroll: { padding: 20, paddingBottom: 40 },
 
+  screenTitle: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 16 },
   backButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
   backText: { color: '#00853E', fontSize: 16, fontWeight: '600' },
 

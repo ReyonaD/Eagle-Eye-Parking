@@ -89,6 +89,16 @@ export const getPendingAlerts = async (alertType) => {
     return await response.json();
 };
 
+// GET: Admin history of reports an admin declined (admin-only)
+export const getDeclinedAlerts = async (alertType) => {
+    const token = await AsyncStorage.getItem('token');
+    const response = await apiFetch(`${BASE_URL}/alerts/declined?alert_type=${alertType}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch declined reports');
+    return await response.json();
+};
+
 // PUT: Admin approves a pending report, optionally with edits (admin-only)
 export const approveAlert = async (alertId, edits = {}) => {
     const token = await AsyncStorage.getItem('token');
@@ -135,3 +145,21 @@ export const upvoteAlert = async (alertId) => {
         throw error;
     }
 }
+
+// PUT: Admin acknowledges a "Note to Admin" (admin-only). Never changes
+// status - a note stays 'pending' forever since it's a private message,
+// not something to publish to the commuter feed.
+export const acknowledgeAlert = async (alertId) => {
+    const token = await AsyncStorage.getItem('token');
+    try {
+        const response = await apiFetch(`${BASE_URL}/alerts/${alertId}/acknowledge`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error('Failed to acknowledge note');
+        return await response.json();
+    } catch (error) {
+        console.error("API Error (acknowledgeAlert):", error);
+        throw error;
+    }
+};

@@ -18,6 +18,8 @@ import { promoteToAdmin, getAdmins, grantOwner, revokeAdmin } from '../../api/au
 import { useUser } from '../../context/UserContext';
 import { Alert } from '../../utils/webCompat';
 
+const IS_WEB = Platform.OS === 'web';
+
 interface AdminRow {
   id: number;
   email: string;
@@ -130,13 +132,21 @@ export default function AdminManagementScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.replace('/(admin)/profile')} hitSlop={10}>
-            <Ionicons name="chevron-back" size={27} color="#00853E" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Admin Management</Text>
-          <View style={{ width: 27 }} />
-        </View>
+        {/* web is reached from the account menu / sidebar, not a navigation
+            stack, so a page title replaces the mobile-style back header */}
+        {IS_WEB ? (
+          <View style={styles.webHeader}>
+            <Text style={styles.screenTitle}>Admin Management</Text>
+          </View>
+        ) : (
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.replace('/(admin)/profile')} hitSlop={10}>
+              <Ionicons name="chevron-back" size={27} color="#00853E" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Admin Management</Text>
+            <View style={{ width: 27 }} />
+          </View>
+        )}
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
           <Text style={styles.subtitle}>Promote commuters and manage who has admin access</Text>
@@ -264,6 +274,15 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: '#1a1a1a',
+  },
+  webHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+  },
+  screenTitle: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    color: '#00853E',
   },
   content: {
     padding: 16,

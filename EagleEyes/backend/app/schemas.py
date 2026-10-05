@@ -27,6 +27,9 @@ class AlertCreate(BaseModel):
     lot_name: Optional[str] = None
     #URLs returned by POST /alerts/upload-image, attached before the report is created
     image_urls: Optional[List[str]] = None
+    #events only: when it actually starts/ends, distinct from when the report was submitted
+    event_start: Optional[datetime] = None
+    event_end: Optional[datetime] = None
 
 class AlertResponse(BaseModel):
     id: int
@@ -39,6 +42,12 @@ class AlertResponse(BaseModel):
     status: Optional[str] = "published"
     lot_name: Optional[str] = None
     image_urls: Optional[List[str]] = []
+    event_start: Optional[datetime] = None
+    event_end: Optional[datetime] = None
+    #emails of every distinct commuter who reported/confirmed this; admin-only context, not shown to commuters
+    reporter_emails: Optional[List[str]] = []
+    #set when an admin acknowledges a "Note to Admin"; null until then
+    acknowledged_at: Optional[datetime] = None
 
 class AlertApprove(BaseModel):
     #optional edits the admin can make while approving a pending report

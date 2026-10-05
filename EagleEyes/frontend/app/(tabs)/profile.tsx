@@ -185,7 +185,7 @@ export function ProfileScreen() {
           >
             <View style={styles.permitEmptyIconWrap}>
               <Image
-                source={require('../../assets/images/Logo_EagleEye.png')}
+                source={require('../../assets/images/updated_logo_Oct.webp')}
                 style={styles.permitEmptyLogo}
                 resizeMode="contain"
               />
@@ -378,18 +378,21 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
+  //new lockup is a wide icon+wordmark image (~2.53:1), not the old square
+  //icon-only mark, so this badge is now a pill instead of a circle
   permitEmptyIconWrap: {
-    width: 44,
+    width: 78,
     height: 44,
     borderRadius: 22,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    paddingHorizontal: 6,
   },
   permitEmptyLogo: {
-    width: 28,
-    height: 28,
+    width: 66,
+    height: 26,
   },
   permitEmptyTextWrap: {
     flex: 1,

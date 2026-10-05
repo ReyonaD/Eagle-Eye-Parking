@@ -29,6 +29,10 @@ with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'published'"))
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS lot_name VARCHAR"))
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS image_urls JSON"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reporter_emails JSON"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS event_start TIMESTAMP"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS event_end TIMESTAMP"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMP"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS permit_type VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT FALSE"))
@@ -627,7 +631,20 @@ def get_pending_alerts(
             .filter(Alert.alert_type == alert_type, Alert.status == "pending")\
             .order_by(desc(Alert.created_at))\
             .all()
-    
+
+@app.get("/alerts/declined", response_model=List[AlertResponse])
+def get_declined_alerts(
+    alert_type: str = Query(..., description="Must be 'hazard' or 'event'"),
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin-only history of reports an admin declined, kept instead of hard-deleted."""
+    return db.query(Alert)\
+            .filter(Alert.alert_type == alert_type, Alert.status == "declined")\
+            .order_by(desc(Alert.created_at))\
+            .all()
+
+
 @app.post("/alerts/upload-image")
 async def upload_alert_image(
     file: UploadFile = File(...),
@@ -657,6 +674,10 @@ async def upload_alert_image(
 
     return {"image_url": f"/uploads/{filename}"}
 
+#reports for the same lot+hazard type stay "live" for this long; a report older
+#than this is treated as resolved/stale and no longer absorbs new duplicates
+DUPLICATE_REPORT_WINDOW = timedelta(hours=48)
+
 @app.post("/alerts", response_model=AlertResponse)
 def create_alert(
     alert_data: AlertCreate,
@@ -666,15 +687,59 @@ def create_alert(
     if alert_data.image_urls and len(alert_data.image_urls) > MAX_IMAGES_PER_ALERT:
         raise HTTPException(status_code=400, detail=f"A report can include at most {MAX_IMAGES_PER_ALERT} photos")
 
+    alert_type = alert_data.alert_type.lower()
+
+    #a lot-less report can't be confirmed as "the same incident" as another
+    #lot-less report, so only dedupe when a lot was actually picked
+    existing = None
+    if alert_data.lot_name:
+        existing = db.query(Alert).filter(
+            Alert.alert_type == alert_type,
+            Alert.category == alert_data.category,
+            Alert.lot_name == alert_data.lot_name,
+            Alert.status.in_(["pending", "published"]),
+            Alert.created_at >= datetime.now(timezone.utc) - DUPLICATE_REPORT_WINDOW,
+        ).order_by(desc(Alert.created_at)).first()
+
+    if existing:
+        #merge in any new photos this report added, up to the per-alert cap
+        merged_images = list(existing.image_urls or [])
+        for url in (alert_data.image_urls or []):
+            if url not in merged_images and len(merged_images) < MAX_IMAGES_PER_ALERT:
+                merged_images.append(url)
+        existing.image_urls = merged_images
+
+        #fold in a differing description so admins don't lose the new detail
+        if alert_data.description and alert_data.description != existing.description:
+            existing.description = (
+                f"{existing.description}\nAlso reported: {alert_data.description}"
+                if existing.description else alert_data.description
+            )
+
+        #the same person re-reporting isn't a second confirmation - only a
+        #new distinct reporter should bump the "N students reported this" count
+        reporters = list(existing.reporter_emails or [])
+        if current_user.email not in reporters:
+            reporters.append(current_user.email)
+            existing.reporter_emails = reporters
+            existing.upvotes = len(reporters)
+
+        db.commit()
+        db.refresh(existing)
+        return existing
+
     #admin posts go live immediately; commuter reports wait for admin review
     new_alert = Alert(
         title=alert_data.title.upper(),
-        alert_type=alert_data.alert_type.lower(),
+        alert_type=alert_type,
         category=alert_data.category,
         description=alert_data.description,
         lot_name=alert_data.lot_name,
         image_urls=alert_data.image_urls or [],
-        status="published" if current_user.role == "admin" else "pending"
+        status="published" if current_user.role == "admin" else "pending",
+        reporter_emails=[current_user.email],
+        event_start=alert_data.event_start,
+        event_end=alert_data.event_end,
     )
     db.add(new_alert)
     db.commit()
@@ -694,6 +759,26 @@ def upvote_alert(
     db.commit()
     db.refresh(alert)
 
+    return alert
+
+@app.put("/alerts/{alert_id}/acknowledge", response_model=AlertResponse)
+def acknowledge_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """
+    Admin acknowledges a 'Note to Admin'. Deliberately does NOT change
+    status - these stay 'pending' forever since they're private messages to
+    admins, never something that should get published to the commuter feed.
+    """
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found or already resolved.")
+
+    alert.acknowledged_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(alert)
     return alert
 
 @app.put("/alerts/{alert_id}/approve", response_model=AlertResponse)
@@ -728,11 +813,23 @@ def remove_alert(
     db: Session = Depends(get_db),
     current_role: str = Depends(require_admin)
 ):
+    """
+    One endpoint, three outcomes depending on the report's current status:
+    - pending   -> decline it: keep the row as 'declined' instead of erasing
+                   it, so admins can see what's been turned down
+    - published -> resolved hazard being pulled off the live feed: gone for good
+    - declined  -> admin clearing out old rejected history: gone for good
+    """
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code= 404, detail="Alert not found or already resolved.")
+
+    if alert.status == "pending":
+        alert.status = "declined"
+        db.commit()
+        return {"message": "Report declined."}
+
     db.delete(alert)
     db.commit()
-
     return {"message": "Alert successfully resolved and removed from the feed."}
 

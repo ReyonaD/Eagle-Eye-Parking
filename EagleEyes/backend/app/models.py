@@ -51,6 +51,19 @@ class Alert(Base):
     #URLs (relative to the backend) of photos attached to the report
     image_urls = Column(JSON, nullable=True, default=list)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    #for alert_type='event': when the event actually starts/ends, as picked by
+    #the admin in the form - distinct from created_at, which is just when the
+    #row was submitted. Null for hazards and for events created before this existed.
+    event_start = Column(DateTime, nullable=True)
+    event_end = Column(DateTime, nullable=True)
+    #admin reviewed a "Note to Admin" and acknowledged it; stays in 'pending'
+    #status either way (acknowledging never publishes a private note to
+    #commuters) - this is the separate signal the admin UI buckets notes on
+    acknowledged_at = Column(DateTime, nullable=True)
+    #emails of every distinct commuter who reported/confirmed this; lets admins
+    #see who to follow up with and is how we tell a genuine second confirmation
+    #from the same person re-submitting the same report
+    reporter_emails = Column(JSON, nullable=True, default=list)
 
 
 

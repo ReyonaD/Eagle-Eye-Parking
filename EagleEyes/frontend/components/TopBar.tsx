@@ -1,11 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAlertsBadge } from '../context/AlertsBadgeContext';
+import AdminAccountMenu from './AdminAccountMenu';
+
+const IS_WEB = Platform.OS === 'web';
+
 interface TopBarProps {
-  role?: 'admin' | 'commuter'; 
+  role?: 'admin' | 'commuter';
 }
 export default function TopBar({ role = 'commuter' }: TopBarProps) {
   const router = useRouter();
@@ -16,20 +20,29 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
       
       <View style={styles.leftGroup}>
         <Image
-          source={require('../assets/images/Logo_EagleEye.png')}
+          source={require('../assets/images/updated_logo_Oct.webp')}
           style={styles.logo}
+          resizeMode="contain"
         />
-        <Text style={styles.appNameLeft}>EagleEyes</Text>
       </View>
 
       {role === 'admin' ? (
-        <TouchableOpacity
-          style={styles.bellWrapper}
-          onPress={() => router.push('/(admin)/commuter-notes')}
-          accessibilityLabel="Notes from Commuters"
-        >
-          <Ionicons name="document-text-outline" size={27} color="#333" />
-        </TouchableOpacity>
+        <View style={styles.adminRightGroup}>
+          {/* on web this now lives in the sidebar instead; mobile keeps this
+              icon exactly as before, since mobile nav isn't changing */}
+          {!IS_WEB && (
+            <TouchableOpacity
+              style={styles.bellWrapper}
+              onPress={() => router.push('/(admin)/commuter-notes')}
+              accessibilityLabel="Notes from Commuters"
+            >
+              <Ionicons name="document-text-outline" size={27} color="#333" />
+            </TouchableOpacity>
+          )}
+          {/* mobile keeps the Profile tab (with its own Log Out) untouched;
+              this account menu is a web-only replacement for that tab */}
+          {IS_WEB && <AdminAccountMenu />}
+        </View>
       ) : (
         <TouchableOpacity
           style={styles.bellWrapper}
@@ -70,23 +83,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   
-  logo: { 
-    width: 90, 
-    height: 60, 
-    resizeMode: 'contain' 
+  //new lockup is a wide icon+wordmark image (1994x789, ~2.53:1), unlike the
+  //old square icon-only mark, so it carries its own "EagleEyes" name now
+  logo: {
+    width: 196,
+    height: 77,
   },
   
-  appNameLeft: { 
-    fontSize: 18, 
-    fontWeight: 'bold', 
-    color: '#00853E',
-    marginLeft: 4, // Adds a tiny gap between the logo and the text
-  },
-  
-  bellWrapper: { 
-    width: 50, 
+  bellWrapper: {
+    width: 50,
     alignItems: 'flex-end',
-    justifyContent: 'center' 
+    justifyContent: 'center'
+  },
+
+  adminRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
   },
 
   badge: {

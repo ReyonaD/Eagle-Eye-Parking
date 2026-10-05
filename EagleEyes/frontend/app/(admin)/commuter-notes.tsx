@@ -1,213 +1,353 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { Alert } from '../../utils/webCompat';
+import { getPendingAlerts, acknowledgeAlert } from '../../api/alerts';
+import { useFocusPolling } from '../../hooks/use-focus-polling';
+import { parseUTC, toLocalDateString, getTodayDateString, formatDate, getEventRange } from '../../utils/eventDates';
 
-interface CommuterNote {
-  id: string;
-  reason: string;
-  lot: string;
-  detail: string;
-  startTime: string;
-  endTime: string;
-  licensePlate: string;
-  phoneNumber: string;
-  photos: string[];
-  isNew: boolean;
+const IS_WEB = Platform.OS === 'web';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const getYesterdayDateString = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return toLocalDateString(d);
+};
+
+const formatDateTime = (isoString?: string | null) => {
+  if (!isoString) return 'Not specified';
+  const local = parseUTC(isoString);
+  const dateStr = toLocalDateString(local);
+  const time = local.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).replace(' ', '');
+  if (dateStr === getTodayDateString()) return `TODAY ${time}`;
+  if (dateStr === getYesterdayDateString()) return `YESTERDAY ${time}`;
+  return `${dateStr} ${time}`;
+};
+
+type Bucket = 'pending' | 'active' | 'expired';
+
+//a note's lane: its commuter-provided timeline (event_start/event_end) wins
+//over acknowledgement - once the window has passed it's Expired regardless,
+//otherwise it's Active once acknowledged, or still waiting on review
+function classify(note: any): Bucket {
+  const { end } = getEventRange(note);
+  if (end.getTime() < Date.now()) return 'expired';
+  return note.acknowledged_at ? 'active' : 'pending';
 }
 
-// MOCK DATA — matches the prototype's example notes. Replace with a real fetch
-// (GET /alerts/pending?alert_type=event, or a dedicated notes endpoint once the
-// backend collects start/end time, plate, and phone) and wire Acknowledge to a
-// real dismiss/delete call once the backend supports these fields.
-const MOCK_NOTES: CommuterNote[] = [
-  {
-    id: '1',
-    reason: 'Broken Car',
-    lot: 'Lot 20 - Eagle',
-    detail: "I'm in Lot 20 and the car key is locked inside. Waiting on a family member to bring the spare, but I need to head to class.",
-    startTime: '09/16 9:32 AM',
-    endTime: '24 hour',
-    licensePlate: 'EAGL392',
-    phoneNumber: '940-555-0148',
-    photos: ['Photo 1'],
-    isNew: true,
-  },
-  {
-    id: '2',
-    reason: 'Flat Tire, Waiting on Tow',
-    lot: 'Lot 39 - Eagle',
-    detail: 'Got a flat tire pulling in this morning. Tow truck is on the way and should have it cleared within a few hours.',
-    startTime: '09/17 6:50 AM',
-    endTime: '4 hours',
-    licensePlate: 'TXR8821',
-    phoneNumber: '940-555-0193',
-    photos: ['Photo 1'],
-    isNew: true,
-  },
-  {
-    id: '3',
-    reason: 'Dead Battery',
-    lot: 'Lot 13 - SV',
-    detail: 'Battery died overnight. Getting a jump after my first class, should be resolved by mid-morning.',
-    startTime: '09/17 7:40 AM',
-    endTime: '2 hours',
-    licensePlate: 'UNT4456',
-    phoneNumber: '940-555-0207',
-    photos: [],
-    isNew: true,
-  },
-  {
-    id: '4',
-    reason: 'Out of Town on Game day',
-    lot: 'Lot 7 - Eagle',
-    detail: 'Traveling out of town for the game weekend — car will stay parked in the same spot the whole time.',
-    startTime: '09/15 12:17 AM',
-    endTime: '7 days',
-    licensePlate: 'EGL7710',
-    phoneNumber: '940-555-0164',
-    photos: [],
-    isNew: false,
-  },
-];
+// ─── NoteCard ─────────────────────────────────────────────────────────────────
+
+function NoteCard({ note, bucket, onPress }: { note: any; bucket: Bucket; onPress: () => void }) {
+  const { end } = getEventRange(note);
+  const isExpired = bucket === 'expired';
+  return (
+    <TouchableOpacity
+      style={[styles.card, isExpired && styles.cardOlder]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
+      <View style={styles.cardContent}>
+        <View style={styles.iconBox}>
+          <Ionicons name="document-text-outline" size={22} color="#00853E" />
+        </View>
+        <View style={styles.cardText}>
+          <Text style={[styles.cardTitle, isExpired && styles.olderText]} numberOfLines={1}>
+            {note.title}
+          </Text>
+          {!!note.lot_name && (
+            <Text style={[styles.cardLot, isExpired && styles.olderText]} numberOfLines={1}>
+              📍 {note.lot_name}
+            </Text>
+          )}
+          <Text style={[styles.cardTime, isExpired && styles.olderText]}>
+            {isExpired ? 'EXPIRED ' : 'UNTIL '}{formatDate(toLocalDateString(end))}
+          </Text>
+          <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── NoteColumn (web three-column layout) ──────────────────────────────────────
+
+function NoteColumn({
+  title,
+  accentColor,
+  notes,
+  bucket,
+  onPress,
+  emptyText,
+}: {
+  title: string;
+  accentColor: string;
+  notes: any[];
+  bucket: Bucket;
+  onPress: (n: any) => void;
+  emptyText: string;
+}) {
+  return (
+    <View style={[styles.webColumn, { borderLeftColor: accentColor }]}>
+      <Text style={[styles.webColumnTitle, { color: accentColor }]}>
+        {title} ({notes.length})
+      </Text>
+      <ScrollView style={styles.webColumnScroll} contentContainerStyle={styles.webColumnScrollContent}>
+        {notes.length === 0 ? (
+          <Text style={styles.emptyText}>{emptyText}</Text>
+        ) : (
+          notes.map(n => <NoteCard key={n.id} note={n} bucket={bucket} onPress={() => onPress(n)} />)
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+// ─── NoteDetail ───────────────────────────────────────────────────────────────
+
+function NoteDetail({
+  note,
+  bucket,
+  onBack,
+  onAcknowledge,
+}: {
+  note: any;
+  bucket: Bucket;
+  onBack: () => void;
+  onAcknowledge: (n: any) => void;
+}) {
+  return (
+    <>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 120 }}>
+        <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          {!IS_WEB && <Ionicons name="chevron-back" size={20} color="#00853E" />}
+          <Text style={styles.backText}>{IS_WEB ? 'Back to list' : 'Back'}</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.detailTitle}>{note.title}</Text>
+        <Text style={styles.detailTime}>SUBMITTED {formatDateTime(note.created_at)}</Text>
+
+        <View style={styles.detailCard}>
+          <Text style={styles.locationLabel}>
+            LOT: <Text style={styles.locationValue}>{note.lot_name ?? 'Not specified'}</Text>
+          </Text>
+          <Text style={styles.locationLabel}>MESSAGE:</Text>
+          <Text style={styles.locationValue}>{note.description || 'No message provided'}</Text>
+        </View>
+
+        <View style={styles.detailCard}>
+          <Text style={styles.locationLabel}>
+            START: <Text style={styles.locationValue}>{formatDateTime(note.event_start)}</Text>
+          </Text>
+          <Text style={styles.locationLabel}>
+            END: <Text style={styles.locationValue}>{formatDateTime(note.event_end)}</Text>
+          </Text>
+        </View>
+
+        {Array.isArray(note.reporter_emails) && note.reporter_emails.length > 0 && (
+          <Text style={styles.reporterEmails} numberOfLines={2}>
+            REPORTED BY: {note.reporter_emails.join(', ')}
+          </Text>
+        )}
+      </ScrollView>
+
+      {bucket === 'pending' && (
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.acknowledgeButton} onPress={() => onAcknowledge(note)}>
+            <Text style={styles.actionButtonText}>ACKNOWLEDGE</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
+const byCreatedAsc = (a: any, b: any) => parseUTC(a.created_at).getTime() - parseUTC(b.created_at).getTime();
+const byEndAsc = (a: any, b: any) => getEventRange(a).end.getTime() - getEventRange(b).end.getTime();
+const byEndDesc = (a: any, b: any) => getEventRange(b).end.getTime() - getEventRange(a).end.getTime();
 
 export default function CommuterNotesScreen() {
   const router = useRouter();
-  const [notes, setNotes] = useState<CommuterNote[]>(MOCK_NOTES);
-  const [selectedNote, setSelectedNote] = useState<CommuterNote | null>(null);
+  const { viewId } = useLocalSearchParams<{ viewId?: string }>();
+  const [notes, setNotes] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<any | null>(null);
 
-  const newNotes = notes.filter((n) => n.isNew);
-  const olderNotes = notes.filter((n) => !n.isNew);
-
-  const handleAcknowledge = (note: CommuterNote) => {
-    // TODO: call the real dismiss/delete endpoint once this is wired to the backend.
-    setNotes((prev) => prev.filter((n) => n.id !== note.id));
-    setSelectedNote(null);
+  const fetchNotes = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
+    try {
+      //notes-to-admin are created by commuters, so they always land as
+      //alert_type='event', status='pending' - and stay 'pending' forever,
+      //since acknowledging one never publishes it to the commuter feed
+      const all = await getPendingAlerts('event').catch(() => []);
+      setNotes(all.filter((n: any) => n.category === 'Note to Admin'));
+    } catch {
+      Alert.alert('Error', 'Could not load notes from commuters.');
+    } finally {
+      if (showLoading) setIsLoading(false);
+    }
   };
 
-  // Detail view — swapped in over the list rather than a separate route, so
-  // "Back" here just returns to the list instead of leaving the screen.
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchNotes(false);
+    setIsRefreshing(false);
+  };
+
+  useFocusEffect(
+    useCallback(() => { fetchNotes(); }, [])
+  );
+  //keep the queue fresh while the admin is looking at it
+  useFocusPolling(() => fetchNotes(false));
+
+  //the Expired-notes history page deep-links back here with ?viewId=<id>
+  const viewHandledRef = useRef(false);
+  useEffect(() => {
+    if (!viewId || viewHandledRef.current) return;
+    const found = notes.find(n => String(n.id) === String(viewId));
+    if (found) {
+      viewHandledRef.current = true;
+      setSelectedNote(found);
+    }
+  }, [viewId, notes]);
+
+  const pendingNotes = notes.filter(n => classify(n) === 'pending').sort(byCreatedAsc);
+  const activeNotes = notes.filter(n => classify(n) === 'active').sort(byEndAsc);
+  const expiredNotes = notes.filter(n => classify(n) === 'expired').sort(byEndDesc);
+
+  const handleAcknowledge = async (note: any) => {
+    try {
+      await acknowledgeAlert(note.id);
+      setSelectedNote(null);
+      fetchNotes();
+    } catch {
+      Alert.alert('Error', 'Could not acknowledge this note. Check your connection.');
+    }
+  };
+
   if (selectedNote) {
     return (
       <SafeAreaView style={styles.screen} edges={['right', 'left']}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setSelectedNote(null)} hitSlop={10}>
-            <Ionicons name="chevron-back" size={27} color="#00853E" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Note Details</Text>
-          <View style={{ width: 27 }} />
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-          <View style={styles.card}>
-            <Text style={styles.fieldLabel}>Reason: <Text style={styles.fieldValue}>{selectedNote.reason}</Text></Text>
-
-            <Text style={[styles.fieldLabel, styles.fieldLabelSpaced]}>Detail:</Text>
-            <Text style={styles.fieldValue}>{selectedNote.detail}</Text>
-
-            <Text style={[styles.fieldLabel, styles.fieldLabelSpaced]}>
-              Start time: <Text style={styles.fieldValue}>{selectedNote.startTime}</Text>
-            </Text>
-            <Text style={styles.fieldLabel}>
-              End time: <Text style={styles.fieldValue}>{selectedNote.endTime}</Text>
-            </Text>
-            <Text style={styles.fieldLabel}>
-              License Plate: <Text style={styles.fieldValue}>{selectedNote.licensePlate}</Text>
-            </Text>
-            <Text style={styles.fieldLabel}>
-              Phone Number: <Text style={styles.fieldValue}>{selectedNote.phoneNumber}</Text>
-            </Text>
-
-            {selectedNote.photos.length > 0 && (
-              <View style={styles.photoRow}>
-                {selectedNote.photos.map((photo, index) => (
-                  <View key={index} style={styles.photoPlaceholder}>
-                    <Text style={styles.photoPlaceholderText}>{photo}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={styles.acknowledgeBtn}
-              onPress={() => handleAcknowledge(selectedNote)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.acknowledgeBtnText}>ACKNOWLEDGE</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
+        <NoteDetail
+          note={selectedNote}
+          bucket={classify(selectedNote)}
+          onBack={() => setSelectedNote(null)}
+          onAcknowledge={handleAcknowledge}
+        />
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.screen} edges={['right', 'left']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace('/(admin)/profile')} hitSlop={10}>
-          <Ionicons name="chevron-back" size={27} color="#00853E" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notes from Commuters</Text>
-        <View style={{ width: 27 }} />
-      </View>
+      {/* web is reached from the sidebar, not a navigation stack, so a page
+          title replaces the mobile-style back header */}
+      {!IS_WEB && (
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.replace('/(admin)/profile')} hitSlop={10}>
+            <Ionicons name="chevron-back" size={27} color="#00853E" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Notes from Commuters</Text>
+          <View style={{ width: 27 }} />
+        </View>
+      )}
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <Text style={styles.subtitle}>Student updates on parked vehicles</Text>
+      {IS_WEB ? (
+        <View style={styles.webScreen}>
+          <Text style={styles.screenTitle}>Notes from Commuters</Text>
+          <Text style={styles.subtitle}>Student updates on parked vehicles</Text>
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 40 }} />
+          ) : (
+            <View style={styles.webColumnsRow}>
+              <NoteColumn
+                title="ACKNOWLEDGMENT PENDING"
+                accentColor="#E74C3C"
+                notes={pendingNotes}
+                bucket="pending"
+                onPress={setSelectedNote}
+                emptyText="Nothing waiting on review."
+              />
+              <NoteColumn
+                title="ACTIVE"
+                accentColor="#00853E"
+                notes={activeNotes}
+                bucket="active"
+                onPress={setSelectedNote}
+                emptyText="No active notes."
+              />
+              <NoteColumn
+                title="EXPIRED"
+                accentColor="#999"
+                notes={expiredNotes}
+                bucket="expired"
+                onPress={setSelectedNote}
+                emptyText="No expired notes."
+              />
+            </View>
+          )}
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.listScroll}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#00853E" />}
+        >
+          <Text style={styles.subtitle}>Student updates on parked vehicles</Text>
 
-        {notes.length === 0 ? (
-          <Text style={styles.emptyText}>No notes from commuters right now.</Text>
-        ) : (
-          <>
-            {newNotes.length > 0 && (
-              <>
-                <Text style={[styles.sectionLabel, styles.sectionLabelNew]}>NEW</Text>
-                {newNotes.map((note) => (
-                  <NoteCard key={note.id} note={note} onPress={() => setSelectedNote(note)} />
-                ))}
-              </>
-            )}
-            {olderNotes.length > 0 && (
-              <>
-                <Text style={styles.sectionLabel}>OLDER</Text>
-                {olderNotes.map((note) => (
-                  <NoteCard key={note.id} note={note} onPress={() => setSelectedNote(note)} />
-                ))}
-              </>
-            )}
-          </>
-        )}
-      </ScrollView>
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 40 }} />
+          ) : (
+            <>
+              {pendingNotes.length > 0 ? (
+                <>
+                  <Text style={styles.sectionLabel}>ACKNOWLEDGMENT PENDING</Text>
+                  {pendingNotes.map(n => (
+                    <NoteCard key={n.id} note={n} bucket="pending" onPress={() => setSelectedNote(n)} />
+                  ))}
+                </>
+              ) : (
+                <Text style={styles.emptyText}>Nothing waiting on review.</Text>
+              )}
+
+              {activeNotes.length > 0 && (
+                <>
+                  <Text style={[styles.sectionLabel, styles.activeLabel]}>ACTIVE</Text>
+                  {activeNotes.map(n => (
+                    <NoteCard key={n.id} note={n} bucket="active" onPress={() => setSelectedNote(n)} />
+                  ))}
+                </>
+              )}
+
+              {expiredNotes.length > 0 && (
+                <TouchableOpacity
+                  style={styles.historyLinkButton}
+                  onPress={() => router.push('/(admin)/notes-history')}
+                >
+                  <Ionicons name="time-outline" size={20} color="#999" />
+                  <Text style={styles.historyLinkText}>VIEW EXPIRED NOTES</Text>
+                  <Ionicons name="chevron-forward" size={18} color="#999" />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
 
-function NoteCard({ note, onPress }: { note: CommuterNote; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.cardTitleRow}>
-        <Text style={styles.cardTitle}>{note.reason}</Text>
-        <Text style={styles.cardLot}> {note.lot}</Text>
-      </View>
-      <Text style={styles.cardMeta}>Start: {note.startTime}</Text>
-      <Text style={styles.cardMeta}>End: {note.endTime}</Text>
-      <Text style={styles.cardHint}>Click for more details</Text>
-    </TouchableOpacity>
-  );
-}
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
+  screen: { flex: 1, backgroundColor: '#f5f5f5' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -218,126 +358,132 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1a1a1a',
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#999',
-    fontSize: 14,
-    fontStyle: 'italic',
-    marginTop: 40,
-  },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#1a1a1a' },
+  screenTitle: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 4 },
+  subtitle: { fontSize: 14, color: '#666', marginBottom: 20, marginTop: 16, paddingHorizontal: 16 },
+
+  // List
+  listScroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 100 },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '900',
-    color: '#888',
+    color: '#E74C3C',
     letterSpacing: 1.5,
     marginBottom: 10,
     marginTop: 8,
   },
-  sectionLabelNew: {
-    color: '#E74C3C',
-  },
+  activeLabel: { color: '#00853E' },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 10,
     marginBottom: 12,
+    padding: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 3,
     elevation: 2,
   },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    flexWrap: 'wrap',
-    marginBottom: 4,
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#1a1a1a',
-  },
-  cardLot: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    color: '#666',
-  },
-  cardMeta: {
-    fontSize: 12,
-    color: '#555',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  cardHint: {
-    fontSize: 10,
-    fontStyle: 'italic',
-    color: '#999',
-    fontWeight: 'bold',
-    textAlign: 'right',
-    marginTop: 6,
-  },
-  fieldLabel: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1a1a1a',
-    marginBottom: 4,
-  },
-  fieldLabelSpaced: {
-    marginTop: 14,
-  },
-  fieldValue: {
-    fontWeight: '400',
-    fontStyle: 'italic',
-    color: '#444',
-  },
-  photoRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 14,
-  },
-  photoPlaceholder: {
-    width: 90,
-    height: 90,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#ccc',
+  cardOlder: { opacity: 0.65 },
+  cardContent: { flexDirection: 'row', alignItems: 'center' },
+  iconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: '#e8f5ee',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 14,
   },
-  photoPlaceholderText: {
-    fontSize: 12,
-    color: '#999',
+  cardText: { flex: 1 },
+  cardTitle: { fontSize: 15, fontWeight: '900', color: '#1a1a1a', marginBottom: 2 },
+  cardLot: { fontSize: 12, color: '#00853E', fontWeight: '600', marginTop: 2 },
+  cardTime: { fontSize: 12, color: '#555', fontWeight: '600', marginTop: 4, textTransform: 'uppercase' },
+  clickDetails: { fontSize: 10, color: '#999', fontStyle: 'italic', fontWeight: 'bold', marginTop: 4 },
+  olderText: { color: '#999' },
+  emptyText: { fontSize: 14, color: '#999', fontStyle: 'italic', textAlign: 'center', marginTop: 40 },
+
+  historyLinkButton: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  historyLinkText: { flex: 1, fontSize: 14, fontWeight: '800', color: '#333', letterSpacing: 0.5 },
+
+  // Web: three-column Acknowledgment Pending / Active / Expired layout, each
+  // box bounded to the screen with its own internal scroll
+  webScreen: { flex: 1, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 16 },
+  webColumnsRow: { flex: 1, flexDirection: 'row', gap: 20 },
+  webColumn: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderLeftWidth: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  webColumnTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 10,
+  },
+  webColumnScroll: { flex: 1 },
+  webColumnScrollContent: { paddingHorizontal: 16, paddingBottom: 16 },
+
+  // Detail
+  backButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  backText: { color: '#00853E', fontSize: 16, fontWeight: '600' },
+  detailTitle: { fontSize: 28, fontWeight: '900', color: '#1a1a1a', marginBottom: 4 },
+  detailTime: {
+    fontSize: 13,
+    color: '#555',
     fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 20,
   },
-  acknowledgeBtn: {
+  detailCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  locationLabel: { fontSize: 13, fontWeight: '700', color: '#555', textTransform: 'uppercase', marginBottom: 14 },
+  locationValue: { fontWeight: '400', textTransform: 'none', color: '#333' },
+  reporterEmails: { fontSize: 12, color: '#777', marginTop: 4 },
+  actionRow: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+    backgroundColor: '#f5f5f5',
+    borderTopWidth: 1,
+    borderTopColor: '#e8e8e8',
+  },
+  acknowledgeButton: {
     backgroundColor: '#00853E',
     paddingVertical: 16,
     borderRadius: 10,
-    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 22,
   },
-  acknowledgeBtnText: {
-    color: '#fff',
-    fontWeight: '900',
-    fontSize: 16,
-    letterSpacing: 1,
-  },
+  actionButtonText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1 },
 });

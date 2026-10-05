@@ -5,13 +5,26 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { createAlert } from '../api/alerts';
 import LotPickerModal from '../components/LotPickerModal';
+import DatePickerModal from '../components/DatePickerModal';
 import { Alert } from '../utils/webCompat';
+
+//"YYYY-MM-DD" (react-native-calendars' dateString) -> "Mon D, YYYY"
+const formatDate = (dateString: string) => {
+  if (!dateString) return '';
+  const [year, month, day] = dateString.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const m = months[Number(month) - 1] ?? '';
+  return `${m} ${Number(day)}, ${year}`;
+};
 
 export default function ReportNoteScreen() {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [selectedLot, setSelectedLot] = useState<string | null>(null);
   const [showLotPicker, setShowLotPicker] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [activeDateField, setActiveDateField] = useState<'start' | 'end' | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
@@ -19,15 +32,29 @@ export default function ReportNoteScreen() {
       Alert.alert('Missing information', 'Add a subject and a message before submitting.');
       return;
     }
+    if (!startDate || !endDate) {
+      Alert.alert('Missing information', 'Let the admin know how long this will last by picking a start and end date.');
+      return;
+    }
+    if (endDate < startDate) {
+      Alert.alert('Invalid dates', 'The end date must be on or after the start date.');
+      return;
+    }
 
     setSubmitting(true);
     try {
+      //dates come from the calendar picker as local midnight; stored as plain
+      //calendar days since notes don't need time-of-day precision
+      const [sy, sm, sd] = startDate.split('-').map(Number);
+      const [ey, em, ed] = endDate.split('-').map(Number);
       await createAlert({
         title: title.trim(),
         alert_type: 'event',
         category: 'Note to Admin',
         description: message.trim(),
         lot_name: selectedLot || undefined,
+        event_start: new Date(sy, sm - 1, sd).toISOString(),
+        event_end: new Date(ey, em - 1, ed).toISOString(),
       });
       Alert.alert('Note sent', 'Your note was sent to the parking team for review.', [
         { text: 'OK', onPress: () => router.back() },
@@ -75,6 +102,24 @@ export default function ReportNoteScreen() {
           </View>
           <Ionicons name="chevron-forward" size={18} color="#888" />
         </TouchableOpacity>
+        <TouchableOpacity style={styles.lotButton} onPress={() => setActiveDateField('start')}>
+          <View style={styles.lotButtonLabel}>
+            <Ionicons name="calendar-outline" size={18} color={startDate ? '#00853E' : '#888'} />
+            <Text style={[styles.lotButtonText, startDate && styles.selectedLotText]}>
+              {startDate ? formatDate(startDate) : 'SELECT START DATE'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#888" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.lotButton} onPress={() => setActiveDateField('end')}>
+          <View style={styles.lotButtonLabel}>
+            <Ionicons name="calendar-outline" size={18} color={endDate ? '#00853E' : '#888'} />
+            <Text style={[styles.lotButtonText, endDate && styles.selectedLotText]}>
+              {endDate ? formatDate(endDate) : 'SELECT END DATE'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#888" />
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.submitButton, submitting && styles.submitDisabled]}
           onPress={handleSubmit}
@@ -87,6 +132,17 @@ export default function ReportNoteScreen() {
         visible={showLotPicker}
         onClose={() => setShowLotPicker(false)}
         onSelect={(lotName) => setSelectedLot(lotName)}
+      />
+      <DatePickerModal
+        visible={activeDateField !== null}
+        onClose={() => setActiveDateField(null)}
+        onSelect={(dateString) => {
+          if (activeDateField === 'start') setStartDate(dateString);
+          if (activeDateField === 'end') setEndDate(dateString);
+        }}
+        initialDate={(activeDateField === 'start' ? startDate : endDate) || undefined}
+        minDate={activeDateField === 'end' ? (startDate || undefined) : undefined}
+        title={activeDateField === 'start' ? 'Select start date' : 'Select end date'}
       />
     </SafeAreaView>
   );
