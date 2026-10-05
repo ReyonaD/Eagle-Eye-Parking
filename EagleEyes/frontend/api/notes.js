@@ -21,7 +21,10 @@ export const createNote = async (noteData) => {
             },
             body: JSON.stringify(noteData),
         });
-        if (!response.ok) throw new Error('Failed to submit note');
+        if (!response.ok) {
+            const body = await response.text();
+            throw new Error(`HTTP ${response.status}: ${body}`);
+        }
         return await response.json();
     } catch (error) {
         console.error("API Error (createNote):", error);
@@ -36,7 +39,10 @@ export const getNotes = async () => {
     const response = await apiFetch(`${BASE_URL}/notes`, {
         headers: { 'Authorization': `Bearer ${token}` },
     });
-    if (!response.ok) throw new Error('Failed to fetch notes');
+    if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`HTTP ${response.status}: ${body}`);
+    }
     return await response.json();
 };
 
@@ -48,7 +54,10 @@ export const acknowledgeNote = async (noteId) => {
             method: 'PUT',
             headers: { 'Authorization': `Bearer ${token}` },
         });
-        if (!response.ok) throw new Error('Failed to acknowledge note');
+        if (!response.ok) {
+            const body = await response.text();
+            throw new Error(`HTTP ${response.status}: ${body}`);
+        }
         return await response.json();
     } catch (error) {
         console.error("API Error (acknowledgeNote):", error);

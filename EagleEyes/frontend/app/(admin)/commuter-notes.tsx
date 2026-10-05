@@ -135,6 +135,11 @@ function NoteDetail({
           <Text style={styles.locationLabel}>
             PHONE: <Text style={styles.locationValue}>{note.phone_number || 'Not provided'}</Text>
           </Text>
+          <Text style={styles.locationLabel}>
+            LICENSE PLATE: <Text style={styles.locationValue}>
+              {note.plate_state || note.plate_number ? `${note.plate_state ?? ''} ${note.plate_number ?? ''}`.trim() : 'Not provided'}
+            </Text>
+          </Text>
           <Text style={styles.locationLabel}>MESSAGE:</Text>
           <Text style={styles.locationValue}>{note.description || 'No message provided'}</Text>
         </View>

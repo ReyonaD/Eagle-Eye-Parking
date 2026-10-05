@@ -52,6 +52,8 @@ class NoteCreate(BaseModel):
     description: Optional[str] = None
     lot_name: Optional[str] = None
     phone_number: Optional[str] = None
+    plate_state: Optional[str] = None
+    plate_number: Optional[str] = None
     #URLs returned by POST /alerts/upload-image, attached before the note is created
     image_urls: Optional[List[str]] = None
     event_start: Optional[datetime] = None
@@ -63,6 +65,8 @@ class NoteResponse(BaseModel):
     description: Optional[str] = None
     lot_name: Optional[str] = None
     phone_number: Optional[str] = None
+    plate_state: Optional[str] = None
+    plate_number: Optional[str] = None
     image_urls: Optional[List[str]] = []
     event_start: Optional[datetime] = None
     event_end: Optional[datetime] = None

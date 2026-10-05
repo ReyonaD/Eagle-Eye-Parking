@@ -37,6 +37,10 @@ with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT FALSE"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plate_state VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
+    #the notes table itself is new enough that create_all above already made
+    #it, but plate_state/plate_number were added after that first run
+    _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_state VARCHAR"))
+    _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
     _conn.commit()
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -780,6 +784,8 @@ def create_note(
         description=note_data.description,
         lot_name=note_data.lot_name,
         phone_number=note_data.phone_number,
+        plate_state=note_data.plate_state,
+        plate_number=note_data.plate_number,
         image_urls=note_data.image_urls or [],
         event_start=note_data.event_start,
         event_end=note_data.event_end,

@@ -82,6 +82,10 @@ class Note(Base):
     description = Column(String, nullable=True)
     lot_name = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
+    #the vehicle this note is about - may differ from the commuter's saved
+    #profile plate, so it's its own field here rather than read off User
+    plate_state = Column(String, nullable=True)
+    plate_number = Column(String, nullable=True)
     image_urls = Column(JSON, nullable=True, default=list)
     #the commuter-provided window this note applies to (e.g. "car parked here
     #until Friday 5pm")
