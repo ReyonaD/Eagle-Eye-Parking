@@ -1,6 +1,6 @@
 import { Tabs, usePathname } from 'expo-router';
 import React from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -26,13 +26,20 @@ export default function TabLayout() {
         tabBarInactiveTintColor: '#A3D1B6', // A faded green for the inactive tabs
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarLabelPosition: Platform.select({ web: 'beside-icon', default: 'below-icon' }),
+        tabBarItemStyle: Platform.select({
+          web: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+        }),
         tabBarStyle: {
-          paddingBottom: 5, 
-          paddingTop: 5,
+          ...Platform.select({
+            web: { height: 82, paddingBottom: 10, paddingTop: 10 },
+            default: { paddingBottom: 5, paddingTop: 5 },
+          }),
         },
         tabBarLabelStyle: {
           fontWeight: 'bold', 
-          fontSize: 12,
+          fontSize: Platform.select({ web: 15, default: 12 }),
+          ...Platform.select({ web: { marginTop: 0, marginLeft: 8 } }),
         }
       }}>
       <Tabs.Screen
@@ -40,7 +47,7 @@ export default function TabLayout() {
         options={{
           title: 'MAP',
           tabBarIcon: ({ color }) => (
-            <View style={{ transform: [{ translateY: 4 }] }}>
+            <View style={{ transform: [{ translateY: Platform.OS === 'web' ? 0 : 4 }] }}>
               <Ionicons name="map-outline" size={27} color={color} />
             </View>
           ),
@@ -51,7 +58,7 @@ export default function TabLayout() {
         options={{
           title: 'LOTS',
           tabBarIcon: ({ color }) => (
-            <View style={{ transform: [{ translateY: 4 }] }}>
+            <View style={{ transform: [{ translateY: Platform.OS === 'web' ? 0 : 4 }] }}>
               <Ionicons name="list-outline" size={27} color={color} />
             </View>
           ),
@@ -62,7 +69,7 @@ export default function TabLayout() {
         options={{
           title: 'PROFILE',
           tabBarIcon: ({ color }) => (
-            <View style={{ transform: [{ translateY: 4 }] }}>
+            <View style={{ transform: [{ translateY: Platform.OS === 'web' ? 0 : 4 }] }}>
               <Ionicons name="person-outline" size={27} color={color} />
             </View>
           ),

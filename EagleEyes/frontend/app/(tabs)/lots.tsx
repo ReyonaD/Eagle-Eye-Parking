@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
+  Pressable,
   Text,
   FlatList,
   TextInput,
@@ -803,21 +804,28 @@ export default function LotsScreen() {
 
       {/* Permit Picker Modal */}
       <Modal transparent animationType="fade" visible={permitPickerVisible} onRequestClose={() => setPermitPickerVisible(false)}>
-        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setPermitPickerVisible(false)}>
-          <View style={styles.pickerSheet}>
+        <View style={styles.pickerOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setPermitPickerVisible(false)} />
+          <View style={[styles.pickerSheet, { maxHeight: windowHeight * 0.9, paddingBottom: Math.max(insets.bottom - 12, 8) }]}>
             <Text style={styles.pickerTitle}>Filter by Permit</Text>
-            <TouchableOpacity style={styles.pickerOption} onPress={() => { setPermitFilter('all'); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
-              <Text style={[styles.pickerOptionText, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
-              {permitFilter === 'all' && <Ionicons name="checkmark" size={27} color="#00853E" />}
-            </TouchableOpacity>
-            {uniquePermits.map((p) => (
-              <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
-                <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
-                {permitFilter === p && <Ionicons name="checkmark" size={27} color="#00853E" />}
+            <ScrollView
+              style={[styles.permitOptions, { maxHeight: windowHeight * 0.68 }]}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+            >
+              <TouchableOpacity style={styles.pickerOption} onPress={() => { setPermitFilter('all'); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
+                <Text style={[styles.pickerOptionText, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
+                {permitFilter === 'all' && <Ionicons name="checkmark" size={27} color="#00853E" />}
               </TouchableOpacity>
-            ))}
+              {uniquePermits.map((p) => (
+                <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
+                  <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
+                  {permitFilter === p && <Ionicons name="checkmark" size={27} color="#00853E" />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* Availability Picker Modal */}
@@ -1382,6 +1390,9 @@ pageIndicator: {
     fontWeight: '800',
     color: '#1a1a1a',
     marginBottom: 14,
+  },
+  permitOptions: {
+    flexGrow: 0,
   },
   pickerOption: {
     flexDirection: 'row',

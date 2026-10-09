@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { Platform, View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,30 +10,36 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.topBar, { paddingTop: insets.top }]}>
+    <View
+      style={[
+        styles.topBar,
+        Platform.select({ web: styles.webTopBar }),
+        { paddingTop: insets.top },
+      ]}
+    >
       
       <View style={styles.leftGroup}>
         <Image
           source={require('../assets/images/Logo_EagleEye.png')}
-          style={styles.logo}
+          style={[styles.logo, Platform.select({ web: styles.webLogo })]}
         />
-        <Text style={styles.appNameLeft}>EagleEyes</Text>
+        <Text style={[styles.appNameLeft, Platform.select({ web: styles.webAppName })]}>EagleEyes</Text>
       </View>
 
       {role === 'admin' ? (
         <TouchableOpacity
-          style={styles.bellWrapper}
+          style={[styles.bellWrapper, Platform.select({ web: styles.webBellWrapper })]}
           onPress={() => router.push('/(admin)/commuter-notes')}
           accessibilityLabel="Notes from Commuters"
         >
-          <Ionicons name="document-text-outline" size={27} color="#333" />
+          <Ionicons name="document-text-outline" size={Platform.select({ web: 34, default: 27 })} color="#333" />
         </TouchableOpacity>
       ) : (
         <TouchableOpacity
-          style={styles.bellWrapper}
+          style={[styles.bellWrapper, Platform.select({ web: styles.webBellWrapper })]}
           onPress={() => router.push('/(tabs)/alerts')}
         >
-          <Ionicons name="notifications-outline" size={27} color="#333" />
+          <Ionicons name="notifications-outline" size={Platform.select({ web: 34, default: 27 })} color="#333" />
         </TouchableOpacity>
       )}
     </View>
@@ -54,6 +60,11 @@ const styles = StyleSheet.create({
     zIndex: 20,
     justifyContent: 'space-between' 
   },
+  webTopBar: {
+    minHeight: 104,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
   
   // New wrapper to keep them side-by-side on the left
   leftGroup: {
@@ -66,6 +77,10 @@ const styles = StyleSheet.create({
     height: 60, 
     resizeMode: 'contain' 
   },
+  webLogo: {
+    width: 126,
+    height: 78,
+  },
   
   appNameLeft: { 
     fontSize: 18, 
@@ -73,10 +88,17 @@ const styles = StyleSheet.create({
     color: '#00853E',
     marginLeft: 4, // Adds a tiny gap between the logo and the text
   },
+  webAppName: {
+    fontSize: 24,
+    marginLeft: 8,
+  },
   
   bellWrapper: { 
     width: 50, 
     alignItems: 'flex-end',
     justifyContent: 'center' 
+  },
+  webBellWrapper: {
+    width: 64,
   },
 });

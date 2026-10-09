@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { View, Image, Text, StyleSheet } from 'react-native';
+import { Platform, View, Image, Text, StyleSheet } from 'react-native';
 import TopBar from '../../components/TopBar';
 
 export default function AdminLayout() {
@@ -14,8 +14,21 @@ export default function AdminLayout() {
           headerShown: false,
           tabBarActiveTintColor: '#00853E',
           tabBarInactiveTintColor: '#A3D1B6',
-          tabBarLabelStyle: { fontWeight: 'bold', fontSize: 12 },
-          tabBarStyle: { paddingTop: 5 },
+          tabBarLabelPosition: Platform.select({ web: 'beside-icon', default: 'below-icon' }),
+          tabBarItemStyle: Platform.select({
+            web: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+          }),
+          tabBarLabelStyle: {
+            fontWeight: 'bold',
+            fontSize: Platform.select({ web: 15, default: 12 }),
+            ...Platform.select({ web: { marginTop: 0, marginLeft: 8 } }),
+          },
+          tabBarStyle: {
+            ...Platform.select({
+              web: { height: 82, paddingBottom: 10, paddingTop: 10 },
+              default: { paddingTop: 5 },
+            }),
+          },
         }}
       >
         <Tabs.Screen
