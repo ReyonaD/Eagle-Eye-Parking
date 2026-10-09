@@ -445,7 +445,7 @@ export default function AlertsScreen() {
         accessibilityRole="button"
         accessibilityLabel="Report a hazard"
       >
-        <Ionicons name="warning" size={30} color="#FACC15" />
+        <Ionicons name="warning" size={34} color="#FACC15" />
       </TouchableOpacity>
 
       <Modal
@@ -475,13 +475,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f9f9f9', // matches the app's overall background
   },
+  // same size/placement as the map tab's hazard button (index.tsx hazardFab)
+  // so it doesn't jump around when switching between the two tabs
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 80,
-    width: 48,
-    height: 48,
-    borderRadius: 8,
+    bottom: 60,
+    width: 56,
+    height: 56,
+    borderRadius: 10,
     backgroundColor: '#00853E',
     alignItems: 'center',
     justifyContent: 'center',

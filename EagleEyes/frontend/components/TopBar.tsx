@@ -24,7 +24,7 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
 
       <View style={styles.leftGroup}>
         <Image
-          source={require('../assets/images/updated_logo_Oct.webp')}
+          source={require('../assets/images/updated_logo_Oct_cropped.webp')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -41,7 +41,7 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
               accessibilityLabel="Notes from Commuters"
             >
               <View>
-                <Ionicons name="document-text-outline" size={27} color="#333" />
+                <Ionicons name="document-text-outline" size={32} color="#333" />
                 {pendingCount > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>{pendingCount > 9 ? '9+' : pendingCount}</Text>
@@ -60,7 +60,7 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
           onPress={() => router.push('/(tabs)/alerts')}
         >
           <View>
-            <Ionicons name="notifications-outline" size={27} color="#333" />
+            <Ionicons name="notifications-outline" size={32} color="#333" />
             {unseenCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unseenCount > 9 ? '9+' : unseenCount}</Text>
@@ -94,11 +94,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  //new lockup is a wide icon+wordmark image (1994x789, ~2.53:1), unlike the
-  //old square icon-only mark, so it carries its own "EagleEyes" name now
+  //new lockup is a wide icon+wordmark image, unlike the old square icon-only
+  //mark, so it carries its own "EagleEyes" name now. This is the version
+  //cropped to the artwork (1558x400, ~3.9:1); the uncropped file has ~50%
+  //empty padding, which made the visible logo tiny at header size
   logo: {
     width: 196,
-    height: 77,
+    height: 50,
   },
 
   bellWrapper: {
