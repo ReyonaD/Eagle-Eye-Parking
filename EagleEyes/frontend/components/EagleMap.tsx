@@ -3,10 +3,12 @@ import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import LotDetailsSheet from './LotDetailsSheet';
 import { Ionicons } from '@expo/vector-icons';
+import { nearestLotDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_DELTA } from '../utils/geo';
 
 interface EagleMapProps {
   liveLots: any[];
   selectedCampus?: string;
+  mapType?: 'standard' | 'satellite';
 }
 
 const CAMPUS_REGIONS: Record<string, { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }> = {
@@ -163,7 +165,7 @@ function getLotLabelCoordinate(
   })[0] || null;
 }
 
-export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: EagleMapProps) {
+export default function EagleMap({ liveLots, selectedCampus = "Main campus", mapType = "standard" }: EagleMapProps) {
   const mapRef = useRef<MapView>(null);
   const untRegion = CAMPUS_REGIONS["Main campus"];
   const [sheetLot, setSheetLot] = useState<any | null>(null);
@@ -179,6 +181,33 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
       mapRef.current?.animateToRegion(region, 800);
     }
   }, [selectedCampus]);
+
+  // On app entry, if the user is near a lot, zoom in on them instead of the
+  // default campus-wide view. Runs once, off the map's own first location
+  // fix (same pattern LotPickerModal already uses) rather than a separate
+  // permission/geolocation call.
+  const hasAutoZoomedRef = useRef(false);
+  const liveLotsRef = useRef(liveLots);
+  liveLotsRef.current = liveLots;
+
+  const handleUserLocationChange = (event: any) => {
+    if (hasAutoZoomedRef.current) return;
+    const coordinate = event?.nativeEvent?.coordinate;
+    if (!coordinate) return;
+    hasAutoZoomedRef.current = true;
+
+    const userLoc = { latitude: coordinate.latitude, longitude: coordinate.longitude };
+    const distance = nearestLotDistance(userLoc, liveLotsRef.current || []);
+    if (distance <= NEARBY_LOT_THRESHOLD_METERS) {
+      mapRef.current?.animateToRegion({
+        latitude: userLoc.latitude,
+        longitude: userLoc.longitude,
+        latitudeDelta: NEARBY_ZOOM_DELTA,
+        longitudeDelta: NEARBY_ZOOM_DELTA,
+      }, 800);
+    }
+    // Otherwise the user is far from campus — leave the default Main Campus view.
+  };
 
   const handleZoomIn = async () => {
     if (!mapRef.current) return;
@@ -251,6 +280,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
         ref={mapRef}
         style={styles.map}
         provider={PROVIDER_GOOGLE}
+        mapType={mapType}
         initialRegion={untRegion}
         onLayout={(event) => setMapSize(event.nativeEvent.layout)}
         onRegionChangeComplete={(region) => setMapRegion((prev) => {
@@ -264,6 +294,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus" }: E
           };
         })}
         showsUserLocation={true}
+        onUserLocationChange={handleUserLocationChange}
         customMapStyle={MAP_STYLES}
       >
         {liveLots.length > 0 && liveLots.map((lot) => (
@@ -351,7 +382,7 @@ const styles = StyleSheet.create({
   zoomControls: {
     position: 'absolute',
     right: 16,
-    bottom: 175,
+    bottom: 145,
     backgroundColor: 'white',
     borderRadius: 8,
     shadowColor: '#000',

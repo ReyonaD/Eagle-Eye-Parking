@@ -12,6 +12,7 @@ import {
   ScrollView,
   Platform,
   useWindowDimensions,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,14 +22,20 @@ import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
 import { useUser } from '../../context/UserContext';
 import { openDirections } from '../../utils/navigation';
-import { GROUP_EMBLEMS, lotMatchesPermitType } from '../../utils/permits';
+import { GROUP_EMBLEMS, lotMatchesPermitType, getPremiumParkingLink, dedupePermitLabels, isPerLotPermitCode, normalizePermitPreservingCode } from '../../utils/permits';
 import { getPermitCardStyle } from '../../utils/permitColors';
+import { NAME_TO_CODE } from '../../utils/nightPermitRules';
 import { Alert } from '../../utils/webCompat';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
 
 // Mobile loads just enough lots to fill the viewport, then appends more as
 // the user scrolls toward the bottom. Web instead pages through in fixed
 // chunks with Prev/Next controls.
+// Same amber as the "Near Capacity" occupancy color elsewhere in the app —
+// reused here for "you're previewing, not looking at live data".
+const PREVIEW_AMBER = '#F39C12';
+const PREVIEW_AMBER_DARK = '#D68910';
+
 const LOAD_MORE_BATCH = 10; // Lots appended per scroll-triggered load (mobile)
 const PAGE_SIZE = 12; // Lots per page (web)
 const ESTIMATED_HEADER_HEIGHT = 190; // live status bar + search/filter header
@@ -72,6 +79,7 @@ const PERMIT_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
   'C':    { bg: '#B8E0C8', text: '#1A5C30' },
   'E':    { bg: '#EEE0A0', text: '#7A6200' },
   'F/S':  { bg: '#B4C4DA', text: '#1E3A5F' },
+  'FS':   { bg: '#B4C4DA', text: '#1E3A5F' },
   'G':    { bg: '#E0B8D0', text: '#5F1E4A' },
   'T':    { bg: '#E0D0B4', text: '#5F3A1E' },
   'PP':   { bg: '#F5E6C8', text: '#8B5E00' },
@@ -81,6 +89,14 @@ const PERMIT_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
   'MC':   { bg: '#D8D8D8', text: '#444' },
   'SV':   { bg: '#C8D8C8', text: '#1A4A1A' },
   'VIS':  { bg: '#E8D0C8', text: '#6A2A1A' },
+  'RM':   { bg: '#F5D0B8', text: '#8A4A1E' },
+  'R':    { bg: '#F0C8D8', text: '#7A1E4A' },
+  'HD':   { bg: '#C8E0F0', text: '#1E5A7A' },
+  'EVN':  { bg: '#E0E0F0', text: '#3A3A5A' },
+  'NHT':  { bg: '#C8C8E0', text: '#2A2A5A' },
+  'BV':   { bg: '#D8C8E8', text: '#4A1E6A' },
+  'UCG':  { bg: '#D4C8B0', text: '#5C4020' },
+  'HSG':  { bg: '#C8D4C8', text: '#2A4A2A' },
 };
 
 const PERMIT_ABBREVIATIONS: Record<string, string> = {
@@ -97,6 +113,9 @@ const PERMIT_ABBREVIATIONS: Record<string, string> = {
 function abbreviatePermit(permit: string): string {
   // Emblems for the lots listed in "Lots to be changed" (A-Reserved -> A, Resident Reserved -> RR, Street Parking -> ST)
   if (GROUP_EMBLEMS[permit]) return GROUP_EMBLEMS[permit];
+  // UNT's own permit chart codes (E, FS, RM, ...) — preferred over abbreviating
+  // the name ourselves, so badges read the way the official chart does.
+  if (NAME_TO_CODE[permit]) return NAME_TO_CODE[permit];
   if (PERMIT_ABBREVIATIONS[permit]) return PERMIT_ABBREVIATIONS[permit];
   // Strip parenthetical suffix: "PP(Visitor)" → "PP", "Premium Parking (V)" → "Premium Parking"
   const stripped = permit.replace(/\s*\(.*$/, '').trim();
@@ -116,12 +135,28 @@ function getPermitBadgeInfo(permitList: string[], lotName?: string) {
       const colors = PERMIT_BADGE_COLORS[namePart] || { bg: '#D8D8D8', text: '#555' };
       return { label: namePart, ...colors };
     }
+    // ParkZen hasn't assigned this lot a permit type at all (e.g. Lot 97) —
+    // fall back to the lot number itself ("Lot 97" -> "L97") instead of a
+    // bare "?", so the badge still identifies the lot.
+    const lotNumber = lotName?.match(/lot\s*#?\s*(\d+)/i)?.[1];
+    if (lotNumber) {
+      return { label: `L${lotNumber}`, bg: '#E0E0E0', text: '#666' };
+    }
     return { label: '?', bg: '#E0E0E0', text: '#666' };
   }
   const raw = permitList[0].trim();
-  const label = abbreviatePermit(raw);
-  const colors = PERMIT_BADGE_COLORS[label] || PERMIT_BADGE_COLORS[raw] || { bg: '#D8D8D8', text: '#555' };
-  return { label, ...colors };
+  // A numbered A-Reserved/Resident-Reserved lot's own permitList now leads
+  // with its raw specific code (e.g. "Lot 16 Resident Reserve") instead of
+  // the generic bucket name — shorten it the same way the detail view does
+  // ("RR16") instead of falling through to abbreviatePermit's generic
+  // initials logic, which would otherwise mangle it.
+  const label = isPerLotPermitCode(raw) ? normalizePermitPreservingCode(raw) : abbreviatePermit(raw);
+  // Same color source as the Profile permit card and lot details sheet, so a
+  // given permit reads as the same color everywhere in the app. "border"
+  // only comes through for near-white fills (e.g. Evening) so the badge
+  // doesn't disappear against this card's own white background.
+  const { bg, text, border } = getPermitCardStyle(raw);
+  return { label, bg, text, border };
 }
 
 function LotCard({
@@ -191,7 +226,7 @@ function LotCard({
       >
       {isGrid ? (
         <>
-          <View style={[styles.permitBadge, { backgroundColor: badge.bg }]}>
+          <View style={[styles.permitBadge, { backgroundColor: badge.bg }, badge.border && { borderWidth: 1, borderColor: badge.border }]}>
             <Text
               style={[styles.permitBadgeText, { color: badge.text }]}
               numberOfLines={2}
@@ -223,7 +258,7 @@ function LotCard({
         </>
       ) : (
         <>
-          <View style={[styles.permitBadge, { backgroundColor: badge.bg }]}>
+          <View style={[styles.permitBadge, { backgroundColor: badge.bg }, badge.border && { borderWidth: 1, borderColor: badge.border }]}>
             <Text
               style={[styles.permitBadgeText, { color: badge.text }]}
               numberOfLines={2}
@@ -268,6 +303,9 @@ function FilterHeader({
   onAllPermits,
   onPermitPress,
   onAvailabilityPress,
+  previewingNight,
+  isLivePreview,
+  onToggleDayNight,
 }: {
   query: string;
   onChangeQuery: (text: string) => void;
@@ -276,6 +314,9 @@ function FilterHeader({
   onAllPermits: () => void;
   onPermitPress: () => void;
   onAvailabilityPress: () => void;
+  previewingNight: boolean;
+  isLivePreview: boolean;
+  onToggleDayNight: () => void;
 }) {
   const allActive = permitFilter === 'all' && availabilityFilter === 'all';
   const permitActive = permitFilter !== 'all';
@@ -341,6 +382,22 @@ function FilterHeader({
             style={{ marginLeft: 3 }}
           />
         </TouchableOpacity>
+
+        {/* Previews the other time-of-day's permit rules */}
+        <TouchableOpacity
+          style={[styles.filterBtn, !isLivePreview && styles.filterBtnPreview]}
+          onPress={onToggleDayNight}
+        >
+          <Ionicons
+            name={previewingNight ? 'moon' : 'sunny'}
+            size={12}
+            color={isLivePreview ? '#555' : PREVIEW_AMBER_DARK}
+            style={{ marginRight: 3 }}
+          />
+          <Text style={[styles.filterBtnText, !isLivePreview && styles.filterBtnTextPreview]}>
+            {previewingNight ? 'NIGHT' : 'DAY'}{isLivePreview ? '' : ' (PREVIEW)'}
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -364,7 +421,10 @@ export default function LotsScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const listRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
-  const { lots, isLoading, lastRefreshAt, filterByPermit } = useLots();
+  const { lots, isLoading, lastRefreshAt, filterByPermit, previewMode, setPreviewMode, actuallyNight } = useLots();
+  // null previewMode = follow the real clock.
+  const previewingNight = previewMode === null ? actuallyNight : previewMode === 'night';
+  const isLivePreview = previewingNight === actuallyNight;
   const { user } = useUser();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
@@ -438,7 +498,7 @@ export default function LotsScreen() {
   // able to opt back into seeing every permit.
   const permitTypeLots = useMemo(() => {
     if (!filterByPermit || !user.parkingProfile.permitType || permitManuallySelected) return lots;
-    return lots.filter((lot) => lotMatchesPermitType(lot.permitList, user.parkingProfile.permitType));
+    return lots.filter((lot) => lotMatchesPermitType(lot.permitList, user.parkingProfile.permitType, lot.rawPermitList));
   }, [lots, filterByPermit, user.parkingProfile.permitType, permitManuallySelected]);
 
   // Built from the full, unnarrowed lot list so every permit is always
@@ -453,11 +513,24 @@ export default function LotsScreen() {
   }, [lots]);
 
   const filtered = useMemo(() => {
+    // Split into words so "resident 16" or "16 resident" both find "Lot 16
+    // Resident Reserve" — every word has to appear somewhere across name,
+    // tag, address and permits, in any order, instead of needing the exact
+    // phrase typed out.
+    const queryTokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+
     return permitTypeLots.filter((lot) => {
-      const q = query.toLowerCase();
-      const nameMatch = (lot.name?.toLowerCase() || '').includes(q);
-      const permitMatch = (lot.permits?.toLowerCase() || '').includes(q);
-      if (!nameMatch && !permitMatch) return false;
+      if (queryTokens.length > 0) {
+        const haystack = [
+          lot.name,
+          lot.tag,
+          lot.address,
+          lot.permits,
+          Array.isArray(lot.permitList) ? lot.permitList.join(' ') : '',
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        if (!queryTokens.every((token) => haystack.includes(token))) return false;
+      }
       if (permitFilter !== 'all') {
         const hasPermit = (lot.permitList || []).some(
           (p: string) => p.trim() === permitFilter
@@ -552,9 +625,15 @@ export default function LotsScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['right', 'left']}>
-      <View style={styles.liveStatusBar}>
-        <Ionicons name="time-outline" size={14} color="#5d6d7e" />
-        <Text style={styles.liveStatusText}>Last synced: {refreshLabel}</Text>
+      <View style={[styles.liveStatusBar, !isLivePreview && styles.liveStatusBarPreview]}>
+        <Ionicons
+          name={isLivePreview ? 'time-outline' : (previewingNight ? 'moon' : 'sunny')}
+          size={14}
+          color={isLivePreview ? '#5d6d7e' : PREVIEW_AMBER_DARK}
+        />
+        <Text style={[styles.liveStatusText, !isLivePreview && styles.liveStatusTextPreview]}>
+          {isLivePreview ? `Last synced: ${refreshLabel}` : `Previewing ${previewingNight ? 'Night' : 'Day'} rules`}
+        </Text>
       </View>
       <FilterHeader
         query={query}
@@ -564,6 +643,9 @@ export default function LotsScreen() {
         onAllPermits={() => { setPermitFilter('all'); setAvailabilityFilter('all'); setPermitManuallySelected(true); }}
         onPermitPress={() => setPermitPickerVisible(true)}
         onAvailabilityPress={() => setAvailabilityPickerVisible(true)}
+        previewingNight={previewingNight}
+        isLivePreview={isLivePreview}
+        onToggleDayNight={() => setPreviewMode(previewingNight ? 'day' : 'night')}
       />
       {showPinHint ? (
         <View style={styles.pinHintBanner}>
@@ -708,7 +790,7 @@ export default function LotsScreen() {
                 </>
               ) : (
                 <Text style={styles.paginationEndText}>
-                  You've reached the end — {filtered.length} lot{filtered.length === 1 ? '' : 's'} total
+                  You&apos;ve reached the end — {filtered.length} lot{filtered.length === 1 ? '' : 's'} total
                 </Text>
               )}
             </View>
@@ -812,6 +894,16 @@ export default function LotsScreen() {
                 </View>
               </View>
 
+              {getPremiumParkingLink(selectedLot.name, selectedLot.permitList) && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: '#D6332A', marginBottom: 12 }]}
+                  onPress={() => Linking.openURL(getPremiumParkingLink(selectedLot.name, selectedLot.permitList)!)}
+                >
+                  <Ionicons name="card-outline" size={27} color="#fff" />
+                  <Text style={styles.actionButtonText}>Pay for Parking</Text>
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity style={styles.actionButton} onPress={() => openDirections(selectedLot)}>
                 <Ionicons name="navigate" size={27} color="#fff" />
                 <Text style={styles.actionButtonText}>Get Directions</Text>
@@ -843,8 +935,7 @@ export default function LotsScreen() {
                     <View style={{ marginTop: 6 }}>
                       <Text style={styles.detailLabel}>Permits:</Text>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                        {selectedLot.permitList.map((p: string, i: number) => {
-                          const label = p.trim();
+                        {dedupePermitLabels(selectedLot.permitList).map((label, i) => {
                           const permitStyle = getPermitCardStyle(label);
                           return (
                             <View
@@ -854,6 +945,7 @@ export default function LotsScreen() {
                                 borderRadius: 12,
                                 paddingHorizontal: 10,
                                 paddingVertical: 4,
+                                overflow: 'hidden',
                                 ...(permitStyle.border ? { borderWidth: 1, borderColor: permitStyle.border } : null),
                               }}
                             >
@@ -921,10 +1013,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
+  // Previewing a time-of-day other than right now — the sync timestamp
+  // doesn't apply, so swap it for a note instead of implying stale data.
+  liveStatusBarPreview: {
+    backgroundColor: 'rgba(243, 156, 18, 0.12)',
+    borderBottomColor: PREVIEW_AMBER,
+  },
   liveStatusText: {
     fontSize: 12,
     color: '#5d6d7e',
     fontWeight: '500',
+  },
+  liveStatusTextPreview: {
+    color: PREVIEW_AMBER_DARK,
   },
 
   // --- FILTER HEADER ---
@@ -983,11 +1084,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#00853E',
     borderColor: '#00853E',
   },
+  // Previewing a time-of-day other than right now.
+  filterBtnPreview: {
+    backgroundColor: 'rgba(243, 156, 18, 0.12)',
+    borderColor: PREVIEW_AMBER,
+  },
   filterBtnText: {
     fontSize: 11,
     fontWeight: '600',
     color: '#555',
     letterSpacing: 0.3,
+  },
+  filterBtnTextPreview: {
+    color: PREVIEW_AMBER_DARK,
   },
   filterBtnTextActive: {
     color: '#fff',
@@ -1190,6 +1299,7 @@ pageIndicator: {
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   permitBadgeText: {
     fontSize: 13,
