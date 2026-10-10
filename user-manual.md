@@ -1,5 +1,7 @@
 # EagleEyes – User Manual
 **Version:** UM_001
+**Application Name:** EagleEyes Parking
+**Team Number:** [Team #]
 **Team Name:** EagleEyes
 **Date:** 10/11/2026
 
@@ -83,6 +85,9 @@ The Interactive Parking Map shows the parking lots across the UNT campus in one 
 #### Expected Result
 The map displays parking lot locations and their current occupancy colors when parking data is available.
 
+![Map tab showing color-coded parking lots](images/feature1-map-overview.png)
+![CAMPUS dropdown open on the map](images/feature1-campus-dropdown.png)
+
 ---
 
 ### Feature 2: Parking Availability Indicator
@@ -103,6 +108,9 @@ EagleEyes displays parking occupancy using color-coded indicators. These help us
 4. Make your parking decision based on the occupancy shown.
 5. Repeat steps 2–4 for other lots if desired.
 
+![Map showing green, orange, red and grey lots](images/feature2-colored-lots.png)
+![Last synced time at the top of the map](images/feature2-last-synced.png)
+
 > **Note:** Parking availability is based on the latest data received by the application. Check the **Last synced** time at the top of the map, or the **ParkZen capture time** in a lot's details, before making a decision.
 
 ---
@@ -117,6 +125,9 @@ The Permit-Based Parking Filter helps users find parking lots that accept their 
 3. Select your permit type from the list (choose **All Permits** to show every lot).
 4. Review the updated map. Only lots that accept the selected permit are shown.
 5. Tap a lot to check its details for any additional restrictions.
+
+![PERMIT dropdown open on the map](images/feature3-permit-dropdown.png)
+![Map showing only lots for the selected permit](images/feature3-filtered-map.png)
 
 **Other ways to filter by permit:**
 - On the **LOTS** tab, use the **PERMIT** and **AVAILABILITY** filter buttons under the search bar.
@@ -150,6 +161,9 @@ The details panel may include:
 #### Expected Result
 Users can review the selected lot's parking information when needed.
 
+![Lots tab with a lot name typed into Lot Search](images/feature4-lot-search.png)
+![Lot details panel for a selected lot](images/feature4-lot-details.png)
+
 ---
 
 ### Feature 5: Search and Get Directions to a Parking Lot
@@ -164,6 +178,9 @@ This feature lets users search for a specific parking lot and open an external n
 3. Review the lot's parking information and permits.
 4. Tap **Get Directions** and choose a navigation app (**Apple Maps** on iPhone, or **Google Maps**) to open a route to the lot.
 
+![Get Directions button in the lot details panel](images/feature5-get-directions.png)
+![Choosing a navigation app for directions](images/feature5-choose-maps-app.png)
+
 ---
 
 ### Feature 6: Find Nearby Parking Lots
@@ -177,12 +194,14 @@ This feature helps users find convenient parking options based on their current 
 2. Allow EagleEyes to access your device's location when prompted. Make sure location services are enabled.
 3. Locate the blue dot on the map. This shows your current location.
 
-   ![Blue dot showing current location](https://hackmd.io/_uploads/HJkm2ldjGl.png)
+   ![Blue dot showing current location](images/feature6-blue-dot.png)
 
 4. Explore the parking lots displayed around your location.
 
 #### Expected Result
 The map displays your current location and nearby parking lots, so you can explore parking options and check their availability.
+
+![Nearby parking lots around the user's location](images/feature6-nearby-lots.png)
 
 ---
 
@@ -200,6 +219,9 @@ Authenticated users can report parking-related hazards, such as snow, flooding, 
 
 #### Expected Result
 Your report is sent to a parking administrator for review. Once approved, it appears for all users in **Alerts**. Reports that are rejected are not published.
+
+![Add a Report screen with Report a Hazard and Note to Admin](images/feature7-report-options.png)
+![Report a Hazard form filled in](images/feature7-hazard-form.png)
 
 ---
 
@@ -219,6 +241,9 @@ The Note to Admin feature lets authenticated users send a one-way message to UNT
 #### Expected Result
 A **Note sent** confirmation appears, and your note is delivered to the parking team for review.
 
+![Note to Admin form with subject and message](images/feature8-note-form.png)
+![Note sent confirmation](images/feature8-note-sent.png)
+
 ---
 
 ### Feature 9: Campus Alerts
@@ -229,6 +254,9 @@ The Alerts screen shows campus parking alerts posted by administrators and appro
 1. Tap the bell icon in the top bar.
 2. Browse the alerts, grouped by category. Tap a section header to expand or collapse it.
 3. Tap an alert to view its full details and photos.
+
+![Alerts screen listing campus alerts](images/feature9-alerts-list.png)
+![Details of a single alert](images/feature9-alert-details.png)
 
 ---
 
