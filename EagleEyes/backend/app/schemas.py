@@ -95,3 +95,28 @@ class ResetPasswordRequest(BaseModel):
     email: EmailStr
     code: str = Field(min_length=6, max_length=6)
     new_password: str = Field(min_length=8)
+
+class DiagnosticLogCreate(BaseModel):
+    #captured console output from the device; capped so one upload can't flood the DB
+    logs: str = Field(min_length=1, max_length=1_000_000)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    platform: Optional[str] = None
+    os_version: Optional[str] = None
+    app_version: Optional[str] = None
+    #free-form device details (model, map provider, screen size...) - kept as JSON
+    #so the frontend can add fields without a backend change
+    device_info: Optional[dict] = None
+
+class DiagnosticLogSummary(BaseModel):
+    """List view for admins - everything except the (large) log body."""
+    id: int
+    reporter_email: str
+    description: Optional[str] = None
+    platform: Optional[str] = None
+    os_version: Optional[str] = None
+    app_version: Optional[str] = None
+    device_info: Optional[dict] = None
+    created_at: datetime
+
+class DiagnosticLogResponse(DiagnosticLogSummary):
+    logs: str

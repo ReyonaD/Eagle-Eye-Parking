@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from '../../context/UserContext';
 import { Alert } from '../../utils/webCompat';
@@ -83,6 +83,12 @@ export function ProfileScreen() {
   const router = useRouter();
   const { user, refreshUser } = useUser();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  // Re-sync with the backend whenever this tab is shown, so a profile fetch
+  // that failed on app start (offline / cold server) recovers on its own.
+  // refreshUser isn't memoized, so listing it would refetch on every render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useFocusEffect(useCallback(() => { refreshUser(); }, []));
   const hasPermit = !!user.parkingProfile.permitType;
   const permitCardStyle = getPermitCardStyle(user.parkingProfile.permitType);
 

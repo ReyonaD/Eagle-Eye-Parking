@@ -1,3 +1,5 @@
+//must stay the first import: wraps console.* before anything else logs (see utils/logCapture.ts)
+import '../utils/logCapture';
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';

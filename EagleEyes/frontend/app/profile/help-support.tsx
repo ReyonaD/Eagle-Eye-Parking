@@ -1,9 +1,39 @@
-import React from 'react';
-import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { submitLogs } from '../../api/logs';
+import { Alert } from '../../utils/webCompat';
 
 export default function HelpSupportScreen() {
+  const [sendingLogs, setSendingLogs] = useState(false);
+
+  const sendLogs = async () => {
+    setSendingLogs(true);
+    try {
+      const result = await submitLogs();
+      Alert.alert(
+        'Logs sent',
+        `Thanks! Your reference number is #${result.id}. Mention it when you tell us what went wrong.`
+      );
+    } catch {
+      Alert.alert('Could not send logs', 'Please check your connection and try again.');
+    } finally {
+      setSendingLogs(false);
+    }
+  };
+
+  const confirmSendLogs = () => {
+    Alert.alert(
+      'Send app logs?',
+      "This sends the app's recent activity log and basic device info (model, OS version) to the EagleEyes team to help fix bugs. It doesn't include your password.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Send', onPress: sendLogs },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
@@ -35,6 +65,22 @@ export default function HelpSupportScreen() {
             <Ionicons name="chatbubble-ellipses-outline" size={28} color="#3976B9" />
           </View>
           <Text style={styles.choiceText}>Note to Admin</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.choice}
+          onPress={confirmSendLogs}
+          disabled={sendingLogs}
+          activeOpacity={0.75}
+        >
+          <View style={styles.circleButton}>
+            {sendingLogs ? (
+              <ActivityIndicator color="#00853E" />
+            ) : (
+              <Ionicons name="bug-outline" size={28} color="#00853E" />
+            )}
+          </View>
+          <Text style={styles.choiceText}>{sendingLogs ? 'Sending…' : 'Send App Logs'}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -72,13 +118,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-evenly',
     marginTop: 44,
-    paddingHorizontal: 24,
+    paddingHorizontal: 12,
   },
   choice: {
     flex: 1,
     alignItems: 'center',
     gap: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
   circleButton: {
     width: 100,

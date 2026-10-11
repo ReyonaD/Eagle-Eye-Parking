@@ -11,6 +11,7 @@ import {
   Modal,
 } from 'react-native';
 import { getAlerts, BASE_URL } from '../../api/alerts';
+import { formatLotNames } from '../../utils/lotStatus';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -77,7 +78,7 @@ function toAlertItem(raw: any): AlertItem {
     section: sectionFor(raw.created_at),
     alertType: raw.alert_type === 'event' ? 'event' : 'hazard',
     category: raw.category || undefined,
-    lotName: raw.lot_name || undefined,
+    lotName: formatLotNames(raw.lot_name),
     imageUrls: Array.isArray(raw.image_urls) && raw.image_urls.length ? raw.image_urls : undefined,
   };
 }

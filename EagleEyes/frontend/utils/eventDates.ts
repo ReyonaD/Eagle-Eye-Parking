@@ -31,16 +31,46 @@ export const formatDate = (dateString: string) => {
   return `${m} ${Number(day)}, ${year}`;
 };
 
+//stand-in end for an event/note saved with no end date (TBD / permanent /
+//until further notice). Far enough out that every "has it ended yet?" check
+//treats it as ongoing, but still a 4-digit year so "YYYY-MM-DD" string
+//comparisons keep working.
+export const OPEN_ENDED_END = new Date(9999, 11, 31, 23, 59, 59);
+
 //events created before event_start/event_end existed only have created_at;
-//treat those as a single-day event on their submission date
-export const getEventRange = (eventItem: any): { start: Date; end: Date } => {
+//treat those as a single-day event on their submission date. A row with a
+//start but no end was saved with "No end date", so it's open-ended.
+export const getEventRange = (eventItem: any): { start: Date; end: Date; openEnded: boolean } => {
   if (eventItem.event_start) {
     const start = parseUTC(eventItem.event_start);
-    const end = eventItem.event_end ? parseUTC(eventItem.event_end) : start;
-    return { start, end };
+    if (!eventItem.event_end) return { start, end: OPEN_ENDED_END, openEnded: true };
+    return { start, end: parseUTC(eventItem.event_end), openEnded: false };
   }
   const createdDay = parseUTC(eventItem.created_at);
-  return { start: createdDay, end: createdDay };
+  return { start: createdDay, end: createdDay, openEnded: false };
+};
+
+//"All day" is stored as local midnight -> 11:59 PM (or midnight with no end)
+const isStartOfDay = (d: Date) => d.getHours() === 0 && d.getMinutes() === 0;
+const isEndOfDay = (d: Date) => d.getHours() === 23 && d.getMinutes() === 59;
+export const isAllDayRange = (range: { start: Date; end: Date; openEnded: boolean }) =>
+  isStartOfDay(range.start) && (range.openEnded || isEndOfDay(range.end));
+
+//sets a local date to the all-day start/end boundary
+export const startOfDay = (d: Date) => { const c = new Date(d); c.setHours(0, 0, 0, 0); return c; };
+export const endOfDay = (d: Date) => { const c = new Date(d); c.setHours(23, 59, 0, 0); return c; };
+
+const fmtTime = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+//time-of-day summary for a card: "9:00 AM – 5:00 PM", "All day",
+//"9:00 AM – No end date", "All day · No end date"
+export const formatEventTimes = (eventItem: any): string => {
+  const range = getEventRange(eventItem);
+  const { start, end, openEnded } = range;
+  if (isAllDayRange(range)) return openEnded ? 'All day · No end date' : 'All day';
+  if (openEnded) return `${fmtTime(start)} – No end date`;
+  if (start.getTime() === end.getTime()) return fmtTime(start);
+  return `${fmtTime(start)} – ${fmtTime(end)}`;
 };
 
 //handleSaveEvent folds a "When: ..." schedule line onto the front of the

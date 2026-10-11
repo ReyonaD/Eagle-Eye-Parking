@@ -898,13 +898,13 @@ export default function LotsScreen() {
                 </View>
               </View>
 
-              {getPremiumParkingLink(selectedLot.name, selectedLot.permitList) && (
+              {getPremiumParkingLink(selectedLot.name, selectedLot.permitList, selectedLot.coordinates) && (
                 <TouchableOpacity
                   style={[styles.actionButton, { backgroundColor: '#D6332A', marginBottom: 12 }]}
-                  onPress={() => Linking.openURL(getPremiumParkingLink(selectedLot.name, selectedLot.permitList)!)}
+                  onPress={() => Linking.openURL(getPremiumParkingLink(selectedLot.name, selectedLot.permitList, selectedLot.coordinates)!)}
                 >
-                  <Ionicons name="card-outline" size={27} color="#fff" />
-                  <Text style={styles.actionButtonText}>Pay for Parking</Text>
+                  <Text style={styles.actionButtonText}>Premium Parking</Text>
+                  <Ionicons name="open-outline" size={27} color="#fff" />
                 </TouchableOpacity>
               )}
 

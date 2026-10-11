@@ -12,10 +12,11 @@ import EndTimePicker, {
   DEFAULT_END_TIME,
   EndTimeValue,
   Period,
-  formatTimeInput,
   isValidTimeHHMM,
   isEndTimeValid,
 } from '../components/EndTimePicker';
+import ToggleChip from '../components/ToggleChip';
+import TimePickerField from '../components/TimePickerField';
 import { useUser } from '../context/UserContext';
 import { Alert } from '../utils/webCompat';
 
@@ -63,6 +64,8 @@ export default function ReportNoteScreen() {
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [startTime, setStartTime] = useState('');
   const [startPeriod, setStartPeriod] = useState<Period>('AM');
+  //"All day" skips the start time - the note starts at midnight
+  const [startAllDay, setStartAllDay] = useState(false);
   const [endTime, setEndTime] = useState<EndTimeValue>(DEFAULT_END_TIME);
   const [plateState, setPlateState] = useState(user.parkingProfile.plateState);
   const [plateNumber, setPlateNumber] = useState(user.parkingProfile.plateNumber);
@@ -123,12 +126,12 @@ export default function ReportNoteScreen() {
       Alert.alert('Missing information', 'Pick a start date.');
       return;
     }
-    if (!isValidTimeHHMM(startTime)) {
-      Alert.alert('Invalid start time', 'Enter a start time as H:MM (e.g. 9:32).');
+    if (!startAllDay && !isValidTimeHHMM(startTime)) {
+      Alert.alert('Missing start time', 'Pick a start time, or choose All day.');
       return;
     }
     if (!isEndTimeValid(endTime)) {
-      Alert.alert('Invalid end time', 'Enter a custom end date as MM/DD and a custom end time as H:MM (e.g. 5:00).');
+      Alert.alert('Missing end time', 'Pick a custom end date and time.');
       return;
     }
     setStep('review');
@@ -155,7 +158,7 @@ export default function ReportNoteScreen() {
   //already format/presence-validated by handleContinue before the review
   //step is reachable, so this only needs to turn them into real Dates
   const resolveEventWindow = (): { eventStart: Date; eventEnd: Date } | null => {
-    const startTimeParsed = parseHMM(startTime, startPeriod);
+    const startTimeParsed = startAllDay ? { hours: 0, minutes: 0 } : parseHMM(startTime, startPeriod);
     if (!startDate || !startTimeParsed) return null;
 
     const [sy, sm, sd] = startDate.split('-').map(Number);
@@ -252,7 +255,7 @@ export default function ReportNoteScreen() {
               Lot/Location: <Text style={styles.reviewValue}>{selectedLot}</Text>
             </Text>
             <Text style={styles.reviewLabel}>
-              Start time: <Text style={styles.reviewValue}>{formatDateDisplay(startDate)} {startTime} {startPeriod}</Text>
+              Start time: <Text style={styles.reviewValue}>{formatDateDisplay(startDate)} {startAllDay ? '· All day' : `${startTime} ${startPeriod}`}</Text>
             </Text>
             <Text style={styles.reviewLabel}>
               End time: <Text style={styles.reviewValue}>{endTimeSummary}</Text>
@@ -338,31 +341,28 @@ export default function ReportNoteScreen() {
         </TouchableOpacity>
 
         <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>START TIME *</Text>
-        <View style={styles.startTimeContainer}>
-          <TextInput
-            style={styles.startTimeInput}
-            placeholder="--:--"
-            placeholderTextColor="#888"
-            value={startTime}
-            onChangeText={(text) => setStartTime(formatTimeInput(text))}
-            keyboardType="number-pad"
-            maxLength={5}
+        <View style={styles.allDayRow}>
+          <ToggleChip
+            label="All day"
+            value={startAllDay}
+            onChange={(value) => {
+              setStartAllDay(value);
+              //an all-day note most often ends with the day too
+              if (value && endTime.mode === '24hr') setEndTime({ ...endTime, mode: 'endOfDay' });
+            }}
           />
-          <TouchableOpacity
-            style={[styles.startPeriodButton, startPeriod === 'AM' && styles.startPeriodButtonActive]}
-            onPress={() => setStartPeriod('AM')}
-          >
-            <Text style={[styles.startPeriodButtonText, startPeriod === 'AM' && styles.startPeriodButtonTextActive]}>AM</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.startPeriodButton, startPeriod === 'PM' && styles.startPeriodButtonActive]}
-            onPress={() => setStartPeriod('PM')}
-          >
-            <Text style={[styles.startPeriodButtonText, startPeriod === 'PM' && styles.startPeriodButtonTextActive]}>PM</Text>
-          </TouchableOpacity>
         </View>
+        {!startAllDay && (
+          <TimePickerField
+            time={startTime}
+            period={startPeriod}
+            onChange={(t, p) => { setStartTime(t); setStartPeriod(p); }}
+            placeholder="SELECT START TIME"
+            title="Start time"
+          />
+        )}
 
-        <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>END TIME *</Text>
+        <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>ESTIMATED END TIME *</Text>
         <EndTimePicker value={endTime} onChange={setEndTime} />
 
         <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>LICENSE PLATE NUMBER *</Text>
@@ -512,38 +512,9 @@ const styles = StyleSheet.create({
   },
   //Start Time: one unified container - numeric date/time input on the left,
   //compact AM/PM toggle on the right, both inside the same rounded box.
-  startTimeContainer: {
+  allDayRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E0E0E0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    marginBottom: 14,
-  },
-  startTimeInput: {
-    flex: 1,
-    paddingVertical: 16,
-    color: '#333',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  startPeriodButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 14,
-    backgroundColor: '#fff',
-    marginLeft: 4,
-  },
-  startPeriodButtonActive: {
-    backgroundColor: '#00853E',
-  },
-  startPeriodButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#666',
-  },
-  startPeriodButtonTextActive: {
-    color: '#fff',
+    marginBottom: 10,
   },
   plateRow: {
     flexDirection: 'row',

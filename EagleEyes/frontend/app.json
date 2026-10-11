@@ -40,7 +40,9 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.frontend",
       "config": {
-        "googleMaps": "AIzaSyAeKFvAPWQat4h6U_sMDIxERr8Oy2b4t8U"
+        "googleMaps": {
+          "apiKey": "AIzaSyAeKFvAPWQat4h6U_sMDIxERr8Oy2b4t8U"
+        }
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",

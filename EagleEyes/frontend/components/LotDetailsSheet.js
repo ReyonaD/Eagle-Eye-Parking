@@ -4,12 +4,40 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDirections } from '../utils/navigation';
 import { getPermitCardStyle } from '../utils/permitColors';
 import { getPremiumParkingLink, dedupePermitLabels } from '../utils/permits';
+import { getEventVisual, getHazardVisual, getCategoryLabel } from '../utils/alertVisuals';
+import { parseUTC } from '../utils/eventDates';
 
 const STATUS_COLOR = {
   'Available': '#00853E',
   'Near Capacity': '#F5A623',
   'Full': '#D0021B',
+  'Closed': '#374151',
 };
+
+const formatTime = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+//closures, events, and recent hazards on this lot, most important first
+function getStatusItems(lotStatus) {
+  if (!lotStatus) return [];
+  const items = [];
+  const eventItem = (e, kind) => ({
+    key: `event-${e.alert.id}`,
+    visual: getEventVisual(e.alert.category),
+    title: e.alert.title,
+    detail: e.active
+      ? `${kind} · ${e.openEnded ? 'until further notice' : `until ${formatTime(e.end)}`}`
+      : `${kind} · starts ${formatTime(e.start)}`,
+  });
+  if (lotStatus.closure) items.push(eventItem(lotStatus.closure, lotStatus.closure.active ? 'Closed' : 'Closing'));
+  lotStatus.events.forEach((e) => items.push(eventItem(e, getCategoryLabel('event', e.alert.category))));
+  lotStatus.hazards.forEach((h) => items.push({
+    key: `hazard-${h.id}`,
+    visual: getHazardVisual(h.category),
+    title: h.title,
+    detail: `${getCategoryLabel('hazard', h.category)} · reported ${formatTime(parseUTC(h.created_at))}`,
+  }));
+  return items;
+}
 
 function formatLotTimestamp(value) {
   if (!value) return 'No time available';
@@ -41,7 +69,8 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
   const permits = dedupePermitLabels(rawPermits);
   const hasParkzenCaptureTime = lot.sourceTimestampProvidedByParkzen === true;
   const captureTimeValue = hasParkzenCaptureTime ? formatLotTimestamp(lot.lastUpdatedAt) : 'No time available';
-  const premiumParkingLink = getPremiumParkingLink(lot.name, lot.permitList);
+  const premiumParkingLink = getPremiumParkingLink(lot.name, lot.permitList, lot.coordinates);
+  const statusItems = getStatusItems(lot.lotStatus);
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
       {/* dark backdrop, tap to close */}
@@ -57,6 +86,22 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
             <Text style={[styles.statusText, { color: statusColor }]}>{lot.status || 'Available'}</Text>
           </View>
         </View>
+
+        {statusItems.length > 0 && (
+          <View style={styles.alertsBlock}>
+            {statusItems.map((item) => (
+              <View key={item.key} style={styles.alertRow}>
+                <View style={[styles.alertIcon, { backgroundColor: item.visual.bg }]}>
+                  <Ionicons name={item.visual.icon} size={18} color={item.visual.iconColor} />
+                </View>
+                <View style={styles.alertTextCol}>
+                  <Text style={styles.alertTitle} numberOfLines={1}>{item.title}</Text>
+                  <Text style={styles.alertDetail} numberOfLines={1}>{item.detail}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         <InfoRow
           icon="speedometer-outline"
@@ -99,8 +144,8 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
             style={styles.payButton}
             onPress={() => Linking.openURL(premiumParkingLink)}
           >
-            <Ionicons name="card-outline" size={22} color="#fff" />
-            <Text style={styles.directionsText}>Pay for Parking</Text>
+            <Text style={styles.directionsText}>Premium Parking</Text>
+            <Ionicons name="open-outline" size={22} color="#fff" />
           </TouchableOpacity>
         )}
 
@@ -132,6 +177,12 @@ const styles = StyleSheet.create({
   statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   statusText: { fontSize: 13, fontWeight: '600' },
+  alertsBlock: { marginBottom: 8, gap: 8 },
+  alertRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 10, padding: 8 },
+  alertIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  alertTextCol: { flex: 1 },
+  alertTitle: { fontSize: 14, fontWeight: '700', color: '#333' },
+  alertDetail: { fontSize: 12, color: '#777', marginTop: 1 },
   infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },
   infoIcon: { marginRight: 10 },
   infoLabel: { fontSize: 14, color: '#777', width: 80 },

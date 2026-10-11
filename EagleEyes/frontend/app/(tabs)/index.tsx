@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Image, FlatList, Platform, Animated, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
 import { useUser } from '../../context/UserContext';
 import EagleMap from '../../components/EagleMap';
 import { getPermitTypes } from '../../api/auth';
+import { getAlerts } from '../../api/alerts';
+import { useFocusPolling } from '../../hooks/use-focus-polling';
+import { buildLotStatuses, applyLotStatus, LotStatus } from '../../utils/lotStatus';
 import {
   consolidatePermits, lotMatchesPermitType, STREET_PARKING, PREMIUM_PARKING,
   buildPermitOptions, getPermitDisplayLabel, isPerLotPermitCode, PermitOption,
@@ -95,6 +98,21 @@ export default function MapScreen() {
     o.kind === 'group' && o.label === openGroupLabel
   );
 
+  // Closures, events, and recent hazards per lot name, from the same published
+  // feed as the Alerts tab. Refreshed on focus and every 30s (same cadence as
+  // the lot occupancy sync) so a new report shows up on the map without reopening it.
+  const [lotStatuses, setLotStatuses] = useState<Record<string, LotStatus>>({});
+  const fetchLotStatuses = useCallback(async () => {
+    try {
+      const [hazards, events] = await Promise.all([getAlerts('hazard'), getAlerts('event')]);
+      setLotStatuses(buildLotStatuses(hazards, events));
+    } catch {
+      // Keep the last known statuses - the map still works without them.
+    }
+  }, []);
+  useFocusEffect(useCallback(() => { fetchLotStatuses(); }, [fetchLotStatuses]));
+  useFocusPolling(fetchLotStatuses, 30000);
+
   // Subtle periodic wiggle on the hazard button to draw the eye to it,
   // without being distracting — a quick shake every few seconds, not constant.
   const hazardShake = useRef(new Animated.Value(0)).current;
@@ -120,7 +138,8 @@ export default function MapScreen() {
     );
   }
   const campuses = ["Main campus", "Discovery Park", "Frisco Landing"];
-  const filteredLots = (lots || []).map((lot: any) => {
+  const filteredLots = (lots || []).map((rawLot: any) => {
+    const lot = applyLotStatus(rawLot, lotStatuses[rawLot.name]);
     if (selectedPermit === "All Permits") return { ...lot, isVisible: true };
 
     // A specific per-lot pick (e.g. "Lot 16 Resident Reserve") means "show

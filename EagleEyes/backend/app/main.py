@@ -16,8 +16,8 @@ from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
-from app.models import User, Alert, Note, PasswordResetToken
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, NoteCreate, NoteResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
@@ -820,6 +820,53 @@ def acknowledge_note(
     db.commit()
     db.refresh(note)
     return note
+
+#─── Diagnostic logs (app console output a commuter sends from Help & Support
+#so we can trace bugs that only reproduce on their device) ──────────────────
+
+@app.post("/logs", response_model=DiagnosticLogSummary, status_code=status.HTTP_201_CREATED)
+def submit_diagnostic_log(
+    log_data: DiagnosticLogCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    new_log = DiagnosticLog(
+        reporter_email=current_user.email,
+        description=(log_data.description or "").strip() or None,
+        platform=log_data.platform,
+        os_version=log_data.os_version,
+        app_version=log_data.app_version,
+        device_info=log_data.device_info,
+        logs=log_data.logs,
+    )
+    db.add(new_log)
+    db.commit()
+    db.refresh(new_log)
+    return new_log
+
+@app.get("/logs", response_model=List[DiagnosticLogSummary])
+def list_diagnostic_logs(
+    reporter_email: Optional[str] = Query(None, description="Only logs sent by this user"),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin-only: newest submissions first, without the log body (use GET /logs/{id})."""
+    query = db.query(DiagnosticLog)
+    if reporter_email:
+        query = query.filter(DiagnosticLog.reporter_email == reporter_email)
+    return query.order_by(desc(DiagnosticLog.created_at)).limit(limit).all()
+
+@app.get("/logs/{log_id}", response_model=DiagnosticLogResponse)
+def get_diagnostic_log(
+    log_id: int,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    log = db.query(DiagnosticLog).filter(DiagnosticLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found.")
+    return log
 
 @app.put("/alerts/{alert_id}/approve", response_model=AlertResponse)
 def approve_alert(

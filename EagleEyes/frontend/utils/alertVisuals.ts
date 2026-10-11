@@ -36,9 +36,11 @@ export function getHazardVisual(category?: string | null): AlertVisual {
 }
 
 // Event categories an admin can pick when scheduling a campus event.
-export const EVENT_CATEGORIES: string[] = ['Gameday', 'Tailgate', 'Concert', 'Career', 'Other'];
+// 'Closure' marks its affected lots as closed on the map (see utils/lotStatus.ts).
+export const EVENT_CATEGORIES: string[] = ['Gameday', 'Tailgate', 'Concert', 'Career', 'Closure', 'Other'];
 
 const EVENT_VISUALS: Record<string, AlertVisual> = {
+  closure: { icon: 'lock-closed', bg: '#E5E7EB', iconColor: '#374151' },
   gameday: { icon: 'american-football-outline', bg: '#FDE7D8', iconColor: '#C2560B' },
   tailgate: { icon: 'flame-outline', bg: '#FDE1DC', iconColor: '#D3452D' },
   concert: { icon: 'musical-notes-outline', bg: '#EAE0FB', iconColor: '#7C3AED' },

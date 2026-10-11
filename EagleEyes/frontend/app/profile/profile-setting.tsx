@@ -186,7 +186,7 @@ export default function ParkingProfileScreen() {
                 <Text style={styles.premiumParkingNoteText}>
                   Not prepaid — pay via the lot&apos;s QR code, or tap your lot on the Map or
                   Lots tab for a direct{' '}
-                  <Text style={styles.purchasePermitLinkStatic}>Pay for Parking</Text> link.
+                  <Text style={styles.purchasePermitLinkStatic}>Premium Parking</Text> link.
                   General lookup:{' '}
                   <Text
                     style={styles.purchasePermitLink}

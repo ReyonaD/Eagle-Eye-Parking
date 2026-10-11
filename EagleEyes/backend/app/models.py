@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON
 from app.database import Base
 from datetime import datetime, timezone
 from app.database import Base
@@ -95,6 +95,27 @@ class Note(Base):
     #set when an admin reviews/acknowledges the note; null until then. Admin
     #UI buckets notes into Pending/Active/Expired from this + event_end.
     acknowledged_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class DiagnosticLog(Base):
+    """
+    A snapshot of the app's recent console output, sent by a commuter from
+    Help & Support so we can trace bugs that only happen on their device
+    (e.g. the Android map not showing) without needing the device in hand.
+    """
+    __tablename__ = "diagnostic_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reporter_email = Column(String, nullable=False, index=True)
+    #optional "what were you doing when it broke" text from the user
+    description = Column(String, nullable=True)
+    #device context, so logs from different phones/OS versions can be told apart
+    platform = Column(String, nullable=True)
+    os_version = Column(String, nullable=True)
+    app_version = Column(String, nullable=True)
+    device_info = Column(JSON, nullable=True)
+    #the captured console lines, oldest first, one per line
+    logs = Column(Text, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class PasswordResetToken(Base):

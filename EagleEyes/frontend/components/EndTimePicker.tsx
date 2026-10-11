@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DatePickerModal from './DatePickerModal';
+import TimePickerField, { Period } from './TimePickerField';
+
+export type { Period };
 
 export type EndTimeMode = '24hr' | 'endOfDay' | 'overnight' | 'custom';
-export type Period = 'AM' | 'PM';
 
 export interface EndTimeValue {
   mode: EndTimeMode;
@@ -37,13 +39,6 @@ function formatDateDisplay(dateString: string): string {
   return `${m} ${Number(day)}, ${year}`;
 }
 
-// Strips non-digits, caps at 4, inserts ":" after the first 2 (e.g. "0932" -> "09:32")
-export function formatTimeInput(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 4);
-  if (digits.length <= 2) return digits;
-  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-}
-
 export function isValidTimeHHMM(value: string): boolean {
   return /^(0?[1-9]|1[0-2]):([0-5]\d)$/.test(value.trim());
 }
@@ -61,7 +56,8 @@ interface EndTimePickerProps {
 }
 
 // 4-mode End Time selector from DDS2's Note to Admin wireframe (24hr / End of
-// day / Overnight / Custom). Custom reveals a date button (opens the same
+// day / Overnight / Custom). Always resolves to a concrete end - unlike admin
+// events, a note needs an estimated end so admins can track when it expires. Custom reveals a date button (opens the same
 // mini calendar used elsewhere in the app) plus a typed time + AM/PM toggle.
 export default function EndTimePicker({ value, onChange }: EndTimePickerProps) {
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -95,29 +91,13 @@ export default function EndTimePicker({ value, onChange }: EndTimePickerProps) {
               {value.customDate ? formatDateDisplay(value.customDate) : 'SELECT END DATE'}
             </Text>
           </TouchableOpacity>
-          <View style={styles.timeRow}>
-            <TextInput
-              style={[styles.customDateInput, styles.timeInput]}
-              placeholder="--:--"
-              placeholderTextColor="#888"
-              value={value.customTime}
-              onChangeText={(text) => onChange({ ...value, customTime: formatTimeInput(text) })}
-              keyboardType="number-pad"
-              maxLength={5}
-            />
-            <TouchableOpacity
-              style={[styles.periodButton, value.customPeriod === 'AM' && styles.periodButtonActive]}
-              onPress={() => onChange({ ...value, customPeriod: 'AM' })}
-            >
-              <Text style={[styles.periodButtonText, value.customPeriod === 'AM' && styles.periodButtonTextActive]}>AM</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.periodButton, value.customPeriod === 'PM' && styles.periodButtonActive]}
-              onPress={() => onChange({ ...value, customPeriod: 'PM' })}
-            >
-              <Text style={[styles.periodButtonText, value.customPeriod === 'PM' && styles.periodButtonTextActive]}>PM</Text>
-            </TouchableOpacity>
-          </View>
+          <TimePickerField
+            time={value.customTime}
+            period={value.customPeriod}
+            onChange={(customTime, customPeriod) => onChange({ ...value, customTime, customPeriod })}
+            placeholder="SELECT END TIME"
+            title="End time"
+          />
 
           <DatePickerModal
             visible={showDatePicker}
@@ -174,42 +154,5 @@ const styles = StyleSheet.create({
   },
   dateButtonTextFilled: {
     color: '#333',
-  },
-  // Mirrors app/(admin)/events.tsx's textInput style
-  customDateInput: {
-    backgroundColor: '#e0e0e0',
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 10,
-  },
-  // Mirrors app/(admin)/events.tsx's timeRow/timeInput/periodButton* styles
-  timeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timeInput: {
-    flex: 1,
-    marginRight: 8,
-    marginBottom: 0,
-  },
-  periodButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: '#e0e0e0',
-    marginRight: 6,
-  },
-  periodButtonActive: {
-    backgroundColor: '#00853E',
-  },
-  periodButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#666',
-  },
-  periodButtonTextActive: {
-    color: '#fff',
   },
 });

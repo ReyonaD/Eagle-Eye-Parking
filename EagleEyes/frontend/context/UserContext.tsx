@@ -103,8 +103,15 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setUser(fresh);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
     } catch {
-      // Offline or the request failed — leave whatever's currently loaded rather
-      // than wiping it out.
+      // Offline or the request failed. On a cold start state is still the blank
+      // DEFAULT_USER, so fall back to the last profile cached for this session
+      // (the cache is cleared on logout, so it always belongs to this account).
+      try {
+        const cached = await AsyncStorage.getItem(STORAGE_KEY);
+        if (cached) setUser({ ...DEFAULT_USER, ...JSON.parse(cached) });
+      } catch {
+        // corrupt cache — keep whatever's currently loaded
+      }
     }
   };
 
