@@ -2,6 +2,18 @@ import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { nearestLotDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_LEVEL_WEB } from '../utils/geo';
+import { isLotClosed, getActiveEvent, LotStatus } from '../utils/lotStatus';
+import { getCategoryLabel } from '../utils/alertVisuals';
+
+// One line per closure/event/hazard on the lot, for the click popup.
+function describeLotStatus(status?: LotStatus | null): string {
+  if (!status) return '';
+  const lines: string[] = [];
+  if (status.closure) lines.push(`${status.closure.active ? 'CLOSED' : 'Closing later today'}: ${status.closure.alert.title}`);
+  status.events.forEach((e) => lines.push(`${e.active ? 'Event now' : 'Event later today'}: ${e.alert.title}`));
+  status.hazards.forEach((h) => lines.push(`Hazard (${getCategoryLabel('hazard', h.category)}): ${h.title}`));
+  return lines.length ? `\n${lines.join('\n')}` : '';
+}
 
 const MAP_STYLES: any[] = [
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
@@ -155,7 +167,7 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
                     options={{
                       fillColor: hidden ? 'rgba(0,0,0,0)' : lot.fillColor,
                       strokeColor: hidden ? 'rgba(0,0,0,0)' : lot.strokeColor,
-                      strokeWeight: hidden ? 0 : 2,
+                      strokeWeight: hidden ? 0 : (getActiveEvent(lot.lotStatus) || isLotClosed(lot.lotStatus) ? 4 : 2),
                       clickable: !hidden,
                     }}
                     onClick={() => {
@@ -163,7 +175,8 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
                         `${lot.name}\n` +
                         `Permits: ${lot.permits}\n` +
                         `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
-                        `Is Full: ${lot.isFull ? 'Yes' : 'No'}`
+                        `Is Full: ${lot.isFull ? 'Yes' : 'No'}` +
+                        describeLotStatus(lot.lotStatus)
                       );
                     }}
                   />

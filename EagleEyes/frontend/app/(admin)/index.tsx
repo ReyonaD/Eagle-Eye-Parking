@@ -1,5 +1,5 @@
 import { Redirect } from 'expo-router';
 
 export default function AdminEntryRoute() {
-  return <Redirect href="/(admin)/profile" />;
+  return <Redirect href="/(admin)/hazards" />;
 }

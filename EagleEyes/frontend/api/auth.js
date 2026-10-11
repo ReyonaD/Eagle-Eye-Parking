@@ -21,10 +21,9 @@ export const register = async (email, password) => {
 //LOGIN
 export const login = async (email, password) => {
     try{
-        console.log("ATTEMPTING TO SEND -> Email:", email, "| Password:", password);
+        console.log("[Auth] Logging in as:", email);
         //FastAPI login requires form-urlencoded, NOT JSON!
         const formData = `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
-        console.log("EXACT PACKAGE BEING SENT:", formData);
         const res = await apiFetch(`${BASE_URL}/login`, {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},

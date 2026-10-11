@@ -89,6 +89,16 @@ export const getPendingAlerts = async (alertType) => {
     return await response.json();
 };
 
+// GET: Admin history of reports an admin declined (admin-only)
+export const getDeclinedAlerts = async (alertType) => {
+    const token = await AsyncStorage.getItem('token');
+    const response = await apiFetch(`${BASE_URL}/alerts/declined?alert_type=${alertType}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch declined reports');
+    return await response.json();
+};
+
 // PUT: Admin approves a pending report, optionally with edits (admin-only)
 export const approveAlert = async (alertId, edits = {}) => {
     const token = await AsyncStorage.getItem('token');

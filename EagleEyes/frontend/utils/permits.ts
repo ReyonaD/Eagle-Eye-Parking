@@ -96,8 +96,23 @@ export function getLotCategory(lotName: unknown): string | null {
  * `permitList` (the lot's own, already-normalized permit list), since most
  * numbered lots don't offer it. Union Circle Garage is the one named
  * exception, using P9201 instead of a lot-number-derived code.
+ *
+ * Every Frisco Landing lot (detected from `coordinates`) links to P9299.
  */
-export function getPremiumParkingLink(lotName: unknown, permitList: unknown = []): string | null {
+// Frisco Landing sits ~35km east of the Denton campuses (Main campus and
+// Discovery Park are both around -97.15 longitude, Frisco around -96.80), so
+// any lot whose polygon lies east of -97.0 is a Frisco lot.
+const FRISCO_MIN_LONGITUDE = -97.0;
+const FRISCO_PREMIUM_PARKING_URL = 'https://www.premiumparking.com/P9299';
+
+export function isFriscoLot(coordinates: unknown): boolean {
+  if (!Array.isArray(coordinates) || coordinates.length === 0) return false;
+  return coordinates.every((c) => typeof c?.longitude === 'number' && c.longitude > FRISCO_MIN_LONGITUDE);
+}
+
+export function getPremiumParkingLink(lotName: unknown, permitList: unknown = [], coordinates: unknown = []): string | null {
+  // Every Frisco Landing lot pays through the same Premium Parking location.
+  if (isFriscoLot(coordinates)) return FRISCO_PREMIUM_PARKING_URL;
   if (typeof lotName !== 'string') return null;
   const trimmed = lotName.trim();
 

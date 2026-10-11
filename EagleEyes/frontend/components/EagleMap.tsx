@@ -4,6 +4,7 @@ import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import LotDetailsSheet from './LotDetailsSheet';
 import { Ionicons } from '@expo/vector-icons';
 import { nearestLotDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_DELTA } from '../utils/geo';
+import { getLotStatusIcons, isLotClosed, getActiveEvent } from '../utils/lotStatus';
 
 interface EagleMapProps {
   liveLots: any[];
@@ -175,6 +176,34 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
   });
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
 
+  // Map lifecycle logging, captured by utils/logCapture for "Send App Logs".
+  // A bad/restricted Google Maps API key only shows up natively (logcat), but
+  // from JS it looks like: onMapReady fires, onMapLoaded never does.
+  const mapLoadedRef = useRef(false);
+  const mapLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    console.log('[EagleMap] mounted | provider: google | mapType:', mapType, '| lots:', liveLots.length);
+    return () => {
+      if (mapLoadTimeoutRef.current) clearTimeout(mapLoadTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleMapReady = () => {
+    console.log('[EagleMap] onMapReady | size:', mapSize.width, 'x', mapSize.height);
+    if (mapLoadTimeoutRef.current) clearTimeout(mapLoadTimeoutRef.current);
+    mapLoadTimeoutRef.current = setTimeout(() => {
+      if (!mapLoadedRef.current) {
+        console.warn('[EagleMap] map tiles did not finish loading within 15s of onMapReady - likely an invalid/restricted Google Maps API key or no network');
+      }
+    }, 15000);
+  };
+
+  const handleMapLoaded = () => {
+    mapLoadedRef.current = true;
+    console.log('[EagleMap] onMapLoaded (tiles rendered)');
+  };
+
   useEffect(() => {
     const region = CAMPUS_REGIONS[selectedCampus];
     if (region) {
@@ -225,7 +254,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     }
   };
 
-  const labelFontSize = Math.max(10, Math.min(15, 15 - mapRegion.latitudeDelta * 500));
+  const labelFontSize = Math.round(Math.max(10, Math.min(15, 15 - mapRegion.latitudeDelta * 500)));
 
   const lot20LabelId = useMemo(() => {
     const lot20Zones = liveLots.filter(
@@ -238,28 +267,53 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveLots, labelFontSize, mapSize.width, mapSize.height, mapRegion.latitudeDelta, mapRegion.longitudeDelta]);
 
+  // A lot split into several polygons (e.g. Lot 20's zones) shares one status,
+  // so only one of its polygons carries the closure/event/hazard badge.
+  const statusBadgeLotIds = useMemo(() => {
+    const ownerByName: Record<string, string> = {};
+    liveLots.forEach((lot) => {
+      if (lot.isVisible === false || getLotStatusIcons(lot.lotStatus).length === 0) return;
+      if (!ownerByName[lot.name] || lot.id === lot20LabelId) ownerByName[lot.name] = lot.id;
+    });
+    return new Set(Object.values(ownerByName));
+  }, [liveLots, lot20LabelId]);
+
+  // Every lot gets exactly one Marker (its number label and/or status badge),
+  // mounted for as long as the lot exists. Zooming or a status change only
+  // toggles `visible` (via opacity) and moves the coordinate. Mounting/unmounting
+  // Markers while the user pinches crashes the native Google map on the New
+  // Architecture (react-native-maps legacy interop), which kicked users back to
+  // the home screen.
   const lotLabels = useMemo(() => {
-    if (liveLots.length === 0 || mapRegion.latitudeDelta > 0.01) return [];
+    const labelsHidden = mapRegion.latitudeDelta > 0.01;
 
-    return liveLots.reduce<{ lot: any; coordinate: { latitude: number; longitude: number } }[]>((acc, lot) => {
-      if (lot.isVisible === false) return acc;
-
+    return liveLots.reduce<{
+      lot: any;
+      lotName: string;
+      coordinate: { latitude: number; longitude: number };
+      visible: boolean;
+      labelVisible: boolean;
+      statusIcons: ReturnType<typeof getLotStatusIcons>;
+    }[]>((acc, lot) => {
       const lotName = getLotNumberLabel(lot);
-      if (!lotName) return acc;
-      if (lotName === 'Lot 20' && lot.id !== lot20LabelId) return acc;
 
-      const labelCoordinate = getLotLabelCoordinate(
-        lot.coordinates || [],
-        lotName,
-        labelFontSize,
-        mapSize,
-        mapRegion,
-      );
-      const markerCoordinate = labelCoordinate || (
-        lotName === 'Lot 20' ? getPolygonCenter(lot.coordinates || []) : null
-      );
-      if (!markerCoordinate) return acc;
+      const center = getPolygonCenter(lot.coordinates || []);
+      if (!center) return acc;
 
+      let labelVisible = !!lotName && !labelsHidden && lot.isVisible !== false;
+      if (lotName === 'Lot 20' && lot.id !== lot20LabelId) labelVisible = false;
+
+      const labelCoordinate = labelVisible
+        ? getLotLabelCoordinate(lot.coordinates || [], lotName, labelFontSize, mapSize, mapRegion)
+        : null;
+      if (!labelCoordinate && lotName !== 'Lot 20') labelVisible = false;
+
+      // Status badges stay up at every zoom level - a closure or hazard matters
+      // most when looking at the whole campus.
+      const statusIcons = statusBadgeLotIds.has(lot.id) ? getLotStatusIcons(lot.lotStatus) : [];
+      const visible = labelVisible || statusIcons.length > 0;
+
+      const markerCoordinate = labelCoordinate || center;
       const offset = LOT_LABEL_OFFSETS[lotName];
       const displayCoordinate = offset
         ? {
@@ -268,11 +322,11 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
           }
         : markerCoordinate;
 
-      acc.push({ lot, coordinate: displayCoordinate });
+      acc.push({ lot, lotName, coordinate: displayCoordinate, visible, labelVisible, statusIcons });
       return acc;
     }, []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveLots, labelFontSize, mapSize.width, mapSize.height, mapRegion.latitudeDelta, mapRegion.longitudeDelta, lot20LabelId]);
+  }, [liveLots, labelFontSize, mapSize.width, mapSize.height, mapRegion.latitudeDelta, mapRegion.longitudeDelta, lot20LabelId, statusBadgeLotIds]);
 
   return (
     <View style={styles.container}>
@@ -282,7 +336,13 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
         provider={PROVIDER_GOOGLE}
         mapType={mapType}
         initialRegion={untRegion}
-        onLayout={(event) => setMapSize(event.nativeEvent.layout)}
+        onLayout={(event) => {
+          const { width, height } = event.nativeEvent.layout;
+          if (width === 0 || height === 0) console.warn('[EagleMap] map laid out with zero size:', width, 'x', height);
+          setMapSize(event.nativeEvent.layout);
+        }}
+        onMapReady={handleMapReady}
+        onMapLoaded={handleMapLoaded}
         onRegionChangeComplete={(region) => setMapRegion((prev) => {
           const unchanged =
             Math.abs(prev.latitudeDelta - region.latitudeDelta) < 1e-7 &&
@@ -303,7 +363,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
             coordinates={lot.coordinates}
             fillColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : withFillOpacity(lot.fillColor, LOT_FILL_OPACITY)}
             strokeColor={lot.isVisible === false ? 'rgba(0,0,0,0)' : lot.strokeColor}
-            strokeWidth={lot.isVisible === false ? 0 : 2}
+            strokeWidth={lot.isVisible === false ? 0 : (getActiveEvent(lot.lotStatus) || isLotClosed(lot.lotStatus) ? 4 : 2)}
             tappable={lot.isVisible !== false}
             onPress={() => {
               if (lot.isVisible === false) return;
@@ -311,22 +371,39 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
             }}
           />
         ))}
-        {lotLabels.map(({ lot, coordinate }) => (
+        {lotLabels.map(({ lot, lotName, coordinate, visible, labelVisible, statusIcons }) => (
           <Marker
             key={`${lot.id}-label`}
             coordinate={coordinate}
             anchor={{ x: 0.5, y: 0.5 }}
-            onPress={() => setSheetLot(lot)}
+            opacity={visible ? 1 : 0}
+            tappable={visible}
+            onPress={() => {
+              if (!visible) return;
+              setSheetLot(lot);
+            }}
           >
             <View style={styles.lotLabel}>
-              <Text style={{
-                color: lot.strokeColor || lot.fillColor || '#1f1f1f',
-                fontSize: labelFontSize,
-                fontWeight: '800',
-                lineHeight: labelFontSize + 2,
-                textAlign: 'center',
-                includeFontPadding: false,
-              }}>{getLotNumberLabel(lot)}</Text>
+              {statusIcons.length > 0 && (
+                <View style={[styles.statusBadge, isLotClosed(lot.lotStatus) && styles.statusBadgeClosed]}>
+                  {statusIcons.map((visual) => (
+                    <View key={visual.icon} style={[styles.statusIcon, { backgroundColor: visual.bg }]}>
+                      <Ionicons name={visual.icon as any} size={14} color={visual.iconColor} />
+                    </View>
+                  ))}
+                  {isLotClosed(lot.lotStatus) && <Text style={styles.statusClosedText}>CLOSED</Text>}
+                </View>
+              )}
+              {labelVisible && (
+                <Text style={{
+                  color: lot.strokeColor || lot.fillColor || '#1f1f1f',
+                  fontSize: labelFontSize,
+                  fontWeight: '800',
+                  lineHeight: labelFontSize + 2,
+                  textAlign: 'center',
+                  includeFontPadding: false,
+                }}>{lotName}</Text>
+              )}
             </View>
           </Marker>
         ))}
@@ -378,6 +455,35 @@ const styles = StyleSheet.create({
   },
   lotLabel: {
     backgroundColor: 'transparent',
+    alignItems: 'center',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    padding: 3,
+    marginBottom: 2,
+    borderRadius: 14,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  statusBadgeClosed: {
+    backgroundColor: '#374151',
+    borderColor: '#1F2937',
+  },
+  statusIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusClosedText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 3,
   },
   zoomControls: {
     position: 'absolute',

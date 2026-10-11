@@ -1,46 +1,69 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Platform } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { getAlerts, createAlert } from '../../api/alerts';
-import { SafeAreaView} from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from '../../utils/webCompat';
 import { getEventVisual, EVENT_CATEGORIES } from '../../utils/alertVisuals';
-//backend stores timestamps in UTC without a "Z" suffix; append it before
-//parsing so comparisons and displayed times use the device's local time
-const parseUTC = (isoString: string) =>
-  new Date(/Z$|[+-]\d{2}:?\d{2}$/.test(isoString) ? isoString : `${isoString}Z`);
+import DatePickerModal from '../../components/DatePickerModal';
+import LotPickerModal from '../../components/LotPickerModal';
+import { parseLotNames, joinLotNames, formatLotNames, CLOSURE_CATEGORY } from '../../utils/lotStatus';
+import { useFocusPolling } from '../../hooks/use-focus-polling';
+import {
+  toLocalDateString, getTodayDateString, isoToLocalDate, formatDate,
+  getEventRange, stripScheduleFromDescription, isAllDayRange, formatEventTimes,
+  startOfDay, endOfDay,
+} from '../../utils/eventDates';
+import ToggleChip from '../../components/ToggleChip';
+import TimePickerField from '../../components/TimePickerField';
 
-const toLocalDateString = (d: Date) => {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+const IS_WEB = Platform.OS === 'web';
+
+//"H:MM" or "HH:MM" + AM/PM -> 24h hours/minutes, or null if malformed
+const parseTime12h = (s: string, period: string): { hours: number; minutes: number } | null => {
+  const m = s.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  let hours = Number(m[1]);
+  const minutes = Number(m[2]);
+  if (hours < 1 || hours > 12 || minutes > 59) return null;
+  if (period === 'PM' && hours !== 12) hours += 12;
+  if (period === 'AM' && hours === 12) hours = 0;
+  return { hours, minutes };
 };
 
-const getTodayDateString = () => toLocalDateString(new Date());
+const combineDateAndTime = (date: Date, time: { hours: number; minutes: number }): Date => {
+  const combined = new Date(date);
+  combined.setHours(time.hours, time.minutes, 0, 0);
+  return combined;
+};
+
 export default function EventsScreen() {
-  const { openAdd } = useLocalSearchParams<{ openAdd?: string }>();
+  const { openAdd, reuseId } = useLocalSearchParams<{ openAdd?: string; reuseId?: string }>();
+  const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState(getTodayDateString());
   const [events, setEvents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const fetchEvents = async () => {
-    setIsLoading(true);
+  const fetchEvents = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     try {
       const data = await getAlerts('event');
       setEvents(data);
     } catch (error) {
       Alert.alert("Error", "Could not load campus events.");
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchEvents();
-  }, []);
+  useFocusEffect(
+    useCallback(() => { fetchEvents(); }, [])
+  );
+  //keep the calendar/feed fresh while the admin has this tab open, so a new
+  //commuter-triggered event doesn't require leaving and reopening the screen
+  useFocusPolling(() => fetchEvents(false));
   
   const [showAddEventModal, setShowAddEventModal] = useState(false);
 
@@ -58,32 +81,104 @@ export default function EventsScreen() {
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
   const [endTimePeriod, setEndTimePeriod] = useState('AM');
+  //"All day" skips both time fields (midnight -> 11:59 PM); "No end date"
+  //skips the end fields entirely for TBD/permanent events (saved with no event_end)
+  const [allDay, setAllDay] = useState(false);
+  const [noEndDate, setNoEndDate] = useState(false);
   const [description, setDescription] = useState('');
+  //lots this event affects - drives how they look on the commuter map
+  const [affectedLots, setAffectedLots] = useState<string[]>([]);
+  const [showLotPicker, setShowLotPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  //which of the two date fields the mini-calendar picker is currently editing
+  const [activeDateField, setActiveDateField] = useState<'start' | 'end' | null>(null);
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '';
-    const [year, month, day] = dateString.split('-');
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const m = months[Number(month) - 1] ?? '';
-    return `${m} ${Number(day)}, ${year}`;
-  };
-  //Filter for ACTIVE events (selected LOCAL date or later, so nothing disappears)
-  const activeEvents = events.filter(eventItem =>
-    eventItem.created_at && toLocalDateString(parseUTC(eventItem.created_at)) >= selected
-  );
+  //Events whose [start, end] range actually covers the selected day
+  const activeEvents = events.filter(eventItem => {
+    const { start, end } = getEventRange(eventItem);
+    const day = toLocalDateString(start);
+    const lastDay = toLocalDateString(end);
+    return day <= selected && selected <= lastDay;
+  });
+
+  //already-finished events, most recently ended first - lets an admin reuse a
+  //recurring event (e.g. a weekly gameday) instead of retyping it every time
+  const pastEvents = useMemo(() => {
+    const today = getTodayDateString();
+    return events
+      .filter(eventItem => toLocalDateString(getEventRange(eventItem).end) < today)
+      .sort((a, b) => getEventRange(b).end.getTime() - getEventRange(a).end.getTime())
+      .slice(0, 8);
+  }, [events]);
+
+  //One calendar dot per day that has at least one event, regardless of how
+  //many - merged with the currently-selected day's highlight.
+  const markedDates = useMemo(() => {
+    const marks: Record<string, any> = {};
+    events.forEach(eventItem => {
+      const { start, end } = getEventRange(eventItem);
+      let cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+      let guard = 0;
+      while (cursor <= last && guard < 366) {
+        const key = toLocalDateString(cursor);
+        marks[key] = { ...(marks[key] || {}), marked: true, dotColor: '#00853E' };
+        cursor.setDate(cursor.getDate() + 1);
+        guard++;
+      }
+    });
+    marks[selected] = { ...(marks[selected] || {}), selected: true, disableTouchEvent: true, selectedColor: '#00853E' };
+    return marks;
+  }, [events, selected]);
   // ADD EVENT
 
   const handleSaveEvent = async () => {
-    if (!eventName || !category || !startDate || !startTime || !endDate || !endTime) {
+    if (
+      !eventName || !category || !startDate ||
+      (!allDay && !startTime) ||
+      (!noEndDate && (!endDate || (!allDay && !endTime)))
+    ) {
       Alert.alert('Validation Error', 'Please fill in all required fields');
       return;
     }
+
+    if (category === CLOSURE_CATEGORY && affectedLots.length === 0) {
+      Alert.alert('Validation Error', 'Please select at least one lot to close.');
+      return;
+    }
+
+    const startHM = allDay ? null : parseTime12h(startTime, startTimePeriod);
+    const endHM = allDay || noEndDate ? null : parseTime12h(endTime, endTimePeriod);
+    if ((!allDay && !startHM) || (!allDay && !noEndDate && !endHM)) {
+      Alert.alert('Validation Error', 'Please pick a start and end time.');
+      return;
+    }
+
+    const eventStart = startHM
+      ? combineDateAndTime(isoToLocalDate(startDate), startHM)
+      : startOfDay(isoToLocalDate(startDate));
+    let eventEnd: Date | null = null;
+    if (!noEndDate) {
+      eventEnd = endHM
+        ? combineDateAndTime(isoToLocalDate(endDate), endHM)
+        : endOfDay(isoToLocalDate(endDate));
+    }
+    if (eventEnd && eventEnd < eventStart) {
+      Alert.alert('Validation Error', 'End date/time must be after the start date/time.');
+      return;
+    }
+
     setIsSaving(true);
     try {
-      //there's no dedicated start/end column on Alert, so the schedule is folded
-      //into the description text instead of being silently dropped
-      const schedule = `When: ${startDate} ${startTime} ${startTimePeriod} – ${endDate} ${endTime} ${endTimePeriod}`;
+      //still fold the schedule into the description as human-readable text,
+      //but event_start/event_end are now what drive the calendar and filtering
+      const startText = allDay ? formatDate(startDate) : `${formatDate(startDate)} ${startTime} ${startTimePeriod}`;
+      const endText = noEndDate
+        ? 'No end date'
+        : allDay ? formatDate(endDate) : `${formatDate(endDate)} ${endTime} ${endTimePeriod}`;
+      const schedule = allDay && !noEndDate && startDate === endDate
+        ? `When: ${formatDate(startDate)} (All day)`
+        : `When: ${startText} – ${endText}${allDay ? ' (All day)' : ''}`;
       const fullDescription = description.trim() ? `${schedule}\n\n${description.trim()}` : schedule;
 
       await createAlert({
@@ -91,6 +186,9 @@ export default function EventsScreen() {
         alert_type: 'event',
         category,
         description: fullDescription,
+        lot_name: affectedLots.length ? joinLotNames(affectedLots) : undefined,
+        event_start: eventStart.toISOString(),
+        event_end: eventEnd ? eventEnd.toISOString() : undefined,
       });
 
       Alert.alert('Success', 'Event created successfully');
@@ -113,7 +211,10 @@ export default function EventsScreen() {
     setEndDate('');
     setEndTime('');
     setEndTimePeriod('AM');
+    setAllDay(false);
+    setNoEndDate(false);
     setDescription('');
+    setAffectedLots([]);
   };
 
   const handleCancel = () => {
@@ -121,76 +222,155 @@ export default function EventsScreen() {
     resetForm();
   };
 
+  //pre-fill the Add Event form from a past event, but leave the date/time
+  //fields blank - the whole point is picking a NEW date, never the old one
+  const handleReuseEvent = (eventItem: any) => {
+    setEventName(eventItem.title || '');
+    setCategory(eventItem.category || null);
+    setDescription(stripScheduleFromDescription(eventItem.description || ''));
+    setAffectedLots(parseLotNames(eventItem.lot_name));
+    //keep the old event's shape (all-day / open-ended), just not its dates
+    const oldRange = getEventRange(eventItem);
+    setAllDay(isAllDayRange(oldRange));
+    setNoEndDate(oldRange.openEnded);
+    setStartDate('');
+    setStartTime('');
+    setStartTimePeriod('AM');
+    setEndDate('');
+    setEndTime('');
+    setEndTimePeriod('AM');
+    setShowAddEventModal(true);
+  };
+
+  //the Past Events page deep-links back here with ?reuseId=<id>; wait for the
+  //matching event to show up in the fetched list, then fire the reuse flow
+  //once (a ref, not state, so re-fetching events after save doesn't reopen it)
+  const reuseHandledRef = useRef(false);
+  useEffect(() => {
+    if (!reuseId || reuseHandledRef.current) return;
+    const found = events.find(e => String(e.id) === String(reuseId));
+    if (found) {
+      reuseHandledRef.current = true;
+      handleReuseEvent(found);
+    }
+  }, [reuseId, events]);
+
   return (
     <SafeAreaView style={styles.mainContainer} edges={['right', 'left']}>
       <ScrollView style={styles.scrollContainer} contentContainerStyle={{ paddingBottom: 100 }}>
         <Text style={styles.title}>Campus Events</Text>
         <Text style={styles.subtitle}>Select a date to view upcoming events</Text>
 
-        <Calendar
-          onDayPress={(day) => setSelected(day.dateString)}
-          markedDates={{
-            [selected]: {
-              selected: true,
-              disableTouchEvent: true,
-              selectedColor: '#00853E',
-            },
-          }}
-          theme={{
-            backgroundColor: '#fff',
-            calendarBackground: '#fff',
-            textSectionTitleColor: '#00853E',
-            selectedDayBackgroundColor: '#00853E',
-            selectedDayTextColor: '#fff',
-            todayTextColor: '#00853E',
-            dayTextColor: '#333',
-            monthTextColor: '#00853E',
-            arrowColor: '#00853E',
-          }}
-        />
-        {selected && (
-          <View style={styles.feedContainer}>
-            
-            {/* --- SECTION 1: ACTIVE EVENTS --- */}
-            <Text style={styles.feedTitle}>Events on {formatDate(selected)}</Text>
-            
-            {isLoading ? (
-              <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 20 }} />
-            ) : activeEvents.length === 0 ? (
-              <Text style={styles.emptyText}>No events scheduled for this date.</Text>
-            ) : (
-              activeEvents.map((eventItem) => {
-                const visual = getEventVisual(eventItem.category);
-                return (
-                  <TouchableOpacity
-                    key={eventItem.id}
-                    style={styles.card}
-                    onPress={() => Alert.alert('Event Details', `Interested in this event? (ID: ${eventItem.id})`)}
-                  >
-                    <View style={styles.cardHeader}>
-                      <View style={styles.titleRow}>
-                        <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
-                          <Ionicons name={visual.icon as any} size={24} color={visual.iconColor} />
-                        </View>
-                        <Text style={styles.cardTitle}>{eventItem.title}</Text>
-                      </View>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{eventItem.upvotes}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.cardTime}>
-                      {parseUTC(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                    {eventItem.description && (
-                       <Text style={styles.cardDesc}>{eventItem.description}</Text>
-                    )}
-                    <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-
+        <View style={IS_WEB && styles.webLayout}>
+          <View style={IS_WEB && styles.webCalendarCol}>
+            <Calendar
+              onDayPress={(day) => setSelected(day.dateString)}
+              markedDates={markedDates}
+              theme={{
+                backgroundColor: '#fff',
+                calendarBackground: '#fff',
+                textSectionTitleColor: '#00853E',
+                selectedDayBackgroundColor: '#00853E',
+                selectedDayTextColor: '#fff',
+                todayTextColor: '#00853E',
+                dayTextColor: '#333',
+                monthTextColor: '#00853E',
+                arrowColor: '#00853E',
+              }}
+            />
           </View>
+          {selected && (
+            <View style={[styles.feedContainer, IS_WEB && styles.webFeedCol]}>
+
+              {/* --- SECTION 1: ACTIVE EVENTS --- */}
+              <Text style={styles.feedTitle}>Events on {formatDate(selected)}</Text>
+
+              {isLoading ? (
+                <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 20 }} />
+              ) : activeEvents.length === 0 ? (
+                <Text style={styles.emptyText}>No events scheduled for this date.</Text>
+              ) : (
+                activeEvents.map((eventItem) => {
+                  const visual = getEventVisual(eventItem.category);
+                  return (
+                    <TouchableOpacity
+                      key={eventItem.id}
+                      style={styles.card}
+                      onPress={() => Alert.alert(
+                        eventItem.title,
+                        [
+                          eventItem.category,
+                          formatEventTimes(eventItem),
+                          eventItem.lot_name ? `Lots: ${formatLotNames(eventItem.lot_name)}` : null,
+                          eventItem.description,
+                        ].filter(Boolean).join('\n\n'),
+                      )}
+                    >
+                      <View style={styles.cardHeader}>
+                        <View style={styles.titleRow}>
+                          <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
+                            <Ionicons name={visual.icon as any} size={24} color={visual.iconColor} />
+                          </View>
+                          <Text style={styles.cardTitle}>{eventItem.title}</Text>
+                        </View>
+                        <View style={styles.badge}>
+                          <Text style={styles.badgeText}>{eventItem.upvotes}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.cardTime}>{formatEventTimes(eventItem)}</Text>
+                      {!!eventItem.lot_name && (
+                        <Text style={styles.cardLots}>📍 {formatLotNames(eventItem.lot_name)}</Text>
+                      )}
+                      {eventItem.description && (
+                         <Text style={styles.cardDesc}>{eventItem.description}</Text>
+                      )}
+                      <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+
+            </View>
+          )}
+        </View>
+
+        {IS_WEB && pastEvents.length > 0 && (
+          <View style={styles.pastEventsSection}>
+            <Text style={styles.pastEventsTitle}>REUSE A PAST EVENT</Text>
+            <Text style={styles.pastEventsSubtitle}>
+              Recreate a recurring event with a new date instead of retyping it
+            </Text>
+            {pastEvents.map(eventItem => {
+              const visual = getEventVisual(eventItem.category);
+              const { end } = getEventRange(eventItem);
+              return (
+                <View key={eventItem.id} style={styles.pastEventRow}>
+                  <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
+                    <Ionicons name={visual.icon as any} size={20} color={visual.iconColor} />
+                  </View>
+                  <View style={styles.pastEventInfo}>
+                    <Text style={styles.pastEventTitle} numberOfLines={1}>{eventItem.title}</Text>
+                    <Text style={styles.pastEventMeta}>{eventItem.category} · {formatDate(toLocalDateString(end))}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.reuseButton} onPress={() => handleReuseEvent(eventItem)}>
+                    <Ionicons name="refresh" size={14} color="#00853E" />
+                    <Text style={styles.reuseButtonText}>REUSE</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {!IS_WEB && pastEvents.length > 0 && (
+          <TouchableOpacity
+            style={styles.pastEventsLinkButton}
+            onPress={() => router.push('/(admin)/past-events')}
+          >
+            <Ionicons name="time-outline" size={20} color="#00853E" />
+            <Text style={styles.pastEventsLinkText}>VIEW PAST EVENTS</Text>
+            <Ionicons name="chevron-forward" size={18} color="#999" />
+          </TouchableOpacity>
         )}
       </ScrollView>
 
@@ -212,11 +392,12 @@ export default function EventsScreen() {
         transparent={true}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          {/* full-height modal: push content below the status bar / notch */}
+          <View style={[styles.modalContent, { paddingTop: insets.top + 20 }]}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <TouchableOpacity style={styles.modalBackButton} onPress={handleCancel} disabled={isSaving}>
-                <Ionicons name="chevron-back" size={20} color="#00853E" />
-                <Text style={styles.modalBackText}>Back</Text>
+                {!IS_WEB && <Ionicons name="chevron-back" size={20} color="#00853E" />}
+                <Text style={styles.modalBackText}>{IS_WEB ? 'Cancel' : 'Back'}</Text>
               </TouchableOpacity>
               <Text style={styles.modalTitle}>Add Event</Text>
 
@@ -244,69 +425,79 @@ export default function EventsScreen() {
                 ))}
               </View>
 
+              <Text style={styles.fieldLabel}>
+                Affected lots{category === CLOSURE_CATEGORY ? ' (required)' : ' (optional)'}:
+              </Text>
+              {affectedLots.length > 0 && (
+                <View style={styles.lotChipRow}>
+                  {affectedLots.map((lotName) => (
+                    <View key={lotName} style={styles.lotChip}>
+                      <Text style={styles.lotChipText}>{lotName}</Text>
+                      <TouchableOpacity
+                        onPress={() => setAffectedLots((prev) => prev.filter((n) => n !== lotName))}
+                        accessibilityLabel={`Remove ${lotName}`}
+                      >
+                        <Ionicons name="close-circle" size={16} color="#00853E" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+              <TouchableOpacity style={styles.dateButton} onPress={() => setShowLotPicker(true)}>
+                <Ionicons name="location-outline" size={18} color="#999" />
+                <Text style={styles.dateButtonText}>ADD LOT</Text>
+              </TouchableOpacity>
+
+              <View style={styles.toggleRow}>
+                <ToggleChip label="All day" value={allDay} onChange={setAllDay} />
+                <ToggleChip label="No end date (TBD / permanent)" value={noEndDate} onChange={setNoEndDate} />
+              </View>
+
               <Text style={styles.fieldLabel}>Start date:</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="MM/DD/YYYY"
-                value={startDate}
-                onChangeText={setStartDate}
-                placeholderTextColor="#999"
-              />
+              <TouchableOpacity style={styles.dateButton} onPress={() => setActiveDateField('start')}>
+                <Ionicons name="calendar-outline" size={18} color={startDate ? '#00853E' : '#999'} />
+                <Text style={[styles.dateButtonText, startDate && styles.dateButtonTextFilled]}>
+                  {startDate ? formatDate(startDate) : 'SELECT START DATE'}
+                </Text>
+              </TouchableOpacity>
 
-              <Text style={styles.fieldLabel}>Start time:</Text>
-              <View style={styles.timeRow}>
-                <TextInput
-                  style={[styles.textInput, styles.timeInput]}
-                  placeholder="--:--"
-                  value={startTime}
-                  onChangeText={setStartTime}
-                  placeholderTextColor="#999"
-                />
-                <TouchableOpacity
-                  style={[styles.periodButton, startTimePeriod === 'AM' && styles.periodButtonActive]}
-                  onPress={() => setStartTimePeriod('AM')}
-                >
-                  <Text style={[styles.periodButtonText, startTimePeriod === 'AM' && styles.periodButtonTextActive]}>AM</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.periodButton, startTimePeriod === 'PM' && styles.periodButtonActive]}
-                  onPress={() => setStartTimePeriod('PM')}
-                >
-                  <Text style={[styles.periodButtonText, startTimePeriod === 'PM' && styles.periodButtonTextActive]}>PM</Text>
-                </TouchableOpacity>
-              </View>
+              {!allDay && (
+                <>
+                  <Text style={styles.fieldLabel}>Start time:</Text>
+                  <TimePickerField
+                    time={startTime}
+                    period={startTimePeriod}
+                    onChange={(t, p) => { setStartTime(t); setStartTimePeriod(p); }}
+                    placeholder="SELECT START TIME"
+                    title="Start time"
+                  />
+                </>
+              )}
 
-              <Text style={styles.fieldLabel}>End date:</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="MM/DD/YYYY"
-                value={endDate}
-                onChangeText={setEndDate}
-                placeholderTextColor="#999"
-              />
+              {!noEndDate && (
+                <>
+                  <Text style={styles.fieldLabel}>End date:</Text>
+                  <TouchableOpacity style={styles.dateButton} onPress={() => setActiveDateField('end')}>
+                    <Ionicons name="calendar-outline" size={18} color={endDate ? '#00853E' : '#999'} />
+                    <Text style={[styles.dateButtonText, endDate && styles.dateButtonTextFilled]}>
+                      {endDate ? formatDate(endDate) : 'SELECT END DATE'}
+                    </Text>
+                  </TouchableOpacity>
 
-              <Text style={styles.fieldLabel}>End time:</Text>
-              <View style={styles.timeRow}>
-                <TextInput
-                  style={[styles.textInput, styles.timeInput]}
-                  placeholder="--:-"
-                  value={endTime}
-                  onChangeText={setEndTime}
-                  placeholderTextColor="#999"
-                />
-                <TouchableOpacity
-                  style={[styles.periodButton, endTimePeriod === 'AM' && styles.periodButtonActive]}
-                  onPress={() => setEndTimePeriod('AM')}
-                >
-                  <Text style={[styles.periodButtonText, endTimePeriod === 'AM' && styles.periodButtonTextActive]}>AM</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.periodButton, endTimePeriod === 'PM' && styles.periodButtonActive]}
-                  onPress={() => setEndTimePeriod('PM')}
-                >
-                  <Text style={[styles.periodButtonText, endTimePeriod === 'PM' && styles.periodButtonTextActive]}>PM</Text>
-                </TouchableOpacity>
-              </View>
+                  {!allDay && (
+                    <>
+                      <Text style={styles.fieldLabel}>End time:</Text>
+                      <TimePickerField
+                        time={endTime}
+                        period={endTimePeriod}
+                        onChange={(t, p) => { setEndTime(t); setEndTimePeriod(p); }}
+                        placeholder="SELECT END TIME"
+                        title="End time"
+                      />
+                    </>
+                  )}
+                </>
+              )}
 
               <Text style={styles.fieldLabel}>Description:</Text>
               <TextInput
@@ -339,6 +530,24 @@ export default function EventsScreen() {
           </View>
         </View>
       </Modal>
+
+      <LotPickerModal
+        visible={showLotPicker}
+        onClose={() => setShowLotPicker(false)}
+        onSelect={(lotName) => setAffectedLots((prev) => (prev.includes(lotName) ? prev : [...prev, lotName]))}
+      />
+
+      <DatePickerModal
+        visible={activeDateField !== null}
+        onClose={() => setActiveDateField(null)}
+        onSelect={(dateString) => {
+          if (activeDateField === 'start') setStartDate(dateString);
+          if (activeDateField === 'end') setEndDate(dateString);
+        }}
+        initialDate={(activeDateField === 'start' ? startDate : endDate) || undefined}
+        minDate={activeDateField === 'end' ? (startDate || undefined) : undefined}
+        title={activeDateField === 'start' ? 'Select start date' : 'Select end date'}
+      />
     </SafeAreaView>
   );
 }
@@ -349,6 +558,78 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 4 },
   subtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
   
+  webLayout: {
+    flexDirection: 'row',
+    gap: 20,
+  },
+  webCalendarCol: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderLeftWidth: 5,
+    borderLeftColor: '#00853E',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  webFeedCol: {
+    flex: 1,
+    marginTop: 0,
+  },
+  pastEventsSection: {
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderLeftWidth: 5,
+    borderLeftColor: '#999',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  pastEventsTitle: { fontSize: 14, fontWeight: '900', color: '#888', letterSpacing: 1, marginBottom: 4 },
+  pastEventsSubtitle: { fontSize: 12, color: '#999', marginBottom: 14 },
+  pastEventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  pastEventInfo: { flex: 1 },
+  pastEventTitle: { fontSize: 14, fontWeight: '700', color: '#333' },
+  pastEventMeta: { fontSize: 12, color: '#888', marginTop: 2 },
+  reuseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#E8F5EE',
+  },
+  reuseButtonText: { fontSize: 11, fontWeight: '800', color: '#00853E', letterSpacing: 0.5 },
+  pastEventsLinkButton: {
+    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  pastEventsLinkText: { flex: 1, fontSize: 14, fontWeight: '800', color: '#00853E', letterSpacing: 0.5 },
   feedContainer: {
     marginTop: 24,
     padding: 16,
@@ -512,33 +793,55 @@ const styles = StyleSheet.create({
     height: 140,
     textAlignVertical: 'top',
   },
-  timeRow: {
+  toggleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  cardLots: {
+    fontSize: 13,
+    color: '#00853E',
+    fontWeight: '600',
     marginBottom: 4,
   },
-  timeInput: {
-    flex: 1,
-    marginRight: 8,
+  lotChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
   },
-  periodButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: '#e0e0e0',
-    marginRight: 6,
+  lotChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E8F5EE',
+    borderRadius: 14,
+    paddingVertical: 4,
+    paddingLeft: 10,
+    paddingRight: 6,
   },
-  periodButtonActive: {
-    backgroundColor: '#00853E',
-    borderColor: '#00853E',
-  },
-  periodButtonText: {
+  lotChipText: {
     fontSize: 13,
+    color: '#00853E',
     fontWeight: '600',
-    color: '#666',
   },
-  periodButtonTextActive: {
-    color: '#fff',
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+  },
+  dateButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#999',
+  },
+  dateButtonTextFilled: {
+    color: '#333',
   },
   categoryRow: {
     flexDirection: 'row',

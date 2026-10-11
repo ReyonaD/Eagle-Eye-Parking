@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON
 from app.database import Base
 from datetime import datetime, timezone
 from app.database import Base
@@ -51,9 +51,72 @@ class Alert(Base):
     #URLs (relative to the backend) of photos attached to the report
     image_urls = Column(JSON, nullable=True, default=list)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    #for alert_type='event': when the event actually starts/ends, as picked by
+    #the admin in the form - distinct from created_at, which is just when the
+    #row was submitted. Null for hazards and for events created before this existed.
+    event_start = Column(DateTime, nullable=True)
+    event_end = Column(DateTime, nullable=True)
+    #emails of every distinct commuter who reported/confirmed this; lets admins
+    #see who to follow up with and is how we tell a genuine second confirmation
+    #from the same person re-submitting the same report
+    reporter_emails = Column(JSON, nullable=True, default=list)
 
 
+class Note(Base):
+    """
+    A private commuter -> admin message (e.g. "my car broke down in Lot 20,
+    back by 5pm"). Deliberately a separate table from Alert, not another
+    alert_type/category value:
+    - it's never meant to be published/broadcast, unlike hazards and events
+    - each note is one person's own situation, so the Alert dedup/merge
+      logic (multiple commuters confirming the SAME incident) doesn't apply
+      here and would incorrectly combine two unrelated people's notes about
+      the same lot
+    - fields like phone_number only ever make sense for a note, not for any
+      Alert category
+    """
+    __tablename__ = "notes"
 
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    description = Column(String, nullable=True)
+    lot_name = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    #the vehicle this note is about - may differ from the commuter's saved
+    #profile plate, so it's its own field here rather than read off User
+    plate_state = Column(String, nullable=True)
+    plate_number = Column(String, nullable=True)
+    image_urls = Column(JSON, nullable=True, default=list)
+    #the commuter-provided window this note applies to (e.g. "car parked here
+    #until Friday 5pm")
+    event_start = Column(DateTime, nullable=True)
+    event_end = Column(DateTime, nullable=True)
+    reporter_email = Column(String, nullable=False)
+    #set when an admin reviews/acknowledges the note; null until then. Admin
+    #UI buckets notes into Pending/Active/Expired from this + event_end.
+    acknowledged_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class DiagnosticLog(Base):
+    """
+    A snapshot of the app's recent console output, sent by a commuter from
+    Help & Support so we can trace bugs that only happen on their device
+    (e.g. the Android map not showing) without needing the device in hand.
+    """
+    __tablename__ = "diagnostic_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reporter_email = Column(String, nullable=False, index=True)
+    #optional "what were you doing when it broke" text from the user
+    description = Column(String, nullable=True)
+    #device context, so logs from different phones/OS versions can be told apart
+    platform = Column(String, nullable=True)
+    os_version = Column(String, nullable=True)
+    app_version = Column(String, nullable=True)
+    device_info = Column(JSON, nullable=True)
+    #the captured console lines, oldest first, one per line
+    logs = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"

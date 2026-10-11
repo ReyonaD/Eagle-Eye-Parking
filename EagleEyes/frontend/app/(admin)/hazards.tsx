@@ -1,16 +1,19 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Image, Modal, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Image, Modal, RefreshControl, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs, router, useFocusEffect } from 'expo-router';
+import { Tabs, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { getAlerts, getPendingAlerts, approveAlert, deleteAlert, uploadAlertImage, BASE_URL } from '../../api/alerts';
+import { getAlerts, getPendingAlerts, getDeclinedAlerts, approveAlert, deleteAlert, uploadAlertImage, BASE_URL } from '../../api/alerts';
 import { useLots } from '../../context/LotsContext';
 import LotMiniMap from '../../components/LotMiniMap';
 import { Alert } from '../../utils/webCompat';
 import { getHazardVisual } from '../../utils/alertVisuals';
+import { useFocusPolling } from '../../hooks/use-focus-polling';
+
+const IS_WEB = Platform.OS === 'web';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,6 +87,43 @@ function HazardCard({
         </View>
       </View>
     </TouchableOpacity>
+  );
+}
+
+// ─── HazardColumn (web three-column layout) ────────────────────────────────────
+
+//a bounded box that fits within the screen, scrolling internally for overflow
+//instead of growing the whole page - used for the web Pending/Declined/Published split
+function HazardColumn({
+  title,
+  accentColor,
+  hazards,
+  isNew,
+  onPress,
+  emptyText,
+}: {
+  title: string;
+  accentColor: string;
+  hazards: any[];
+  isNew: boolean;
+  onPress: (h: any) => void;
+  emptyText: string;
+}) {
+  return (
+    <View style={[styles.webColumn, { borderLeftColor: accentColor }]}>
+      <Text style={[styles.webColumnTitle, { color: accentColor }]}>
+        {title} ({hazards.length})
+      </Text>
+      <ScrollView style={styles.webColumnScroll} contentContainerStyle={styles.webColumnScrollContent}>
+        {hazards.length === 0 ? (
+          <Text style={styles.emptyText}>{emptyText}</Text>
+        ) : (
+          hazards.map(h => (
+            <HazardCard key={h.id} hazard={h} isNew={isNew} onPress={() => onPress(h)} />
+          ))
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -164,8 +204,8 @@ function HazardDetail({
         contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
       >
         <TouchableOpacity style={styles.backButton} onPress={onBack}>
-          <Ionicons name="chevron-back" size={20} color="#00853E" />
-          <Text style={styles.backText}>Back</Text>
+          {!IS_WEB && <Ionicons name="chevron-back" size={20} color="#00853E" />}
+          <Text style={styles.backText}>{IS_WEB ? 'Back to list' : 'Back'}</Text>
         </TouchableOpacity>
 
         {isPending ? (
@@ -217,6 +257,11 @@ function HazardDetail({
         <Text style={styles.studentCount}>
           STUDENT REPORT(S): {hazard.upvotes}
         </Text>
+        {Array.isArray(hazard.reporter_emails) && hazard.reporter_emails.length > 0 && (
+          <Text style={styles.reporterEmails} numberOfLines={2}>
+            REPORTED BY: {hazard.reporter_emails.join(', ')}
+          </Text>
+        )}
 
         <Text style={styles.locationLabel}>
           {isPending ? 'PHOTOS (TAP \u2715 TO REMOVE, WILL PUBLISH AS SHOWN):' : 'PHOTOS POSTED BY STUDENT:'}
@@ -267,7 +312,9 @@ function HazardDetail({
 
       <View style={[styles.actionRow, { paddingBottom: insets.bottom + 12 }]}>
         <TouchableOpacity style={styles.declineButton} onPress={() => onDecline(hazard)}>
-          <Text style={styles.actionButtonText}>{isPending ? 'DECLINE' : 'REMOVE'}</Text>
+          <Text style={styles.actionButtonText}>
+            {hazard.status === 'pending' ? 'DECLINE' : hazard.status === 'declined' ? 'DELETE' : 'REMOVE'}
+          </Text>
         </TouchableOpacity>
         {isPending && (
           <TouchableOpacity
@@ -295,7 +342,9 @@ function HazardDetail({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function HazardsScreen() {
+  const { viewId } = useLocalSearchParams<{ viewId?: string }>();
   const [pendingHazards, setPendingHazards] = useState<any[]>([]);
+  const [declinedHazards, setDeclinedHazards] = useState<any[]>([]);
   const [publishedHazards, setPublishedHazards] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedHazard, setSelectedHazard] = useState<any | null>(null);
@@ -303,12 +352,16 @@ export default function HazardsScreen() {
   const fetchHazards = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      //pending = commuter reports awaiting review; published = live on the feed
-      const [pending, published] = await Promise.all([
+      //pending = awaiting review; declined = admin turned down; published = live on the feed.
+      //declined is always fetched (even on mobile, where it's not shown inline) so the
+      //"VIEW DECLINED" button and the history page's deep-link-back can find a report by id
+      const [pending, declined, published] = await Promise.all([
         getPendingAlerts('hazard').catch(() => []),
+        getDeclinedAlerts('hazard').catch(() => []),
         getAlerts('hazard'),
       ]);
       setPendingHazards(pending);
+      setDeclinedHazards(declined);
       setPublishedHazards(published);
     } catch {
       Alert.alert('Error', 'Could not load hazard reports.');
@@ -327,28 +380,51 @@ export default function HazardsScreen() {
   useFocusEffect(
     useCallback(() => { fetchHazards(); }, [])
   );
+  //keep the queue fresh while the admin is looking at it, so a new commuter
+  //report shows up without them having to pull-to-refresh or leave the tab
+  useFocusPolling(() => fetchHazards(false));
+
+  //the Published/Declined history pages deep-link back here with ?viewId=<id>
+  //to reuse this screen's own detail view (edit/approve/remove) instead of
+  //duplicating it; wait for the matching report to show up, then open it once
+  const viewHandledRef = useRef(false);
+  useEffect(() => {
+    if (!viewId || viewHandledRef.current) return;
+    const found = [...pendingHazards, ...declinedHazards, ...publishedHazards]
+      .find(h => String(h.id) === String(viewId));
+    if (found) {
+      viewHandledRef.current = true;
+      setSelectedHazard(found);
+    }
+  }, [viewId, pendingHazards, declinedHazards, publishedHazards]);
 
   const handleDecline = (hazard: any) => {
-    Alert.alert(
-      'Decline Report',
-      `Remove "${hazard.title}" from the feed? This resolves the report and cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Decline',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteAlert(hazard.id);
-              setSelectedHazard(null);
-              fetchHazards();
-            } catch {
-              Alert.alert('Error', 'Could not remove this report. Check your connection.');
-            }
-          },
+    const isDeclined = hazard.status === 'declined';
+    const isPublished = hazard.status === 'published';
+    const title = isDeclined ? 'Delete Permanently' : isPublished ? 'Remove Hazard' : 'Decline Report';
+    const message = isDeclined
+      ? `Permanently delete "${hazard.title}" from the declined list? This cannot be undone.`
+      : isPublished
+      ? `Remove "${hazard.title}" from the feed? This cannot be undone.`
+      : `Decline "${hazard.title}"? It will be kept in the Declined list, not deleted.`;
+    const confirmLabel = isDeclined ? 'Delete' : isPublished ? 'Remove' : 'Decline';
+
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: confirmLabel,
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteAlert(hazard.id);
+            setSelectedHazard(null);
+            fetchHazards();
+          } catch {
+            Alert.alert('Error', 'Could not update this report. Check your connection.');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleApprove = async (hazard: any, edits: { title: string; description: string }) => {
@@ -378,51 +454,95 @@ export default function HazardsScreen() {
         />
       ) : (
         <>
-          <ScrollView
-            contentContainerStyle={styles.listScroll}
-            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#00853E" />}
-          >
-            <Text style={styles.screenTitle}>Hazard Reports</Text>
-            <Text style={styles.screenSubtitle}>Review commuter-submitted hazard alerts</Text>
+          {IS_WEB ? (
+            <View style={styles.webScreen}>
+              <Text style={styles.screenTitle}>Hazard Reports</Text>
+              <Text style={styles.screenSubtitle}>Review commuter-submitted hazard alerts</Text>
 
-            {isLoading ? (
-              <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 40 }} />
-            ) : (
-              <>
-                {pendingHazards.length > 0 && (
-                  <>
-                    <Text style={styles.sectionLabel}>PENDING REVIEW</Text>
-                    {pendingHazards.map(h => (
-                      <HazardCard
-                        key={h.id}
-                        hazard={h}
-                        isNew
-                        onPress={() => setSelectedHazard(h)}
-                      />
-                    ))}
-                  </>
-                )}
+              {isLoading ? (
+                <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 40 }} />
+              ) : (
+                <View style={styles.webColumnsRow}>
+                  <HazardColumn
+                    title="PENDING REVIEW"
+                    accentColor="#E74C3C"
+                    hazards={pendingHazards}
+                    isNew
+                    onPress={setSelectedHazard}
+                    emptyText="No pending reports."
+                  />
+                  <HazardColumn
+                    title="DECLINED"
+                    accentColor="#999"
+                    hazards={declinedHazards}
+                    isNew={false}
+                    onPress={setSelectedHazard}
+                    emptyText="No declined reports."
+                  />
+                  <HazardColumn
+                    title="PUBLISHED"
+                    accentColor="#00853E"
+                    hazards={publishedHazards}
+                    isNew={false}
+                    onPress={setSelectedHazard}
+                    emptyText="No published hazards."
+                  />
+                </View>
+              )}
+            </View>
+          ) : (
+            <ScrollView
+              contentContainerStyle={styles.listScroll}
+              refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#00853E" />}
+            >
+              <Text style={styles.screenTitle}>Hazard Reports</Text>
+              <Text style={styles.screenSubtitle}>Review commuter-submitted hazard alerts</Text>
 
-                {publishedHazards.length > 0 && (
-                  <>
-                    <Text style={[styles.sectionLabel, styles.olderLabel]}>PUBLISHED</Text>
-                    {publishedHazards.map(h => (
-                      <HazardCard
-                        key={h.id}
-                        hazard={h}
-                        isNew={false}
-                        onPress={() => setSelectedHazard(h)}
-                      />
-                    ))}
-                  </>
-                )}
+              {isLoading ? (
+                <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 40 }} />
+              ) : (
+                <>
+                  {pendingHazards.length > 0 ? (
+                    <>
+                      <Text style={styles.sectionLabel}>PENDING REVIEW</Text>
+                      {pendingHazards.map(h => (
+                        <HazardCard
+                          key={h.id}
+                          hazard={h}
+                          isNew
+                          onPress={() => setSelectedHazard(h)}
+                        />
+                      ))}
+                    </>
+                  ) : (
+                    <Text style={styles.emptyText}>No pending reports right now.</Text>
+                  )}
 
-                {pendingHazards.length === 0 && publishedHazards.length === 0 && (
-                  <Text style={styles.emptyText}>No hazard reports at this time.</Text>
-                )}
-              </>
-            )}
-          </ScrollView>
+                  {publishedHazards.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.historyLinkButton}
+                      onPress={() => router.push({ pathname: '/(admin)/hazard-history', params: { status: 'published' } })}
+                    >
+                      <Ionicons name="checkmark-circle-outline" size={20} color="#00853E" />
+                      <Text style={styles.historyLinkText}>VIEW PUBLISHED HAZARDS</Text>
+                      <Ionicons name="chevron-forward" size={18} color="#999" />
+                    </TouchableOpacity>
+                  )}
+
+                  {declinedHazards.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.historyLinkButton}
+                      onPress={() => router.push({ pathname: '/(admin)/hazard-history', params: { status: 'declined' } })}
+                    >
+                      <Ionicons name="close-circle-outline" size={20} color="#999" />
+                      <Text style={styles.historyLinkText}>VIEW DECLINED HAZARDS</Text>
+                      <Ionicons name="chevron-forward" size={18} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+            </ScrollView>
+          )}
 
           <TouchableOpacity
             style={styles.fab}
@@ -457,6 +577,48 @@ const styles = StyleSheet.create({
   listScroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 100 },
   screenTitle: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 4 },
   screenSubtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
+  historyLinkButton: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  historyLinkText: { flex: 1, fontSize: 14, fontWeight: '800', color: '#333', letterSpacing: 0.5 },
+
+  // Web: three-column Pending/Declined/Published layout, each box bounded to
+  // the screen with its own internal scroll instead of growing the whole page
+  webScreen: { flex: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 },
+  webColumnsRow: { flex: 1, flexDirection: 'row', gap: 20 },
+  webColumn: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderLeftWidth: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  webColumnTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 10,
+  },
+  webColumnScroll: { flex: 1 },
+  webColumnScrollContent: { paddingHorizontal: 16, paddingBottom: 16 },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '900',
@@ -564,7 +726,8 @@ const styles = StyleSheet.create({
   },
   mapPlaceholderText: { fontSize: 13, color: '#aaa', fontWeight: '600', marginTop: 8 },
   mapPlaceholderSub: { fontSize: 11, color: '#bbb', marginTop: 4 },
-  studentCount: { fontSize: 14, fontWeight: '700', color: '#333', textTransform: 'uppercase', marginBottom: 16 },
+  studentCount: { fontSize: 14, fontWeight: '700', color: '#333', textTransform: 'uppercase', marginBottom: 4 },
+  reporterEmails: { fontSize: 12, color: '#777', marginBottom: 16 },
   pictureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   photoEditWrap: { position: 'relative' },
   photoRemoveBadge: {

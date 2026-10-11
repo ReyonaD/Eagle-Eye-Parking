@@ -11,10 +11,12 @@ import {
   Modal,
 } from 'react-native';
 import { getAlerts, BASE_URL } from '../../api/alerts';
+import { formatLotNames } from '../../utils/lotStatus';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { getAlertVisual, getCategoryLabel } from '../../utils/alertVisuals';
+import { useAlertsBadge } from '../../context/AlertsBadgeContext';
 
 type FilterType = 'All' | 'Hazard' | 'Event';
 
@@ -76,7 +78,7 @@ function toAlertItem(raw: any): AlertItem {
     section: sectionFor(raw.created_at),
     alertType: raw.alert_type === 'event' ? 'event' : 'hazard',
     category: raw.category || undefined,
-    lotName: raw.lot_name || undefined,
+    lotName: formatLotNames(raw.lot_name),
     imageUrls: Array.isArray(raw.image_urls) && raw.image_urls.length ? raw.image_urls : undefined,
   };
 }
@@ -308,6 +310,17 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
 
 export default function AlertsScreen() {
   const router = useRouter();
+  const { refreshBadge, markAlertsSeen } = useAlertsBadge();
+
+  //entering this tab counts as "seen": refresh the latest max id, then clear the bell badge
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        await refreshBadge();
+        await markAlertsSeen();
+      })();
+    }, [refreshBadge, markAlertsSeen])
+  );
   const [filter, setFilter] = useState<FilterType>('All');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -433,7 +446,7 @@ export default function AlertsScreen() {
         accessibilityRole="button"
         accessibilityLabel="Report a hazard"
       >
-        <Ionicons name="warning" size={30} color="#FACC15" />
+        <Ionicons name="warning" size={34} color="#FACC15" />
       </TouchableOpacity>
 
       <Modal
@@ -463,13 +476,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f9f9f9', // matches the app's overall background
   },
+  // same size/placement as the map tab's hazard button (index.tsx hazardFab)
+  // so it doesn't jump around when switching between the two tabs
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 80,
-    width: 48,
-    height: 48,
-    borderRadius: 8,
+    bottom: 60,
+    width: 56,
+    height: 56,
+    borderRadius: 10,
     backgroundColor: '#00853E',
     alignItems: 'center',
     justifyContent: 'center',
