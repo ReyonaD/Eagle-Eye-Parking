@@ -170,7 +170,7 @@ function CollapsibleSectionHeader({
   );
 }
 
-function AlertCard({ alert, onPress }: { alert: AlertItem; onPress: () => void }) {
+function AlertCard({ alert, unread, onPress }: { alert: AlertItem; unread: boolean; onPress: () => void }) {
   const visual = getAlertVisual(alert.alertType, alert.category);
   const thumbnailUrl = alert.imageUrls?.[0];
   const extraPhotoCount = (alert.imageUrls?.length ?? 0) - 1;
@@ -182,7 +182,10 @@ function AlertCard({ alert, onPress }: { alert: AlertItem; onPress: () => void }
       </View>
 
       <View style={styles.cardBody}>
-        <Text style={styles.cardTitle} numberOfLines={1}>{alert.title}</Text>
+        <View style={styles.cardTitleRow}>
+          {unread && <View style={styles.unreadDot} accessibilityLabel="Unread" />}
+          <Text style={styles.cardTitle} numberOfLines={1}>{alert.title}</Text>
+        </View>
 
         {!!alert.lotName && (
           <View style={styles.lotRow}>
@@ -310,7 +313,7 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
 
 export default function AlertsScreen() {
   const router = useRouter();
-  const { refreshBadge, markAlertsSeen } = useAlertsBadge();
+  const { refreshBadge, markAlertsSeen, unreadIds, markAlertRead } = useAlertsBadge();
 
   //entering this tab counts as "seen": refresh the latest max id, then clear the bell badge
   useFocusEffect(
@@ -344,9 +347,13 @@ export default function AlertsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadAlerts();
-  }, [loadAlerts]);
+  //tabs stay mounted, so reload on every focus — otherwise tapping the bell for a
+  //new alert lands on the list as it was when the tab was first opened
+  useFocusEffect(
+    useCallback(() => {
+      loadAlerts();
+    }, [loadAlerts])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -374,11 +381,19 @@ export default function AlertsScreen() {
     setEarlierExpanded((prev) => !prev);
   }, []);
 
-  const todayItems = filteredAlerts.filter((a) => a.section === 'Today');
-  const yesterdayItems = filteredAlerts.filter((a) => a.section === 'Yesterday');
-  const earlierItems = filteredAlerts.filter((a) => a.section === 'Earlier');
+  //unread alerts stay pinned under NEW regardless of age, so an old alert the user
+  //never opened can't hide inside the collapsed Earlier section
+  const newItems = filteredAlerts.filter((a) => unreadIds.has(a.id));
+  const readItems = filteredAlerts.filter((a) => !unreadIds.has(a.id));
+  const todayItems = readItems.filter((a) => a.section === 'Today');
+  const yesterdayItems = readItems.filter((a) => a.section === 'Yesterday');
+  const earlierItems = readItems.filter((a) => a.section === 'Earlier');
 
   const listData: any[] = [];
+  if (newItems.length) {
+    listData.push({ id: 'NEW-header', kind: 'header', label: 'NEW' });
+    newItems.forEach((a) => listData.push({ ...a, kind: 'alert' }));
+  }
   if (todayItems.length) {
     listData.push({ id: 'TODAY-header', kind: 'header', label: 'TODAY' });
     todayItems.forEach((a) => listData.push({ ...a, kind: 'alert' }));
@@ -417,7 +432,16 @@ export default function AlertsScreen() {
             );
           }
 
-          return <AlertCard alert={item} onPress={() => setSelectedAlert(item)} />;
+          return (
+            <AlertCard
+              alert={item}
+              unread={unreadIds.has(item.id)}
+              onPress={() => {
+                setSelectedAlert(item);
+                markAlertRead(item.id);
+              }}
+            />
+          );
         }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -613,12 +637,24 @@ const styles = StyleSheet.create({
   cardBody: {
     flex: 1,
   },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E02D2D',
+  },
   cardTitle: {
+    flexShrink: 1,
     fontSize: 16,
     fontWeight: '700',
     color: '#334155',
     lineHeight: 21,
-    marginBottom: 4,
   },
   cardTimeRow: {
     flexDirection: 'row',
