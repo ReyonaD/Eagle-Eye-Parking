@@ -22,6 +22,7 @@ import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
 import { useUser } from '../../context/UserContext';
 import { openDirections } from '../../utils/navigation';
+import { nearestLotDistance, rankPermitsByDistance, formatDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_PERMIT_COUNT } from '../../utils/geo';
 import { GROUP_EMBLEMS, lotMatchesPermitType, getPremiumParkingLink, dedupePermitLabels, isPerLotPermitCode, normalizePermitPreservingCode, consolidatePermits } from '../../utils/permits';
 import { getPermitCardStyle } from '../../utils/permitColors';
 import { NAME_TO_CODE } from '../../utils/nightPermitRules';
@@ -421,7 +422,7 @@ export default function LotsScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const listRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
-  const { lots, isLoading, lastRefreshAt, filterByPermit, previewMode, setPreviewMode, actuallyNight } = useLots();
+  const { lots, isLoading, lastRefreshAt, filterByPermit, previewMode, setPreviewMode, actuallyNight, userLocation } = useLots();
   // null previewMode = follow the real clock.
   const previewingNight = previewMode === null ? actuallyNight : previewMode === 'night';
   const isLivePreview = previewingNight === actuallyNight;
@@ -513,6 +514,17 @@ export default function LotsScreen() {
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [lots]);
+
+  // When the user is on campus, the permits whose closest lot is nearest to
+  // them, listed above the A-Z list. Off campus (or no location permission)
+  // this is empty and the picker is plain A-Z. Uses each lot's current
+  // permitList, so it follows the Day/Night setting too.
+  const nearbyPermits = useMemo(() => {
+    if (!userLocation) return [];
+    if (nearestLotDistance(userLocation, lots) > NEARBY_LOT_THRESHOLD_METERS) return [];
+    return rankPermitsByDistance(userLocation, lots, (lot) => consolidatePermits(lot.permitList))
+      .slice(0, NEARBY_PERMIT_COUNT);
+  }, [lots, userLocation]);
 
   const filtered = useMemo(() => {
     // Split into words so "resident 16" or "16 resident" both find "Lot 16
@@ -813,6 +825,21 @@ export default function LotsScreen() {
               {permitFilter === 'all' && <Ionicons name="checkmark" size={27} color="#00853E" />}
             </TouchableOpacity>
             <ScrollView style={{ maxHeight: windowHeight * 0.6 }}>
+              {nearbyPermits.length > 0 && (
+                <>
+                  <Text style={styles.pickerSectionLabel}>NEAR YOU</Text>
+                  {nearbyPermits.map(({ permit: p, meters }) => (
+                    <TouchableOpacity key={`near-${p}`} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
+                      <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
+                      <View style={styles.pickerOptionRight}>
+                        <Text style={styles.pickerOptionDistance}>{formatDistance(meters)}</Text>
+                        {permitFilter === p && <Ionicons name="checkmark" size={27} color="#00853E" />}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  <Text style={styles.pickerSectionLabel}>ALL PERMIT TYPES (A–Z)</Text>
+                </>
+              )}
               {uniquePermits.map((p) => (
                 <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
                   <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
@@ -1403,6 +1430,23 @@ pageIndicator: {
   pickerOptionActive: {
     color: '#00853E',
     fontWeight: '700',
+  },
+  pickerSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#888',
+    letterSpacing: 0.6,
+    marginTop: 14,
+    marginBottom: 2,
+  },
+  pickerOptionRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pickerOptionDistance: {
+    fontSize: 13,
+    color: '#888',
   },
 
   // --- LOT DETAILS MODAL ---

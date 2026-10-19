@@ -39,3 +39,34 @@ export function nearestLotDistance(origin: LatLng, lots: { coordinates?: LatLng[
     return d < min ? d : min;
   }, Infinity);
 }
+
+/** How many permits the Lots tab's permit picker lists under "Near you". */
+export const NEARBY_PERMIT_COUNT = 5;
+
+/**
+ * Each permit paired with the distance to the closest lot that accepts it,
+ * nearest first. `getPermits` returns a lot's (already consolidated) permits.
+ */
+export function rankPermitsByDistance<T extends { coordinates?: LatLng[] }>(
+  origin: LatLng,
+  lots: T[],
+  getPermits: (lot: T) => string[],
+): { permit: string; meters: number }[] {
+  const closest = new Map<string, number>();
+  lots.forEach((lot) => {
+    if (!Array.isArray(lot.coordinates) || lot.coordinates.length < 3) return;
+    const d = distanceMeters(origin, centroid(lot.coordinates));
+    getPermits(lot).forEach((permit) => {
+      const prev = closest.get(permit);
+      if (prev === undefined || d < prev) closest.set(permit, d);
+    });
+  });
+  return Array.from(closest, ([permit, meters]) => ({ permit, meters })).sort((a, b) => a.meters - b.meters);
+}
+
+/** Short walking-distance label: "250 ft" under 0.1 mi, otherwise "0.4 mi". */
+export function formatDistance(meters: number): string {
+  const miles = meters / 1609.344;
+  if (miles < 0.1) return `${Math.max(50, Math.round((meters * 3.28084) / 50) * 50)} ft`;
+  return `${miles.toFixed(1)} mi`;
+}

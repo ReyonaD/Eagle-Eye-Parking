@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../utils/webCompat';
 import { getLotPermitGroups, getLotCategory } from '../utils/permits';
 import { getEffectivePermits, isNightWindow } from '../utils/nightPermitRules';
+import { distanceMeters, LatLng } from '../utils/geo';
 //define the exact shape of data
 interface LotsContextType {
     lots: any[];
@@ -24,7 +25,16 @@ interface LotsContextType {
     // Commuter's preferred map rendering, set from Profile Setting.
     mapType: 'standard' | 'satellite';
     setMapType: (value: 'standard' | 'satellite') => void;
+    // Last known device location, reported by the Map tab's own location fix
+    // (so the Lots tab can rank nearby permits without a second permission
+    // prompt). null until a fix arrives or if permission was denied.
+    userLocation: LatLng | null;
+    updateUserLocation: (value: LatLng) => void;
 }
+
+// Ignore location updates smaller than this so GPS jitter doesn't re-render
+// every screen that reads the context.
+const USER_LOCATION_MIN_MOVE_METERS = 25;
 
 // Exported so other screens (e.g. profile settings) can read/write it directly if needed.
 export const FILTER_BY_PERMIT_STORAGE_KEY = 'filterLotsByPermit';
@@ -104,8 +114,9 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
     const [filterByPermit, setFilterByPermitState] = useState(false);
-    const [previewMode, setPreviewMode] = useState<'day' | 'night' | null>(null);
+    const [previewMode, setPreviewModeState] = useState<'day' | 'night' | null>(null);
     const [mapType, setMapTypeState] = useState<'standard' | 'satellite'>('standard');
+    const [userLocation, setUserLocation] = useState<LatLng | null>(null);
     const hasLoadedOnce = React.useRef(false);
 
     useEffect(() => {
@@ -256,6 +267,19 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     return () => clearInterval(intervalId);
   }, []);
 
+  // Picking the time of day it actually is goes back to following the clock
+  // (null), so switching to Night and back to Day doesn't leave the app pinned
+  // to "Day" — which would silently turn into a stale preview at 5:30pm.
+  const setPreviewMode = (value: 'day' | 'night' | null) => {
+    setPreviewModeState(value !== null && (value === 'night') === isNightWindow() ? null : value);
+  };
+
+  const updateUserLocation = (value: LatLng) => {
+    setUserLocation((prev) =>
+      prev && distanceMeters(prev, value) < USER_LOCATION_MIN_MOVE_METERS ? prev : value
+    );
+  };
+
   const actuallyNight = isNightWindow();
   // null previewMode = follow the real clock.
   const previewingNight = previewMode === null ? actuallyNight : previewMode === 'night';
@@ -288,6 +312,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
         <LotsContext.Provider value={{
           lots, isLoading, lastRefreshAt, fetchLots, filterByPermit, setFilterByPermit,
           previewMode, setPreviewMode, actuallyNight, mapType, setMapType,
+          userLocation, updateUserLocation,
         }}>
             {children}
         </LotsContext.Provider>

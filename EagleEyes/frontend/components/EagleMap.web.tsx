@@ -4,6 +4,7 @@ import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { nearestLotDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_LEVEL_WEB } from '../utils/geo';
 import { isLotClosed, getActiveEvent, LotStatus } from '../utils/lotStatus';
 import { getCategoryLabel } from '../utils/alertVisuals';
+import { useLots } from '../context/LotsContext';
 
 // One line per closure/event/hazard on the lot, for the click popup.
 function describeLotStatus(status?: LotStatus | null): string {
@@ -54,6 +55,7 @@ function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
   const liveLotsRef = useRef(liveLots);
   liveLotsRef.current = liveLots;
   const startedRef = useRef(false);
+  const { updateUserLocation } = useLots();
 
   useEffect(() => {
     if (startedRef.current || !map) return;
@@ -63,6 +65,8 @@ function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const userLoc = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+        // Shared with the Lots tab so its permit picker can list nearby permits first.
+        updateUserLocation(userLoc);
         const distance = nearestLotDistance(userLoc, liveLotsRef.current || []);
         if (distance > NEARBY_LOT_THRESHOLD_METERS) return; // far from campus — leave the default view.
 
