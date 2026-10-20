@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.frontend",
+      "bundleIdentifier": "com.parkzen.eagleeyes.capstone",
       "config": {
         "googleMapsApiKey": "AIzaSyAeKFvAPWQat4h6U_sMDIxERr8Oy2b4t8U"
       },
