@@ -89,12 +89,32 @@ const GROUP_MARKER_PERMIT: Record<string, string> = {
   UCG: 'Union Circle Garage',
 };
 
+// Day rules run Mon-Fri 7am-5:30pm; everything else (weeknights and all
+// weekend) is night, per the official chart. Every label below is built from
+// these two times, so the UI can't drift from isNightWindow.
+const DAY_START_MINUTES = 7 * 60;
+const NIGHT_START_MINUTES = 17 * 60 + 30;
+
+// 420 -> "7 AM", 1050 -> "5:30 PM"
+function formatClock(minutes: number): string {
+  const h24 = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h24 % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h24 >= 12 ? 'PM' : 'AM'}`;
+}
+
+/** "7 AM – 5:30 PM" (weekdays only) */
+export const DAY_HOURS_LABEL = `${formatClock(DAY_START_MINUTES)} – ${formatClock(NIGHT_START_MINUTES)}`;
+/** "5:30 PM – 7 AM" (plus all weekend) */
+export const NIGHT_HOURS_LABEL = `${formatClock(NIGHT_START_MINUTES)} – ${formatClock(DAY_START_MINUTES)}`;
+export const DAY_WINDOW_DESCRIPTION = `Mon–Fri, ${DAY_HOURS_LABEL}`;
+export const NIGHT_WINDOW_DESCRIPTION = `Mon–Fri ${NIGHT_HOURS_LABEL}, and all weekend`;
+
 /** Mon-Fri 5:30pm-7am, and all day Sat/Sun, per the official chart. */
 export function isNightWindow(date: Date = new Date()): boolean {
   const day = date.getDay(); // 0 Sun - 6 Sat
   if (day === 0 || day === 6) return true;
   const minutes = date.getHours() * 60 + date.getMinutes();
-  return minutes < 7 * 60 || minutes >= 17 * 60 + 30;
+  return minutes < DAY_START_MINUTES || minutes >= NIGHT_START_MINUTES;
 }
 
 function inferLotGroup(category: string | null, dayPermits: string[]): string | null {

@@ -17,6 +17,8 @@ import { Alert } from '../../utils/webCompat';
 import { PINNED_LOTS_STORAGE_KEY } from './lots';
 import InitialsAvatar from '../../components/InitialsAvatar';
 import { getPermitCardStyle } from '../../utils/permitColors';
+import { useLots } from '../../context/LotsContext';
+import { lookupPermitHours, summarizePermitHours } from '../../utils/permitHours';
 // function TopBar() {
 //   const router = useRouter();
 //   return (
@@ -91,6 +93,9 @@ export function ProfileScreen() {
   useFocusEffect(useCallback(() => { refreshUser(); }, []));
   const hasPermit = !!user.parkingProfile.permitType;
   const permitCardStyle = getPermitCardStyle(user.parkingProfile.permitType);
+  // when this permit may park, from ParkZen ("Any time", "Daily 3:30 PM – 7:00 AM")
+  const { permitHours } = useLots();
+  const ownPermitHours = lookupPermitHours(permitHours, user.parkingProfile.permitType);
 
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -158,6 +163,11 @@ export function ProfileScreen() {
                 >
                   {user.parkingProfile.permitType}
                 </Text>
+                {ownPermitHours && (
+                  <Text style={[styles.permitHours, { color: permitCardStyle.label }]} numberOfLines={2}>
+                    {summarizePermitHours(ownPermitHours)}
+                  </Text>
+                )}
               </View>
               <View style={[
                 styles.permitBadge,
@@ -319,6 +329,11 @@ const styles = StyleSheet.create({
   permitTopLeft: {
     flex: 1,
     marginRight: 10,
+  },
+  permitHours: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
   },
   permitLabel: {
     fontSize: 11,

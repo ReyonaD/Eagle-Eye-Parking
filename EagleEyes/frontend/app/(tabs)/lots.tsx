@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
+  Pressable,
   Text,
   FlatList,
   TextInput,
@@ -24,9 +25,12 @@ import { useUser } from '../../context/UserContext';
 import { openDirections } from '../../utils/navigation';
 import { GROUP_EMBLEMS, lotMatchesPermitType, getPremiumParkingLink, dedupePermitLabels, isPerLotPermitCode, normalizePermitPreservingCode, consolidatePermits } from '../../utils/permits';
 import { getPermitCardStyle } from '../../utils/permitColors';
-import { NAME_TO_CODE } from '../../utils/nightPermitRules';
+import { NAME_TO_CODE, DAY_HOURS_LABEL, NIGHT_HOURS_LABEL } from '../../utils/nightPermitRules';
 import { Alert } from '../../utils/webCompat';
-type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full';
+import { getLotStatusIcons, getLotStatusItems, getLotTakeover } from '../../utils/lotStatus';
+import PermitHoursList from '../../components/PermitHoursList';
+import AlertIcon from '../../components/AlertIcon';
+type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full' | 'Closed' | 'No Data';
 
 // Mobile loads just enough lots to fill the viewport, then appends more as
 // the user scrolls toward the bottom. Web instead pages through in fixed
@@ -71,7 +75,27 @@ const STATUS_COLOR: Record<AvailabilityStatus, string> = {
   'Available': '#00853E',
   'Near Capacity': '#F5A623',
   'Full': '#D0021B',
+  // Admin-scheduled closure (see utils/lotStatus.ts) - matches the map's dark gray lot.
+  'Closed': '#374151',
+  // No ParkZen occupancy estimate - same gray as the map's no-data lots.
+  'No Data': '#808080',
 };
+
+// Small closure/event/hazard icons beside a card's occupancy, same set and
+// order as the badge pinned on the lot on the map.
+function LotStatusIcons({ lot }: { lot: any }) {
+  const icons = getLotStatusIcons(lot.lotStatus);
+  if (icons.length === 0) return null;
+  return (
+    <View style={styles.statusIconRow}>
+      {icons.map((visual) => (
+        <View key={visual.icon} style={[styles.statusIconBox, { backgroundColor: visual.bg }]}>
+          <AlertIcon visual={visual} size={13} />
+        </View>
+      ))}
+    </View>
+  );
+}
 
 const PERMIT_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
   'A':    { bg: '#D4C8A8', text: '#5C4A1E' },
@@ -172,10 +196,36 @@ function LotCard({
   onPress: (lot: any) => void;
   onTogglePin: (lot: any) => void;
 }) {
-  const dotColor = STATUS_COLOR[lot.status as AvailabilityStatus] || STATUS_COLOR['Available'];
+  // A closure or event in progress takes over the card: the event's icon,
+  // label, and end time replace the permit badge, status, and occupancy.
+  const takeover = getLotTakeover(lot.lotStatus);
+  const statusLabel = takeover ? takeover.label : lot.status;
+  const dotColor = takeover
+    ? (takeover.label === 'Closed' ? STATUS_COLOR['Closed'] : takeover.visual.iconColor)
+    : STATUS_COLOR[lot.status as AvailabilityStatus] || STATUS_COLOR['No Data'];
   const badge = getPermitBadgeInfo(lot.permitList || [], lot.name);
-  const displayPercent = typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% Empty` : 'Live';
+  const statusItems = getLotStatusItems(lot.lotStatus);
+  const displayPercent = takeover
+    ? takeover.until
+    : typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% Empty` : 'Live';
   const isGrid = layout === 'grid';
+
+  const badgeNode = takeover ? (
+    <View style={[styles.permitBadge, { backgroundColor: takeover.visual.bg }]}>
+      <Ionicons name={takeover.visual.icon as any} size={24} color={takeover.visual.iconColor} />
+    </View>
+  ) : (
+    <View style={[styles.permitBadge, { backgroundColor: badge.bg }, badge.border && { borderWidth: 1, borderColor: badge.border }]}>
+      <Text
+        style={[styles.permitBadgeText, { color: badge.text }]}
+        numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+      >
+        {badge.label}
+      </Text>
+    </View>
+  );
 
   const handleLongPress = () => {
     if (Platform.OS === 'web') return;
@@ -188,7 +238,12 @@ function LotCard({
     onTogglePin(lot);
   };
 
-  const cardAccessibilityLabel = `${lot.name}, ${lot.status}${isPinned ? ', pinned' : ''}`;
+  const cardAccessibilityLabel = [
+    lot.name,
+    statusLabel,
+    ...statusItems.map((item) => item.title),
+    isPinned ? 'pinned' : null,
+  ].filter(Boolean).join(', ');
   const cardAccessibilityHint =
     Platform.OS === 'web'
       ? 'Opens lot details'
@@ -226,16 +281,7 @@ function LotCard({
       >
       {isGrid ? (
         <>
-          <View style={[styles.permitBadge, { backgroundColor: badge.bg }, badge.border && { borderWidth: 1, borderColor: badge.border }]}>
-            <Text
-              style={[styles.permitBadgeText, { color: badge.text }]}
-              numberOfLines={2}
-              adjustsFontSizeToFit
-              minimumFontScale={0.6}
-            >
-              {badge.label}
-            </Text>
-          </View>
+          {badgeNode}
           <View style={styles.gridNameRow}>
             <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
             {lot.name === 'Highland Street Garage' ? (
@@ -249,25 +295,17 @@ function LotCard({
               </Text>
             )}
           </View>
+          <LotStatusIcons lot={lot} />
           <View style={styles.gridBottomRow}>
             <Text style={[styles.statusText, { color: dotColor }]} numberOfLines={1}>
-              {lot.status}
+              {statusLabel}
             </Text>
             <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
           </View>
         </>
       ) : (
         <>
-          <View style={[styles.permitBadge, { backgroundColor: badge.bg }, badge.border && { borderWidth: 1, borderColor: badge.border }]}>
-            <Text
-              style={[styles.permitBadgeText, { color: badge.text }]}
-              numberOfLines={2}
-              adjustsFontSizeToFit
-              minimumFontScale={0.6}
-            >
-              {badge.label}
-            </Text>
-          </View>
+          {badgeNode}
           <View style={styles.cardMiddle}>
             {lot.name === 'Highland Street Garage' ? (
               <View style={styles.lotNameTag}>
@@ -277,13 +315,16 @@ function LotCard({
             ) : (
               <Text style={styles.lotName}>{lot.name}</Text>
             )}
-            <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
+            <View style={styles.percentRow}>
+              <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
+              <LotStatusIcons lot={lot} />
+            </View>
           </View>
           <View style={styles.cardRight}>
             <View style={styles.statusContainer}>
               <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
               <Text style={[styles.statusText, { color: dotColor }]} numberOfLines={1}>
-                {lot.status}
+                {statusLabel}
               </Text>
             </View>
           </View>
@@ -610,6 +651,14 @@ export default function LotsScreen() {
     }
   };
 
+  // Same takeover rule as the cards: a closure or event in progress shows just
+  // the lot and what's going on, no occupancy/permits/directions.
+  const selectedTakeover = selectedLot ? getLotTakeover(selectedLot.lotStatus) : null;
+  const selectedStatusLabel = selectedTakeover ? selectedTakeover.label : selectedLot?.status;
+  const selectedStatusColor = selectedTakeover
+    ? (selectedTakeover.label === 'Closed' ? STATUS_COLOR['Closed'] : selectedTakeover.visual.iconColor)
+    : STATUS_COLOR[selectedLot?.status as AvailabilityStatus] || STATUS_COLOR['No Data'];
+
   const closeModal = () => {
     setMoreInfoVisible(false);
     setModalVisible(false);
@@ -634,7 +683,9 @@ export default function LotsScreen() {
           color={isLivePreview ? '#5d6d7e' : PREVIEW_AMBER_DARK}
         />
         <Text style={[styles.liveStatusText, !isLivePreview && styles.liveStatusTextPreview]}>
-          {isLivePreview ? `Last synced: ${refreshLabel}` : `Previewing ${previewingNight ? 'Night' : 'Day'} rules`}
+          {isLivePreview
+            ? `Last synced: ${refreshLabel}`
+            : `Previewing ${previewingNight ? `Night rules (${NIGHT_HOURS_LABEL})` : `Day rules (${DAY_HOURS_LABEL})`}`}
         </Text>
       </View>
       <FilterHeader
@@ -805,14 +856,19 @@ export default function LotsScreen() {
 
       {/* Permit Picker Modal */}
       <Modal transparent animationType="fade" visible={permitPickerVisible} onRequestClose={() => setPermitPickerVisible(false)}>
-        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setPermitPickerVisible(false)}>
-          <View style={styles.pickerSheet}>
+        <View style={styles.pickerOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setPermitPickerVisible(false)} />
+          <View style={[styles.pickerSheet, { maxHeight: windowHeight * 0.9, paddingBottom: Math.max(insets.bottom - 12, 8) }]}>
             <Text style={styles.pickerTitle}>Filter by Permit</Text>
-            <TouchableOpacity style={styles.pickerOption} onPress={() => { setPermitFilter('all'); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
-              <Text style={[styles.pickerOptionText, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
-              {permitFilter === 'all' && <Ionicons name="checkmark" size={27} color="#00853E" />}
-            </TouchableOpacity>
-            <ScrollView style={{ maxHeight: windowHeight * 0.6 }}>
+            <ScrollView
+              style={[styles.permitOptions, { maxHeight: windowHeight * 0.68 }]}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+            >
+              <TouchableOpacity style={styles.pickerOption} onPress={() => { setPermitFilter('all'); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
+                <Text style={[styles.pickerOptionText, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
+                {permitFilter === 'all' && <Ionicons name="checkmark" size={27} color="#00853E" />}
+              </TouchableOpacity>
               {uniquePermits.map((p) => (
                 <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
                   <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
@@ -821,7 +877,7 @@ export default function LotsScreen() {
               ))}
             </ScrollView>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* Availability Picker Modal */}
@@ -829,7 +885,7 @@ export default function LotsScreen() {
         <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setAvailabilityPickerVisible(false)}>
           <View style={styles.pickerSheet}>
             <Text style={styles.pickerTitle}>Filter by Availability</Text>
-            {(['all', 'Available', 'Near Capacity', 'Full'] as const).map((opt) => (
+            {(['all', 'Available', 'Near Capacity', 'Full', 'Closed'] as const).map((opt) => (
               <TouchableOpacity key={opt} style={styles.pickerOption} onPress={() => { setAvailabilityFilter(opt); setAvailabilityPickerVisible(false); }}>
                 <Text style={[styles.pickerOptionText, availabilityFilter === opt && styles.pickerOptionActive]}>
                   {opt === 'all' ? 'All' : opt}
@@ -866,101 +922,122 @@ export default function LotsScreen() {
                   <Text style={styles.detailLabel}>Status:</Text>
                   <View style={[
                     styles.statusBadgeDetail,
-                    { backgroundColor: (STATUS_COLOR[selectedLot.status as AvailabilityStatus] || STATUS_COLOR['Available']) + '1A' }
+                    { backgroundColor: selectedStatusColor + '1A' }
                   ]}>
                     <View style={[
                       styles.statusDot,
-                      { backgroundColor: STATUS_COLOR[selectedLot.status as AvailabilityStatus] || STATUS_COLOR['Available'] }
+                      { backgroundColor: selectedStatusColor }
                     ]} />
                     <Text style={[
                       styles.statusText,
-                      { color: STATUS_COLOR[selectedLot.status as AvailabilityStatus] || STATUS_COLOR['Available'] }
+                      { color: selectedStatusColor }
                     ]}>
-                      {selectedLot.status}
+                      {selectedStatusLabel}
                     </Text>
                   </View>
                 </View>
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Available Occupancy:</Text>
-                  <Text style={styles.detailValue}>
-                    {typeof selectedLot.percentEmpty === 'number' ? `${selectedLot.percentEmpty}%` : 'Unknown'}
-                  </Text>
-                </View>
+                {getLotStatusItems(selectedLot.lotStatus).map((item) => (
+                  <View key={item.key} style={styles.lotAlertRow}>
+                    <View style={[styles.lotAlertIcon, { backgroundColor: item.visual.bg }]}>
+                      <AlertIcon visual={item.visual} size={18} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.lotAlertTitle} numberOfLines={1}>{item.title}</Text>
+                      <Text style={styles.lotAlertDetail} numberOfLines={1}>{item.detail}</Text>
+                    </View>
+                  </View>
+                ))}
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>ParkZen capture time:</Text>
-                  <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]}>
-                    {selectedLot.sourceTimestampProvidedByParkzen === true && selectedLot.lastUpdatedAt
-                      ? new Date(selectedLot.lastUpdatedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
-                      : 'No time available'}
-                  </Text>
-                </View>
+                {!selectedTakeover && (
+                  <>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Available Occupancy:</Text>
+                      <Text style={styles.detailValue}>
+                        {typeof selectedLot.percentEmpty === 'number' ? `${selectedLot.percentEmpty}%` : 'Unknown'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>ParkZen capture time:</Text>
+                      <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]}>
+                        {selectedLot.sourceTimestampProvidedByParkzen === true && selectedLot.lastUpdatedAt
+                          ? new Date(selectedLot.lastUpdatedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+                          : 'No time available'}
+                      </Text>
+                    </View>
+                  </>
+                )}
               </View>
 
-              {getPremiumParkingLink(selectedLot.name, selectedLot.permitList, selectedLot.coordinates) && (
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: '#D6332A', marginBottom: 12 }]}
-                  onPress={() => Linking.openURL(getPremiumParkingLink(selectedLot.name, selectedLot.permitList, selectedLot.coordinates)!)}
-                >
-                  <Text style={styles.actionButtonText}>Premium Parking</Text>
-                  <Ionicons name="open-outline" size={27} color="#fff" />
-                </TouchableOpacity>
-              )}
+              {!selectedTakeover && (
+                <>
+                  {getPremiumParkingLink(selectedLot.name, selectedLot.permitList, selectedLot.coordinates) && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, { backgroundColor: '#D6332A', marginBottom: 12 }]}
+                      onPress={() => Linking.openURL(getPremiumParkingLink(selectedLot.name, selectedLot.permitList, selectedLot.coordinates)!)}
+                    >
+                      <Text style={styles.actionButtonText}>Premium Parking</Text>
+                      <Ionicons name="open-outline" size={27} color="#fff" />
+                    </TouchableOpacity>
+                  )}
 
-              <TouchableOpacity style={styles.actionButton} onPress={() => openDirections(selectedLot)}>
-                <Ionicons name="navigate" size={27} color="#fff" />
-                <Text style={styles.actionButtonText}>Get Directions</Text>
-              </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => openDirections(selectedLot)}>
+                    <Ionicons name="navigate" size={27} color="#fff" />
+                    <Text style={styles.actionButtonText}>Get Directions</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: '#f0f0f0', marginTop: 12 }]}
-                onPress={() => setMoreInfoVisible(!moreInfoVisible)}
-              >
-                <Ionicons name={moreInfoVisible ? "chevron-up-circle-outline" : "information-circle-outline"} size={27} color="#00853E" />
-                <Text style={[styles.actionButtonText, { color: '#00853E' }]}>More Info</Text>
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#f0f0f0', marginTop: 12 }]}
+                    onPress={() => setMoreInfoVisible(!moreInfoVisible)}
+                  >
+                    <Ionicons name={moreInfoVisible ? "chevron-up-circle-outline" : "information-circle-outline"} size={27} color="#00853E" />
+                    <Text style={[styles.actionButtonText, { color: '#00853E' }]}>More Info</Text>
+                  </TouchableOpacity>
 
-              {moreInfoVisible && (
-                <View style={[styles.detailCard, { marginTop: 12 }]}>
-                  {selectedLot.address ? (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Address:</Text>
-                      <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>{selectedLot.address}</Text>
-                    </View>
-                  ) : null}
-                  {selectedLot.capacity ? (
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Capacity:</Text>
-                      <Text style={styles.detailValue}>{selectedLot.capacity} spaces</Text>
-                    </View>
-                  ) : null}
-                  {(selectedLot.permitList || []).length > 0 && (
-                    <View style={{ marginTop: 6 }}>
-                      <Text style={styles.detailLabel}>Permits:</Text>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                        {dedupePermitLabels(selectedLot.permitList).map((label, i) => {
-                          const permitStyle = getPermitCardStyle(label);
-                          return (
-                            <View
-                              key={i}
-                              style={{
-                                backgroundColor: permitStyle.bg,
-                                borderRadius: 12,
-                                paddingHorizontal: 10,
-                                paddingVertical: 4,
-                                overflow: 'hidden',
-                                ...(permitStyle.border ? { borderWidth: 1, borderColor: permitStyle.border } : null),
-                              }}
-                            >
-                              <Text style={{ fontSize: 12, color: permitStyle.text, fontWeight: '500' }}>{label}</Text>
-                            </View>
-                          );
-                        })}
-                      </View>
+                  {moreInfoVisible && (
+                    <View style={[styles.detailCard, { marginTop: 12 }]}>
+                      {selectedLot.address ? (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Address:</Text>
+                          <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>{selectedLot.address}</Text>
+                        </View>
+                      ) : null}
+                      {selectedLot.capacity ? (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Capacity:</Text>
+                          <Text style={styles.detailValue}>{selectedLot.capacity} spaces</Text>
+                        </View>
+                      ) : null}
+                      {(selectedLot.permitList || []).length > 0 && (
+                        <View style={{ marginTop: 6 }}>
+                          <Text style={styles.detailLabel}>Permits:</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                            {dedupePermitLabels(selectedLot.permitList).map((label, i) => {
+                              const permitStyle = getPermitCardStyle(label);
+                              return (
+                                <View
+                                  key={i}
+                                  style={{
+                                    backgroundColor: permitStyle.bg,
+                                    borderRadius: 12,
+                                    paddingHorizontal: 10,
+                                    paddingVertical: 4,
+                                    overflow: 'hidden',
+                                    ...(permitStyle.border ? { borderWidth: 1, borderColor: permitStyle.border } : null),
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 12, color: permitStyle.text, fontWeight: '500' }}>{label}</Text>
+                                </View>
+                              );
+                            })}
+                          </View>
+                          <PermitHoursList permits={dedupePermitLabels(selectedLot.permitList)} />
+                        </View>
+                      )}
                     </View>
                   )}
-                </View>
+                </>
               )}
             </ScrollView>
           ) : null}
@@ -1366,6 +1443,48 @@ pageIndicator: {
     alignItems: 'center',
     gap: 4,
   },
+  percentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusIconRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  statusIconBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lotAlertRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 8,
+    marginTop: 10,
+  },
+  lotAlertIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  lotAlertTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+  },
+  lotAlertDetail: {
+    fontSize: 12,
+    color: '#777',
+    marginTop: 1,
+  },
 
   // --- PICKER MODAL ---
   pickerOverlay: {
@@ -1386,6 +1505,9 @@ pageIndicator: {
     fontWeight: '800',
     color: '#1a1a1a',
     marginBottom: 14,
+  },
+  permitOptions: {
+    flexGrow: 0,
   },
   pickerOption: {
     flexDirection: 'row',

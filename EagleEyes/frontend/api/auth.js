@@ -78,6 +78,12 @@ export const getPermitTypes = async () => {
     if (!response.ok) throw new Error('Failed to fetch permit types');
     return await response.json();
 };
+//GET PERMIT HOURS - when each ParkZen permit may park ({name, type, dailyTimeSlots})
+export const getPermitHours = async () => {
+    const response = await apiFetch(`${BASE_URL}/api/permit-hours`);
+    if (!response.ok) throw new Error('Failed to fetch permit hours');
+    return await response.json();
+};
 //UPDATE PERMIT - save the account's chosen permit type to the backend
 export const updatePermit = async (permitType) => {
     const token = await AsyncStorage.getItem('token');

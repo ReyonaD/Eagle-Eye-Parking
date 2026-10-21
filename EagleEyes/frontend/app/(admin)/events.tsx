@@ -3,13 +3,13 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
-import { getAlerts, createAlert } from '../../api/alerts';
+import { getAlerts, createAlert, updateEvent, deleteAlert } from '../../api/alerts';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from '../../utils/webCompat';
 import { getEventVisual, EVENT_CATEGORIES } from '../../utils/alertVisuals';
 import DatePickerModal from '../../components/DatePickerModal';
 import LotPickerModal from '../../components/LotPickerModal';
-import { parseLotNames, joinLotNames, formatLotNames, CLOSURE_CATEGORY } from '../../utils/lotStatus';
+import { parseLotNames, joinLotNames, formatLotNames, CLOSURE_CATEGORY, isClosureCategory } from '../../utils/lotStatus';
 import { useFocusPolling } from '../../hooks/use-focus-polling';
 import {
   toLocalDateString, getTodayDateString, isoToLocalDate, formatDate,
@@ -33,6 +33,15 @@ const parseTime12h = (s: string, period: string): { hours: number; minutes: numb
   return { hours, minutes };
 };
 
+//Date -> the "H:MM" + AM/PM pair the time fields use (inverse of parseTime12h)
+const toTime12h = (d: Date): { time: string; period: 'AM' | 'PM' } => {
+  const h24 = d.getHours();
+  return {
+    time: `${h24 % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}`,
+    period: h24 >= 12 ? 'PM' : 'AM',
+  };
+};
+
 const combineDateAndTime = (date: Date, time: { hours: number; minutes: number }): Date => {
   const combined = new Date(date);
   combined.setHours(time.hours, time.minutes, 0, 0);
@@ -45,6 +54,10 @@ export default function EventsScreen() {
   const [selected, setSelected] = useState(getTodayDateString());
   const [events, setEvents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  //the event whose details modal is open, and its delete flow
+  const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
+  const [isDeletingEvent, setIsDeletingEvent] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
 
   const fetchEvents = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -75,6 +88,8 @@ export default function EventsScreen() {
 
   const [eventName, setEventName] = useState('');
   const [category, setCategory] = useState<string | null>(null);
+  //free-text category typed in when "Other" is picked
+  const [otherCategory, setOtherCategory] = useState('');
   const [startDate, setStartDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [startTimePeriod, setStartTimePeriod] = useState('AM');
@@ -90,6 +105,8 @@ export default function EventsScreen() {
   const [affectedLots, setAffectedLots] = useState<string[]>([]);
   const [showLotPicker, setShowLotPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  //set while the form is editing an existing event instead of adding a new one
+  const [editingEventId, setEditingEventId] = useState<number | null>(null);
   //which of the two date fields the mini-calendar picker is currently editing
   const [activeDateField, setActiveDateField] = useState<'start' | 'end' | null>(null);
 
@@ -133,8 +150,9 @@ export default function EventsScreen() {
   // ADD EVENT
 
   const handleSaveEvent = async () => {
+    const submittedCategory = category === 'Other' ? otherCategory.trim() : category;
     if (
-      !eventName || !category || !startDate ||
+      !eventName || !submittedCategory || !startDate ||
       (!allDay && !startTime) ||
       (!noEndDate && (!endDate || (!allDay && !endTime)))
     ) {
@@ -181,22 +199,27 @@ export default function EventsScreen() {
         : `When: ${startText} – ${endText}${allDay ? ' (All day)' : ''}`;
       const fullDescription = description.trim() ? `${schedule}\n\n${description.trim()}` : schedule;
 
-      await createAlert({
+      const eventData = {
         title: eventName.trim(),
-        alert_type: 'event',
-        category,
+        category: submittedCategory,
         description: fullDescription,
         lot_name: affectedLots.length ? joinLotNames(affectedLots) : undefined,
         event_start: eventStart.toISOString(),
         event_end: eventEnd ? eventEnd.toISOString() : undefined,
-      });
-
-      Alert.alert('Success', 'Event created successfully');
+      };
+      if (editingEventId !== null) {
+        //null (not undefined) so switching to "No end date" clears the old end
+        await updateEvent(editingEventId, { ...eventData, event_end: eventData.event_end ?? null });
+        Alert.alert('Success', 'Event updated successfully');
+      } else {
+        await createAlert({ ...eventData, alert_type: 'event' });
+        Alert.alert('Success', 'Event created successfully');
+      }
       setShowAddEventModal(false);
       resetForm();
       fetchEvents();
     } catch (error) {
-      Alert.alert('Error', 'Could not create the event. Please try again.');
+      Alert.alert('Error', `Could not ${editingEventId !== null ? 'update' : 'create'} the event. Please try again.`);
     } finally {
       setIsSaving(false);
     }
@@ -205,6 +228,7 @@ export default function EventsScreen() {
   const resetForm = () => {
     setEventName('');
     setCategory(null);
+    setOtherCategory('');
     setStartDate('');
     setStartTime('');
     setStartTimePeriod('AM');
@@ -215,6 +239,7 @@ export default function EventsScreen() {
     setNoEndDate(false);
     setDescription('');
     setAffectedLots([]);
+    setEditingEventId(null);
   };
 
   const handleCancel = () => {
@@ -222,11 +247,33 @@ export default function EventsScreen() {
     resetForm();
   };
 
+  const confirmDeleteEvent = async () => {
+    if (!selectedEvent) return;
+
+    setIsDeletingEvent(true);
+    try {
+      await deleteAlert(selectedEvent.id);
+      setSelectedEvent(null);
+      setShowDeleteConfirmation(false);
+      await fetchEvents();
+      Alert.alert('Event deleted', 'The event has been removed from the user side.');
+    } catch (error) {
+      Alert.alert('Error', 'Could not delete the event. Please try again.');
+    } finally {
+      setIsDeletingEvent(false);
+    }
+  };
+
+  const handleDeleteEvent = () => {
+    if (!selectedEvent || isDeletingEvent) return;
+    setShowDeleteConfirmation(true);
+  };
+
   //pre-fill the Add Event form from a past event, but leave the date/time
   //fields blank - the whole point is picking a NEW date, never the old one
   const handleReuseEvent = (eventItem: any) => {
     setEventName(eventItem.title || '');
-    setCategory(eventItem.category || null);
+    loadCategory(eventItem.category);
     setDescription(stripScheduleFromDescription(eventItem.description || ''));
     setAffectedLots(parseLotNames(eventItem.lot_name));
     //keep the old event's shape (all-day / open-ended), just not its dates
@@ -239,6 +286,46 @@ export default function EventsScreen() {
     setEndDate('');
     setEndTime('');
     setEndTimePeriod('AM');
+    setShowAddEventModal(true);
+  };
+
+  //puts a saved event's category back into the picker: a custom one typed
+  //under "Other" goes back in the text box, and the old "Closure" name maps
+  //to the current closure category
+  const loadCategory = (stored?: string | null) => {
+    if (!stored) { setCategory(null); setOtherCategory(''); return; }
+    if (isClosureCategory(stored)) { setCategory(CLOSURE_CATEGORY); setOtherCategory(''); return; }
+    if (EVENT_CATEGORIES.includes(stored)) { setCategory(stored); setOtherCategory(''); return; }
+    setCategory('Other');
+    setOtherCategory(stored);
+  };
+
+  //open the same form pre-filled with an event's current details, dates
+  //included - e.g. to give an event saved with "No end date" its real end
+  const handleEditEvent = (eventItem: any) => {
+    const range = getEventRange(eventItem);
+    const isAllDay = isAllDayRange(range);
+    setEventName(eventItem.title || '');
+    loadCategory(eventItem.category);
+    setDescription(stripScheduleFromDescription(eventItem.description || ''));
+    setAffectedLots(parseLotNames(eventItem.lot_name));
+    setAllDay(isAllDay);
+    setNoEndDate(range.openEnded);
+    setStartDate(toLocalDateString(range.start));
+    const start12 = toTime12h(range.start);
+    setStartTime(isAllDay ? '' : start12.time);
+    setStartTimePeriod(start12.period);
+    if (range.openEnded) {
+      setEndDate('');
+      setEndTime('');
+      setEndTimePeriod('AM');
+    } else {
+      const end12 = toTime12h(range.end);
+      setEndDate(toLocalDateString(range.end));
+      setEndTime(isAllDay ? '' : end12.time);
+      setEndTimePeriod(end12.period);
+    }
+    setEditingEventId(eventItem.id);
     setShowAddEventModal(true);
   };
 
@@ -296,15 +383,7 @@ export default function EventsScreen() {
                     <TouchableOpacity
                       key={eventItem.id}
                       style={styles.card}
-                      onPress={() => Alert.alert(
-                        eventItem.title,
-                        [
-                          eventItem.category,
-                          formatEventTimes(eventItem),
-                          eventItem.lot_name ? `Lots: ${formatLotNames(eventItem.lot_name)}` : null,
-                          eventItem.description,
-                        ].filter(Boolean).join('\n\n'),
-                      )}
+                      onPress={() => setSelectedEvent(eventItem)}
                     >
                       <View style={styles.cardHeader}>
                         <View style={styles.titleRow}>
@@ -324,7 +403,17 @@ export default function EventsScreen() {
                       {eventItem.description && (
                          <Text style={styles.cardDesc}>{eventItem.description}</Text>
                       )}
-                      <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+                      <View style={styles.cardFooter}>
+                        <TouchableOpacity
+                          style={styles.editButton}
+                          onPress={() => handleEditEvent(eventItem)}
+                          accessibilityLabel={`Edit ${eventItem.title}`}
+                        >
+                          <Ionicons name="create-outline" size={14} color="#00853E" />
+                          <Text style={styles.editButtonText}>EDIT</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+                      </View>
                     </TouchableOpacity>
                   );
                 })
@@ -399,7 +488,7 @@ export default function EventsScreen() {
                 {!IS_WEB && <Ionicons name="chevron-back" size={20} color="#00853E" />}
                 <Text style={styles.modalBackText}>{IS_WEB ? 'Cancel' : 'Back'}</Text>
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>Add Event</Text>
+              <Text style={styles.modalTitle}>{editingEventId !== null ? 'Edit Event' : 'Add Event'}</Text>
 
               <Text style={styles.fieldLabel}>Enter Event Name:</Text>
               <TextInput
@@ -424,6 +513,19 @@ export default function EventsScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+              {category === 'Other' && (
+                <>
+                  <Text style={styles.fieldLabel}>Specify category:</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Category name"
+                    value={otherCategory}
+                    onChangeText={setOtherCategory}
+                    placeholderTextColor="#999"
+                    autoCapitalize="words"
+                  />
+                </>
+              )}
 
               <Text style={styles.fieldLabel}>
                 Affected lots{category === CLOSURE_CATEGORY ? ' (required)' : ' (optional)'}:
@@ -548,12 +650,229 @@ export default function EventsScreen() {
         minDate={activeDateField === 'end' ? (startDate || undefined) : undefined}
         title={activeDateField === 'start' ? 'Select start date' : 'Select end date'}
       />
+
+      <Modal
+        visible={selectedEvent !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isDeletingEvent) setSelectedEvent(null);
+        }}
+      >
+        <View style={styles.detailsOverlay}>
+          <View style={styles.detailsModal}>
+            <View style={styles.detailsHeader}>
+              <View style={styles.detailsTitleGroup}>
+                {selectedEvent && (() => {
+                  const visual = getEventVisual(selectedEvent.category);
+                  return (
+                    <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
+                      <Ionicons name={visual.icon as any} size={24} color={visual.iconColor} />
+                    </View>
+                  );
+                })()}
+                <View style={styles.detailsTitleText}>
+                  <Text style={styles.detailsTitle}>{selectedEvent?.title}</Text>
+                  <Text style={styles.detailsCategory}>Category: {selectedEvent?.category}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedEvent(null)}
+                disabled={isDeletingEvent}
+                accessibilityRole="button"
+                accessibilityLabel="Close event details"
+              >
+                <Ionicons name="close" size={26} color="#555" />
+              </TouchableOpacity>
+            </View>
+
+            {selectedEvent && (
+              <View style={styles.detailsLotRow}>
+                <Ionicons name="time-outline" size={19} color="#00853E" />
+                <Text style={styles.detailsLotText}>{formatEventTimes(selectedEvent)}</Text>
+              </View>
+            )}
+            {!!selectedEvent?.lot_name && (
+              <View style={styles.detailsLotRow}>
+                <Ionicons name="location-outline" size={19} color="#00853E" />
+                <Text style={styles.detailsLotText}>
+                  {parseLotNames(selectedEvent.lot_name).length > 1 ? 'Affected lots' : 'Affected lot'}: {formatLotNames(selectedEvent.lot_name)}
+                </Text>
+              </View>
+            )}
+
+            <Text style={styles.detailsSectionTitle}>Event information</Text>
+            <ScrollView style={styles.detailsDescriptionScroll}>
+              <Text style={styles.detailsDescription}>
+                {selectedEvent?.description || 'No additional event information.'}
+              </Text>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.deleteEventButton, isDeletingEvent && styles.deleteEventButtonDisabled]}
+              onPress={handleDeleteEvent}
+              disabled={isDeletingEvent}
+              accessibilityRole="button"
+              accessibilityLabel="Delete event"
+            >
+              {isDeletingEvent ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="trash-outline" size={19} color="#fff" />
+                  <Text style={styles.deleteEventText}>DELETE EVENT</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+          {showDeleteConfirmation && (
+            <View style={styles.confirmationOverlay}>
+              <View style={styles.confirmationDialog}>
+                <View style={styles.confirmationIcon}>
+                  <Ionicons name="alert-circle-outline" size={28} color="#B42318" />
+                </View>
+                <Text style={styles.confirmationTitle}>Delete event?</Text>
+                <Text style={styles.confirmationMessage}>
+                  Permanently delete the event before the end time. This will reflect on the user side.
+                </Text>
+                <View style={styles.confirmationActions}>
+                  <TouchableOpacity
+                    style={styles.confirmationCancelButton}
+                    onPress={() => setShowDeleteConfirmation(false)}
+                    disabled={isDeletingEvent}
+                  >
+                    <Text style={styles.confirmationCancelText}>CANCEL</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.confirmationDeleteButton}
+                    onPress={() => { void confirmDeleteEvent(); }}
+                    disabled={isDeletingEvent}
+                  >
+                    {isDeletingEvent ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.confirmationDeleteText}>DELETE</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   mainContainer: { flex: 1, backgroundColor: '#f5f5f5' },
+  detailsOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  detailsModal: {
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '82%',
+    padding: 20,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  detailsTitleGroup: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  detailsTitleText: { flex: 1 },
+  detailsTitle: { fontSize: 20, fontWeight: '800', color: '#222' },
+  detailsCategory: { marginTop: 3, fontSize: 14, color: '#666' },
+  detailsLotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  detailsLotText: { fontSize: 15, fontWeight: '700', color: '#333' },
+  detailsSectionTitle: { marginBottom: 8, fontSize: 15, fontWeight: '700', color: '#333' },
+  detailsDescriptionScroll: { flexShrink: 1, marginBottom: 20 },
+  detailsDescription: { fontSize: 15, lineHeight: 22, color: '#444' },
+  deleteEventButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 8,
+    backgroundColor: '#B42318',
+  },
+  deleteEventButtonDisabled: { opacity: 0.6 },
+  deleteEventText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  confirmationOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  confirmationDialog: {
+    width: '100%',
+    maxWidth: 420,
+    padding: 22,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderTopWidth: 4,
+    borderTopColor: '#00853E',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  confirmationIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    borderRadius: 22,
+    backgroundColor: '#FDE2E2',
+  },
+  confirmationTitle: { marginBottom: 8, fontSize: 20, fontWeight: '800', color: '#222' },
+  confirmationMessage: { fontSize: 15, lineHeight: 21, color: '#555' },
+  confirmationActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 22,
+  },
+  confirmationCancelButton: {
+    minWidth: 92,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#E8E8E8',
+  },
+  confirmationCancelText: { fontSize: 13, fontWeight: '800', color: '#555' },
+  confirmationDeleteButton: {
+    minWidth: 112,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#B42318',
+  },
+  confirmationDeleteText: { fontSize: 13, fontWeight: '800', color: '#fff' },
   scrollContainer: { flex: 1, padding: 16 },
   title: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 4 },
   subtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
@@ -695,6 +1014,18 @@ const styles = StyleSheet.create({
   cardTime: { fontSize: 12, color: '#555', marginBottom: 4, fontWeight: '600', textTransform: 'uppercase' },
   cardDesc: { fontSize: 14, color: '#444', marginBottom: 12, lineHeight: 20 },
   clickDetails: { fontSize: 10, color: '#999', fontStyle: 'italic', textAlign: 'right', fontWeight: 'bold' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#00853E',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  editButtonText: { fontSize: 11, color: '#00853E', fontWeight: '800' },
 
   pastEventsWrapper: { marginTop: 8 },
   divider: { height: 1, backgroundColor: '#ddd', marginBottom: 16 },

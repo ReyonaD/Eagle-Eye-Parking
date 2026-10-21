@@ -10,7 +10,7 @@ export default function ReportOptionsScreen() {
   return (
     <View style={styles.overlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={() => router.back()} />
-      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
+      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
         <View style={styles.handle} />
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={20} color="#00853E" />
@@ -26,7 +26,7 @@ export default function ReportOptionsScreen() {
             activeOpacity={0.75}
           >
             <View style={styles.circleButton}>
-              <Ionicons name="warning-outline" size={30} color="#E3A008" />
+              <Ionicons name="warning-outline" size={40} color="#E3A008" />
             </View>
             <Text style={styles.choiceText}>Report a Hazard</Text>
           </TouchableOpacity>
@@ -37,7 +37,7 @@ export default function ReportOptionsScreen() {
             activeOpacity={0.75}
           >
             <View style={styles.circleButton}>
-              <Ionicons name="chatbubble-ellipses-outline" size={28} color="#3976B9" />
+              <Ionicons name="chatbubble-ellipses-outline" size={40} color="#3976B9" />
             </View>
             <Text style={styles.choiceText}>Note to Admin</Text>
           </TouchableOpacity>
@@ -54,9 +54,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(20, 28, 32, 0.32)',
   },
   sheet: {
-    height: '50%',
-    minHeight: 310,
-    maxHeight: 440,
+    height: '32%',
+    minHeight: 280,
+    maxHeight: 300,
     paddingHorizontal: 24,
     paddingTop: 12,
     backgroundColor: '#FFFFFF',
@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
     fontSize: 21,
     fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 14,
   },
   choices: {
     flexDirection: 'row',

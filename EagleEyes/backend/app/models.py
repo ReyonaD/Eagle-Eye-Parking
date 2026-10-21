@@ -60,6 +60,10 @@ class Alert(Base):
     #see who to follow up with and is how we tell a genuine second confirmation
     #from the same person re-submitting the same report
     reporter_emails = Column(JSON, nullable=True, default=list)
+    #for alert_type='hazard': when an admin marked it as over. A published
+    #hazard shows on the map/lots until then; null = still active. Reactivating
+    #clears it again.
+    deactivated_at = Column(DateTime, nullable=True)
 
 
 class Note(Base):

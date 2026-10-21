@@ -21,6 +21,8 @@ import { useLots } from '../../context/LotsContext';
 import { getPermitTypes, updatePermit, updatePlate } from '../../api/auth';
 import { Alert } from '../../utils/webCompat';
 import { buildPermitOptions, getPermitDisplayLabel, PermitOption, PREMIUM_PARKING } from '../../utils/permits';
+import { lookupPermitHours, summarizePermitHours } from '../../utils/permitHours';
+import { DAY_WINDOW_DESCRIPTION, NIGHT_WINDOW_DESCRIPTION } from '../../utils/nightPermitRules';
 
 // Fallback list used only if the live ParkZen fetch fails (e.g. offline),
 // so the picker still has something to show.
@@ -34,7 +36,7 @@ const FALLBACK_PERMIT_TYPES = [
 export default function ParkingProfileScreen() {
   const router = useRouter();
   const { user, updateUser } = useUser();
-  const { filterByPermit, setFilterByPermit, mapType, setMapType } = useLots();
+  const { filterByPermit, setFilterByPermit, mapType, setMapType, permitHours } = useLots();
   const { parkingProfile } = user;
 
   const [plateState, setPlateState] = useState(parkingProfile.plateState);
@@ -180,6 +182,16 @@ export default function ParkingProfileScreen() {
               </View>
             )}
 
+            {/* when the picked permit may park, from ParkZen */}
+            {!permitTypeOpen && lookupPermitHours(permitHours, permitType) && (
+              <View style={styles.permitHoursNote}>
+                <Ionicons name="time-outline" size={16} color="#00853E" />
+                <Text style={styles.permitHoursNoteText}>
+                  Parking hours: {summarizePermitHours(lookupPermitHours(permitHours, permitType)!)}
+                </Text>
+              </View>
+            )}
+
             {permitType === PREMIUM_PARKING && (
               <View style={styles.premiumParkingNote}>
                 <Ionicons name="information-circle-outline" size={16} color="#D6332A" />
@@ -259,8 +271,9 @@ export default function ParkingProfileScreen() {
               <Text style={styles.toggleLabel}>Day / Night permit preview</Text>
             </View>
             <Text style={styles.toggleHint}>
-              Permit rules change at night. Tap the map&apos;s settings icon (top-right)
-              to preview Day or Night rules before you drive over.
+              Permit rules change at night. Day rules: {DAY_WINDOW_DESCRIPTION}. Night rules:{' '}
+              {NIGHT_WINDOW_DESCRIPTION}. Tap the map&apos;s settings icon (top-right) to preview
+              Day or Night rules before you drive over.
             </Text>
           </View>
 
@@ -493,6 +506,13 @@ const styles = StyleSheet.create({
   purchasePermitLinkStatic: {
     fontWeight: '700',
   },
+  permitHoursNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  permitHoursNoteText: { flex: 1, fontSize: 13, color: '#555' },
   premiumParkingNote: {
     flexDirection: 'row',
     alignItems: 'flex-start',

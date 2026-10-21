@@ -3,12 +3,25 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../utils/webCompat';
 import { getLotPermitGroups, getLotCategory } from '../utils/permits';
 import { getEffectivePermits, isNightWindow } from '../utils/nightPermitRules';
+import { getAlerts } from '../api/alerts';
+import { getPermitHours } from '../api/auth';
+import { buildPermitHoursIndex, PermitHours } from '../utils/permitHours';
+import { MapTheme } from '../utils/mapStyles';
+import { useColorScheme } from '../hooks/use-color-scheme';
+import { buildLotStatuses, applyLotStatus, LotStatus } from '../utils/lotStatus';
 //define the exact shape of data
 interface LotsContextType {
     lots: any[];
     isLoading: boolean;
     lastRefreshAt: string | null;
     fetchLots: () => Promise<void>;
+    // Re-reads the published hazards/events that restyle closed, event, and
+    // hazard lots. Polled alongside fetchLots; screens also call it on focus
+    // so a closure an admin just posted shows up without waiting for the poll.
+    fetchLotStatuses: () => Promise<void>;
+    // When each permit may park, from ParkZen, keyed by every label the app
+    // shows for a permit (see utils/permitHours.ts). Empty until loaded.
+    permitHours: Record<string, PermitHours>;
     // Whether the Map and Lots tabs should be limited to lots matching the
     // signed-in user's own permit type. Lives here (not on the account profile)
     // so it persists across logins/logouts on this device without needing
@@ -24,11 +37,18 @@ interface LotsContextType {
     // Commuter's preferred map rendering, set from Profile Setting.
     mapType: 'standard' | 'satellite';
     setMapType: (value: 'standard' | 'satellite') => void;
+    // Light or dark map. 'auto' follows the phone's dark mode, independent of
+    // the Day/Night permit rules (those cover weekend daytime too).
+    mapTheme: MapTheme;
+    setMapTheme: (value: MapTheme) => void;
+    // mapTheme resolved against the phone's setting.
+    isDarkMap: boolean;
 }
 
 // Exported so other screens (e.g. profile settings) can read/write it directly if needed.
 export const FILTER_BY_PERMIT_STORAGE_KEY = 'filterLotsByPermit';
 export const MAP_TYPE_STORAGE_KEY = 'mapType';
+export const MAP_THEME_STORAGE_KEY = 'mapTheme';
 
 //create the context
 const LotsContext = createContext<LotsContextType | undefined>(undefined);
@@ -106,6 +126,11 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     const [filterByPermit, setFilterByPermitState] = useState(false);
     const [previewMode, setPreviewMode] = useState<'day' | 'night' | null>(null);
     const [mapType, setMapTypeState] = useState<'standard' | 'satellite'>('standard');
+    const [mapTheme, setMapThemeState] = useState<MapTheme>('auto');
+    const colorScheme = useColorScheme();
+    const isDarkMap = mapTheme === 'dark' || (mapTheme === 'auto' && colorScheme === 'dark');
+    const [lotStatuses, setLotStatuses] = useState<Record<string, LotStatus>>({});
+    const [permitHours, setPermitHours] = useState<Record<string, PermitHours>>({});
     const hasLoadedOnce = React.useRef(false);
 
     useEffect(() => {
@@ -120,12 +145,25 @@ export function LotsProvider({ children }: { children : ReactNode }) {
           if (stored === 'standard' || stored === 'satellite') setMapTypeState(stored);
         })
         .catch((error) => console.error('Error loading map type preference:', error));
+
+      AsyncStorage.getItem(MAP_THEME_STORAGE_KEY)
+        .then((stored) => {
+          if (stored === 'auto' || stored === 'light' || stored === 'dark') setMapThemeState(stored);
+        })
+        .catch((error) => console.error('Error loading map theme preference:', error));
     }, []);
 
     const setFilterByPermit = (value: boolean) => {
       setFilterByPermitState(value);
       AsyncStorage.setItem(FILTER_BY_PERMIT_STORAGE_KEY, value ? 'true' : 'false').catch(
         (error) => console.error('Error saving permit filter preference:', error)
+      );
+    };
+
+    const setMapTheme = (value: MapTheme) => {
+      setMapThemeState(value);
+      AsyncStorage.setItem(MAP_THEME_STORAGE_KEY, value).catch(
+        (error) => console.error('Error saving map theme preference:', error)
       );
     };
 
@@ -245,14 +283,40 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     }
   };
 
+  // ParkZen has no closure/event/hazard data of its own (its lot payload only
+  // carries occupancy), so a lot's situation comes from our own published
+  // alerts: admin-scheduled events (category 'Closure' closes the lot) and
+  // hazards. Shared here so the Map and Lots tabs always agree on it.
+  const fetchLotStatuses = React.useCallback(async () => {
+    try {
+      const [hazards, events] = await Promise.all([getAlerts('hazard'), getAlerts('event')]);
+      setLotStatuses(buildLotStatuses(hazards, events));
+    } catch {
+      // Keep the last known statuses - the lots still work without them.
+    }
+  }, []);
+
   // Refresh the lot data periodically so the map stays synchronized with ParkZen.
   useEffect(() => {
     fetchLots(true);
+    fetchLotStatuses();
 
     const intervalId = setInterval(() => {
       fetchLots(false);
+      fetchLotStatuses();
     }, 30000);
 
+    return () => clearInterval(intervalId);
+  }, [fetchLotStatuses]);
+
+  // Permit hours rarely change, so they load once and refresh every 30 min
+  // instead of riding the 30s lot poll.
+  useEffect(() => {
+    const loadPermitHours = () => getPermitHours()
+      .then((list) => setPermitHours(buildPermitHoursIndex(list)))
+      .catch((error) => console.error('Error loading permit hours:', error));
+    loadPermitHours();
+    const intervalId = setInterval(loadPermitHours, 30 * 60 * 1000);
     return () => clearInterval(intervalId);
   }, []);
 
@@ -266,7 +330,9 @@ export function LotsProvider({ children }: { children : ReactNode }) {
 
   const lots = useMemo(() => rawLots.map((lot) => {
     const permitList = getEffectivePermits(lot.category, lot.dayPermitList, previewingNight);
-    return {
+    // Keyed by display name (what LotPickerModal hands the report/event forms),
+    // so every polygon sharing a name - e.g. Lot 20's zones - gets the same status.
+    return applyLotStatus({
       ...lot,
       permitList,
       permits: permitList.join(',') || 'Unknown',
@@ -276,8 +342,8 @@ export function LotsProvider({ children }: { children : ReactNode }) {
       status: showLiveOccupancy ? lot.dayStatus : 'No Data',
       lastUpdatedAt: showLiveOccupancy ? lot.dayLastUpdatedAt : null,
       sourceTimestampProvidedByParkzen: showLiveOccupancy ? lot.daySourceTimestampProvidedByParkzen : false,
-    };
-  }), [rawLots, previewingNight, showLiveOccupancy]);
+    }, lotStatuses[lot.name]);
+  }), [rawLots, previewingNight, showLiveOccupancy, lotStatuses]);
 
   useEffect(() => {
     if (!hasLoadedOnce.current && lots.length > 0) {
@@ -286,8 +352,8 @@ export function LotsProvider({ children }: { children : ReactNode }) {
   }, [lots]);
     return (
         <LotsContext.Provider value={{
-          lots, isLoading, lastRefreshAt, fetchLots, filterByPermit, setFilterByPermit,
-          previewMode, setPreviewMode, actuallyNight, mapType, setMapType,
+          lots, isLoading, lastRefreshAt, fetchLots, fetchLotStatuses, permitHours, filterByPermit, setFilterByPermit,
+          previewMode, setPreviewMode, actuallyNight, mapType, setMapType, mapTheme, setMapTheme, isDarkMap,
         }}>
             {children}
         </LotsContext.Provider>

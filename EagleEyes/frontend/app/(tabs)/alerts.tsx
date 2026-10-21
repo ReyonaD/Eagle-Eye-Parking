@@ -16,6 +16,7 @@ import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { getAlertVisual, getCategoryLabel } from '../../utils/alertVisuals';
+import AlertIcon from '../../components/AlertIcon';
 import { useAlertsBadge } from '../../context/AlertsBadgeContext';
 
 type FilterType = 'All' | 'Hazard' | 'Event';
@@ -178,7 +179,7 @@ function AlertCard({ alert, unread, onPress }: { alert: AlertItem; unread: boole
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.iconWrap, { backgroundColor: visual.bg }]}>
-        <Ionicons name={visual.icon as any} size={27} color={visual.iconColor} />
+        <AlertIcon visual={visual} size={27} />
       </View>
 
       <View style={styles.cardBody}>
@@ -249,7 +250,7 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
       <ScrollView contentContainerStyle={styles.detailContent}>
         <View style={styles.detailIconRow}>
           <View style={[styles.iconWrap, styles.detailIconWrap, { backgroundColor: visual.bg }]}>
-            <Ionicons name={visual.icon as any} size={30} color={visual.iconColor} />
+            <AlertIcon visual={visual} size={30} />
           </View>
           <View style={styles.detailTitleWrap}>
             <Text style={[styles.detailEyebrow, { color: visual.iconColor }]}>{eyebrowLabel}</Text>
@@ -505,7 +506,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 60,
+    bottom: 16,
     width: 56,
     height: 56,
     borderRadius: 10,

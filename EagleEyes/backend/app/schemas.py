@@ -46,6 +46,8 @@ class AlertResponse(BaseModel):
     event_end: Optional[datetime] = None
     #emails of every distinct commuter who reported/confirmed this; admin-only context, not shown to commuters
     reporter_emails: Optional[List[str]] = []
+    #hazards only: when an admin marked it as over; null = still on the map/lots
+    deactivated_at: Optional[datetime] = None
 
 class NoteCreate(BaseModel):
     title: str
@@ -84,6 +86,20 @@ class AlertApprove(BaseModel):
 
     class Config:
         from_attributes = True
+class AlertEventUpdate(BaseModel):
+    #the full edited event from the admin's Edit Event form, replacing the old values
+    title: str
+    category: str
+    description: Optional[str] = None
+    lot_name: Optional[str] = None
+    event_start: datetime
+    #null = no end date (TBD / permanent), so an admin can add or clear one later
+    event_end: Optional[datetime] = None
+
+class AlertActiveUpdate(BaseModel):
+    #true = show the hazard on the map/lots again; false = it's over, take it down
+    active: bool
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
