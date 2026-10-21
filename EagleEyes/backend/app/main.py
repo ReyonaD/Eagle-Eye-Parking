@@ -41,6 +41,7 @@ with engine.connect() as _conn:
     #it, but plate_state/plate_number were added after that first run
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_state VARCHAR"))
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
+    _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS reporter_name VARCHAR"))
     #hazards now stay on the map until an admin deactivates them; before that
     #they simply lapsed 24h after being reported. When the column is first
     #added, close out those older hazards at their old expiry so they don't
@@ -842,13 +843,14 @@ def create_note(
         title=note_data.title.strip(),
         description=note_data.description,
         lot_name=note_data.lot_name,
+        reporter_name=(note_data.reporter_name or current_user.name or "").strip() or None,
         phone_number=note_data.phone_number,
         plate_state=note_data.plate_state,
         plate_number=note_data.plate_number,
         image_urls=note_data.image_urls or [],
         event_start=note_data.event_start,
         event_end=note_data.event_end,
-        reporter_email=current_user.email,
+        reporter_email=str(note_data.reporter_email or current_user.email),
     )
     db.add(new_note)
     db.commit()
@@ -1026,4 +1028,3 @@ def remove_alert(
     db.delete(alert)
     db.commit()
     return {"message": "Alert successfully resolved and removed from the feed."}
-

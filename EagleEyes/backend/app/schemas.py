@@ -53,6 +53,8 @@ class NoteCreate(BaseModel):
     title: str
     description: Optional[str] = None
     lot_name: Optional[str] = None
+    reporter_name: Optional[str] = Field(default=None, max_length=100)
+    reporter_email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
     plate_state: Optional[str] = None
     plate_number: Optional[str] = None
@@ -66,6 +68,7 @@ class NoteResponse(BaseModel):
     title: str
     description: Optional[str] = None
     lot_name: Optional[str] = None
+    reporter_name: Optional[str] = None
     phone_number: Optional[str] = None
     plate_state: Optional[str] = None
     plate_number: Optional[str] = None
