@@ -6,11 +6,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { getAlerts, getPendingAlerts, getDeclinedAlerts, approveAlert, deleteAlert, uploadAlertImage, BASE_URL } from '../../api/alerts';
+import { getAlerts, getPendingAlerts, getDeclinedAlerts, approveAlert, deleteAlert, setHazardActive, uploadAlertImage, BASE_URL } from '../../api/alerts';
 import { useLots } from '../../context/LotsContext';
 import LotMiniMap from '../../components/LotMiniMap';
 import { Alert } from '../../utils/webCompat';
 import { getHazardVisual } from '../../utils/alertVisuals';
+import { isHazardActive } from '../../utils/lotStatus';
 import { useFocusPolling } from '../../hooks/use-focus-polling';
 
 const IS_WEB = Platform.OS === 'web';
@@ -78,6 +79,11 @@ function HazardCard({
           <Text style={[styles.cardTime, !isNew && styles.olderText]}>
             {formatDateTime(hazard.created_at)}
           </Text>
+          {hazard.status === 'published' && (
+            <Text style={[styles.activeTag, !isHazardActive(hazard) && styles.inactiveTag]}>
+              {isHazardActive(hazard) ? '● ACTIVE ON MAP' : '○ INACTIVE'}
+            </Text>
+          )}
           {!!hazard.lot_name && (
             <Text style={[styles.cardLot, !isNew && styles.olderText]} numberOfLines={1}>
               📍 {hazard.lot_name}
@@ -135,14 +141,18 @@ function HazardDetail({
   onBack,
   onDecline,
   onApprove,
+  onSetActive,
 }: {
   hazard: any;
   isPending: boolean;
   onBack: () => void;
   onDecline: (h: any) => void;
   onApprove: (h: any, edits: { title: string; description: string; image_urls: string[] }) => void;
+  onSetActive: (h: any, active: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const isPublished = hazard.status === 'published';
+  const isActive = isPublished && isHazardActive(hazard);
   //admins can edit a pending report before publishing it
   const [editTitle, setEditTitle] = useState(hazard.title ?? '');
   const [editDescription, setEditDescription] = useState(hazard.description ?? '');
@@ -219,6 +229,13 @@ function HazardDetail({
           <Text style={styles.detailTitle}>{hazard.title}</Text>
         )}
         <Text style={styles.detailTime}>{formatDateTime(hazard.created_at)}</Text>
+        {isPublished && (
+          <Text style={[styles.activeStatus, !isActive && styles.inactiveTag]}>
+            {isActive
+              ? '● ACTIVE ON MAP AND LOTS UNTIL DEACTIVATED'
+              : `○ DEACTIVATED ${formatDateTime(hazard.deactivated_at)} · HIDDEN FROM MAP AND LOTS`}
+          </Text>
+        )}
 
         <View style={styles.detailCard}>
           <Text style={styles.locationLabel}>
@@ -316,6 +333,14 @@ function HazardDetail({
             {hazard.status === 'pending' ? 'DECLINE' : hazard.status === 'declined' ? 'DELETE' : 'REMOVE'}
           </Text>
         </TouchableOpacity>
+        {isPublished && (
+          <TouchableOpacity
+            style={isActive ? styles.deactivateButton : styles.approveButton}
+            onPress={() => onSetActive(hazard, !isActive)}
+          >
+            <Text style={styles.actionButtonText}>{isActive ? 'DEACTIVATE' : 'REACTIVATE'}</Text>
+          </TouchableOpacity>
+        )}
         {isPending && (
           <TouchableOpacity
             style={styles.approveButton}
@@ -427,6 +452,30 @@ export default function HazardsScreen() {
     ]);
   };
 
+  //deactivate = the hazard is over: hide it from the map/lots but keep it in
+  //the published history; reactivate = it's back, show it again
+  const handleSetActive = (hazard: any, active: boolean) => {
+    const title = active ? 'Reactivate Hazard' : 'Deactivate Hazard';
+    const message = active
+      ? `Show "${hazard.title}" on the map and lots again until it's deactivated?`
+      : `Mark "${hazard.title}" as over? It will disappear from the map and lots but stay in the published history.`;
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: active ? 'Reactivate' : 'Deactivate',
+        onPress: async () => {
+          try {
+            const updated = await setHazardActive(hazard.id, active);
+            setSelectedHazard(updated);
+            fetchHazards(false);
+          } catch {
+            Alert.alert('Error', 'Could not update this hazard. Check your connection.');
+          }
+        },
+      },
+    ]);
+  };
+
   const handleApprove = async (hazard: any, edits: { title: string; description: string }) => {
     try {
       await approveAlert(hazard.id, edits);
@@ -451,6 +500,7 @@ export default function HazardsScreen() {
           onBack={() => setSelectedHazard(null)}
           onDecline={handleDecline}
           onApprove={handleApprove}
+          onSetActive={handleSetActive}
         />
       ) : (
         <>
@@ -781,5 +831,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
   },
+  deactivateButton: {
+    flex: 1,
+    backgroundColor: '#6B7280',
+    paddingVertical: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
   actionButtonText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1 },
+  activeTag: { fontSize: 11, color: '#00853E', fontWeight: '800', marginBottom: 4 },
+  activeStatus: { fontSize: 13, color: '#00853E', fontWeight: '800', marginTop: -12, marginBottom: 20 },
+  inactiveTag: { color: '#999' },
 });

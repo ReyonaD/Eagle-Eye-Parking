@@ -6,6 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { getAlerts, getDeclinedAlerts } from '../../api/alerts';
 import { Alert } from '../../utils/webCompat';
 import { getHazardVisual } from '../../utils/alertVisuals';
+import { isHazardActive } from '../../utils/lotStatus';
 
 const PAGE_SIZE = 15;
 
@@ -93,6 +94,11 @@ export default function HazardHistoryScreen() {
                     <Text style={styles.cardMeta}>
                       {parseUTC(hazard.created_at).toLocaleDateString()} · {hazard.lot_name || 'No lot specified'}
                     </Text>
+                    {!isDeclined && (
+                      <Text style={[styles.cardMeta, { color: isHazardActive(hazard) ? '#00853E' : '#999', fontWeight: '700' }]}>
+                        {isHazardActive(hazard) ? 'Active on map' : 'Inactive'}
+                      </Text>
+                    )}
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#999" />
                 </TouchableOpacity>

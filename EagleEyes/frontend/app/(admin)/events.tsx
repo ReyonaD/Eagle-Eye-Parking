@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
-import { getAlerts, createAlert } from '../../api/alerts';
+import { getAlerts, createAlert, updateEvent } from '../../api/alerts';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from '../../utils/webCompat';
 import { getEventVisual, EVENT_CATEGORIES } from '../../utils/alertVisuals';
@@ -31,6 +31,15 @@ const parseTime12h = (s: string, period: string): { hours: number; minutes: numb
   if (period === 'PM' && hours !== 12) hours += 12;
   if (period === 'AM' && hours === 12) hours = 0;
   return { hours, minutes };
+};
+
+//Date -> the "H:MM" + AM/PM pair the time fields use (inverse of parseTime12h)
+const toTime12h = (d: Date): { time: string; period: 'AM' | 'PM' } => {
+  const h24 = d.getHours();
+  return {
+    time: `${h24 % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}`,
+    period: h24 >= 12 ? 'PM' : 'AM',
+  };
 };
 
 const combineDateAndTime = (date: Date, time: { hours: number; minutes: number }): Date => {
@@ -90,6 +99,8 @@ export default function EventsScreen() {
   const [affectedLots, setAffectedLots] = useState<string[]>([]);
   const [showLotPicker, setShowLotPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  //set while the form is editing an existing event instead of adding a new one
+  const [editingEventId, setEditingEventId] = useState<number | null>(null);
   //which of the two date fields the mini-calendar picker is currently editing
   const [activeDateField, setActiveDateField] = useState<'start' | 'end' | null>(null);
 
@@ -181,22 +192,27 @@ export default function EventsScreen() {
         : `When: ${startText} – ${endText}${allDay ? ' (All day)' : ''}`;
       const fullDescription = description.trim() ? `${schedule}\n\n${description.trim()}` : schedule;
 
-      await createAlert({
+      const eventData = {
         title: eventName.trim(),
-        alert_type: 'event',
         category,
         description: fullDescription,
         lot_name: affectedLots.length ? joinLotNames(affectedLots) : undefined,
         event_start: eventStart.toISOString(),
         event_end: eventEnd ? eventEnd.toISOString() : undefined,
-      });
-
-      Alert.alert('Success', 'Event created successfully');
+      };
+      if (editingEventId !== null) {
+        //null (not undefined) so switching to "No end date" clears the old end
+        await updateEvent(editingEventId, { ...eventData, event_end: eventData.event_end ?? null });
+        Alert.alert('Success', 'Event updated successfully');
+      } else {
+        await createAlert({ ...eventData, alert_type: 'event' });
+        Alert.alert('Success', 'Event created successfully');
+      }
       setShowAddEventModal(false);
       resetForm();
       fetchEvents();
     } catch (error) {
-      Alert.alert('Error', 'Could not create the event. Please try again.');
+      Alert.alert('Error', `Could not ${editingEventId !== null ? 'update' : 'create'} the event. Please try again.`);
     } finally {
       setIsSaving(false);
     }
@@ -215,6 +231,7 @@ export default function EventsScreen() {
     setNoEndDate(false);
     setDescription('');
     setAffectedLots([]);
+    setEditingEventId(null);
   };
 
   const handleCancel = () => {
@@ -239,6 +256,35 @@ export default function EventsScreen() {
     setEndDate('');
     setEndTime('');
     setEndTimePeriod('AM');
+    setShowAddEventModal(true);
+  };
+
+  //open the same form pre-filled with an event's current details, dates
+  //included - e.g. to give an event saved with "No end date" its real end
+  const handleEditEvent = (eventItem: any) => {
+    const range = getEventRange(eventItem);
+    const isAllDay = isAllDayRange(range);
+    setEventName(eventItem.title || '');
+    setCategory(eventItem.category || null);
+    setDescription(stripScheduleFromDescription(eventItem.description || ''));
+    setAffectedLots(parseLotNames(eventItem.lot_name));
+    setAllDay(isAllDay);
+    setNoEndDate(range.openEnded);
+    setStartDate(toLocalDateString(range.start));
+    const start12 = toTime12h(range.start);
+    setStartTime(isAllDay ? '' : start12.time);
+    setStartTimePeriod(start12.period);
+    if (range.openEnded) {
+      setEndDate('');
+      setEndTime('');
+      setEndTimePeriod('AM');
+    } else {
+      const end12 = toTime12h(range.end);
+      setEndDate(toLocalDateString(range.end));
+      setEndTime(isAllDay ? '' : end12.time);
+      setEndTimePeriod(end12.period);
+    }
+    setEditingEventId(eventItem.id);
     setShowAddEventModal(true);
   };
 
@@ -324,7 +370,17 @@ export default function EventsScreen() {
                       {eventItem.description && (
                          <Text style={styles.cardDesc}>{eventItem.description}</Text>
                       )}
-                      <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+                      <View style={styles.cardFooter}>
+                        <TouchableOpacity
+                          style={styles.editButton}
+                          onPress={() => handleEditEvent(eventItem)}
+                          accessibilityLabel={`Edit ${eventItem.title}`}
+                        >
+                          <Ionicons name="create-outline" size={14} color="#00853E" />
+                          <Text style={styles.editButtonText}>EDIT</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+                      </View>
                     </TouchableOpacity>
                   );
                 })
@@ -399,7 +455,7 @@ export default function EventsScreen() {
                 {!IS_WEB && <Ionicons name="chevron-back" size={20} color="#00853E" />}
                 <Text style={styles.modalBackText}>{IS_WEB ? 'Cancel' : 'Back'}</Text>
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>Add Event</Text>
+              <Text style={styles.modalTitle}>{editingEventId !== null ? 'Edit Event' : 'Add Event'}</Text>
 
               <Text style={styles.fieldLabel}>Enter Event Name:</Text>
               <TextInput
@@ -695,6 +751,18 @@ const styles = StyleSheet.create({
   cardTime: { fontSize: 12, color: '#555', marginBottom: 4, fontWeight: '600', textTransform: 'uppercase' },
   cardDesc: { fontSize: 14, color: '#444', marginBottom: 12, lineHeight: 20 },
   clickDetails: { fontSize: 10, color: '#999', fontStyle: 'italic', textAlign: 'right', fontWeight: 'bold' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#00853E',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  editButtonText: { fontSize: 11, color: '#00853E', fontWeight: '800' },
 
   pastEventsWrapper: { marginTop: 8 },
   divider: { height: 1, backgroundColor: '#ddd', marginBottom: 16 },

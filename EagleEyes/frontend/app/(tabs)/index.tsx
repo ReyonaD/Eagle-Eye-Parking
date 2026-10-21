@@ -6,15 +6,13 @@ import { useLots } from '../../context/LotsContext';
 import { useUser } from '../../context/UserContext';
 import EagleMap from '../../components/EagleMap';
 import { getPermitTypes } from '../../api/auth';
-import { getAlerts } from '../../api/alerts';
-import { useFocusPolling } from '../../hooks/use-focus-polling';
-import { buildLotStatuses, applyLotStatus, LotStatus } from '../../utils/lotStatus';
 import {
   consolidatePermits, lotMatchesPermitType, STREET_PARKING, PREMIUM_PARKING,
   buildPermitOptions, getPermitDisplayLabel, isPerLotPermitCode, PermitOption,
 } from '../../utils/permits';
 //import { requestPermissions } from '../../modules/parkzen-core';
 import { SafeAreaView} from 'react-native-safe-area-context';
+import { DAY_HOURS_LABEL, NIGHT_HOURS_LABEL } from '../../utils/nightPermitRules';
 //const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 const MAP_HAZARD_FAB_BOTTOM = 60;
@@ -50,7 +48,7 @@ const PREVIEW_AMBER_DARK = '#D68910';
 export default function MapScreen() {
   const router = useRouter();
   //consume the global data
-  const { lots, isLoading, lastRefreshAt, filterByPermit, previewMode, setPreviewMode, actuallyNight, mapType, setMapType } = useLots();
+  const { lots, isLoading, lastRefreshAt, fetchLotStatuses, filterByPermit, previewMode, setPreviewMode, actuallyNight, mapType, setMapType, mapTheme, setMapTheme, isDarkMap } = useLots();
   const { user } = useUser();
   console.log("MapScreen Render - isLoading:", isLoading, "Lots count:", lots?.length);
 
@@ -98,20 +96,10 @@ export default function MapScreen() {
     o.kind === 'group' && o.label === openGroupLabel
   );
 
-  // Closures, events, and recent hazards per lot name, from the same published
-  // feed as the Alerts tab. Refreshed on focus and every 30s (same cadence as
-  // the lot occupancy sync) so a new report shows up on the map without reopening it.
-  const [lotStatuses, setLotStatuses] = useState<Record<string, LotStatus>>({});
-  const fetchLotStatuses = useCallback(async () => {
-    try {
-      const [hazards, events] = await Promise.all([getAlerts('hazard'), getAlerts('event')]);
-      setLotStatuses(buildLotStatuses(hazards, events));
-    } catch {
-      // Keep the last known statuses - the map still works without them.
-    }
-  }, []);
+  // Closures, events, and recent hazards come pre-applied on each lot from
+  // LotsContext (polled every 30s); re-read on focus so a closure an admin
+  // just posted shows up as soon as the map is opened.
   useFocusEffect(useCallback(() => { fetchLotStatuses(); }, [fetchLotStatuses]));
-  useFocusPolling(fetchLotStatuses, 30000);
 
   // Subtle periodic wiggle on the hazard button to draw the eye to it,
   // without being distracting — a quick shake every few seconds, not constant.
@@ -138,8 +126,7 @@ export default function MapScreen() {
     );
   }
   const campuses = ["Main campus", "Discovery Park", "Frisco Landing"];
-  const filteredLots = (lots || []).map((rawLot: any) => {
-    const lot = applyLotStatus(rawLot, lotStatuses[rawLot.name]);
+  const filteredLots = (lots || []).map((lot: any) => {
     if (selectedPermit === "All Permits") return { ...lot, isVisible: true };
 
     // A specific per-lot pick (e.g. "Lot 16 Resident Reserve") means "show
@@ -229,7 +216,9 @@ export default function MapScreen() {
           color={isLivePreview ? '#5d6d7e' : PREVIEW_AMBER_DARK}
         />
         <Text style={[styles.liveStatusText, !isLivePreview && styles.liveStatusTextPreview]}>
-          {isLivePreview ? `Last synced: ${refreshLabel}` : `Previewing ${previewingNight ? 'Night' : 'Day'} rules`}
+          {isLivePreview
+            ? `Last synced: ${refreshLabel}`
+            : `Previewing ${previewingNight ? `Night rules (${NIGHT_HOURS_LABEL})` : `Day rules (${DAY_HOURS_LABEL})`}`}
         </Text>
       </View>
 
@@ -239,6 +228,7 @@ export default function MapScreen() {
           liveLots={permitTypeFilteredLots}
           selectedCampus={selectedCampus}
           mapType={mapType}
+          darkMap={isDarkMap}
         />
         <Animated.View
           style={[
@@ -280,7 +270,10 @@ export default function MapScreen() {
                 accessibilityLabel="Preview daytime permit rules"
               >
                 <Ionicons name="sunny" size={20} color={!previewingNight ? dayNightActiveColor : '#999'} />
-                <Text style={styles.mapSettingsOptionText}>Day</Text>
+                <View>
+                  <Text style={styles.mapSettingsOptionText}>Day</Text>
+                  <Text style={styles.mapSettingsOptionTime} numberOfLines={1}>{DAY_HOURS_LABEL}</Text>
+                </View>
               </TouchableOpacity>
               <View style={styles.dayNightDivider} />
               <TouchableOpacity
@@ -290,9 +283,13 @@ export default function MapScreen() {
                 accessibilityLabel="Preview nighttime permit rules"
               >
                 <Ionicons name="moon" size={20} color={previewingNight ? dayNightActiveColor : '#999'} />
-                <Text style={styles.mapSettingsOptionText}>Night</Text>
+                <View>
+                  <Text style={styles.mapSettingsOptionText}>Night</Text>
+                  <Text style={styles.mapSettingsOptionTime} numberOfLines={1}>{NIGHT_HOURS_LABEL}</Text>
+                </View>
               </TouchableOpacity>
             </View>
+            <Text style={styles.mapSettingsWeekendNote}>Mon–Fri. Weekends use Night rules all day.</Text>
             {!isLivePreview && <Text style={styles.mapSettingsPreviewNote}>Previewing — not live</Text>}
 
             <Text style={[styles.mapSettingsSectionLabel, { marginTop: 14 }]}>MAP VIEW</Text>
@@ -317,6 +314,31 @@ export default function MapScreen() {
                 <Text style={styles.mapSettingsOptionText}>Satellite</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Light/dark map, separate from the Day/Night permit rules above */}
+            <Text style={[styles.mapSettingsSectionLabel, { marginTop: 14 }]}>MAP THEME</Text>
+            <View style={styles.mapSettingsSegment}>
+              {([
+                { value: 'auto', label: 'Auto', a11y: 'Match the phone\'s light or dark mode' },
+                { value: 'light', label: 'Light', a11y: 'Light map' },
+                { value: 'dark', label: 'Dark', a11y: 'Dark map' },
+              ] as const).map((option, index) => (
+                <React.Fragment key={option.value}>
+                  {index > 0 && <View style={styles.dayNightDivider} />}
+                  <TouchableOpacity
+                    style={[styles.dayNightButton, mapTheme === option.value && styles.dayNightButtonActive]}
+                    onPress={() => setMapTheme(option.value)}
+                    accessibilityRole="button"
+                    accessibilityLabel={option.a11y}
+                  >
+                    <Text style={[styles.mapSettingsOptionText, mapTheme === option.value && styles.mapThemeOptionActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                </React.Fragment>
+              ))}
+            </View>
+            {mapTheme === 'auto' && <Text style={styles.mapSettingsWeekendNote}>Follows your phone&apos;s dark mode.</Text>}
           </View>
         )}
       </View>
@@ -594,7 +616,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     top: 60,
-    width: 220,
+    // wide enough for each Day/Night button's hours ("5:30 PM – 7 AM") beside its icon
+    width: 268,
     backgroundColor: 'white',
     borderRadius: 10,
     padding: 12,
@@ -625,6 +648,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#555',
   },
+  mapThemeOptionActive: {
+    color: '#00853E',
+  },
+  mapSettingsOptionTime: {
+    fontSize: 10,
+    color: '#888',
+  },
+  mapSettingsWeekendNote: {
+    fontSize: 11,
+    color: '#888',
+    marginTop: 6,
+  },
   mapSettingsPreviewNote: {
     fontSize: 11,
     color: PREVIEW_AMBER_DARK,
@@ -638,6 +673,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 5,
     paddingVertical: 9,
+    paddingHorizontal: 6,
   },
   dayNightButtonActive: {
     backgroundColor: '#e8e8e8',

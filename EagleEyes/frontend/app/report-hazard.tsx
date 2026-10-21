@@ -10,7 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { createAlert, uploadAlertImage } from '../api/alerts';
 import LotPickerModal from '../components/LotPickerModal';
 import { Alert } from '../utils/webCompat';
-import { HAZARD_CATEGORIES as ALERT_TYPES } from '../utils/alertVisuals';
+import { HAZARD_CATEGORIES as ALERT_TYPES, OTHER_HAZARD_VALUE, MAX_CUSTOM_HAZARD_LENGTH, getCategoryLabel } from '../utils/alertVisuals';
 
 const MAX_PHOTOS = 3;
 
@@ -28,6 +28,10 @@ export default function ReportHazardScreen() {
   const [isPosting, setIsPosting]       = useState(false);
 
   const selectedLabel = ALERT_TYPES.find(t => t.value === selectedType)?.label;
+  //"Other" asks for the hazard type in a text box; what's typed becomes the category
+  const [customType, setCustomType] = useState('');
+  const isOther = selectedType === OTHER_HAZARD_VALUE;
+  const hazardCategory = isOther ? customType.trim().toLowerCase() : selectedType;
 
   const addPhoto = (photo: PickedPhoto) => setPhotos(prev => [...prev, photo]);
   const removePhoto = (uri: string) => setPhotos(prev => prev.filter(p => p.uri !== uri));
@@ -96,6 +100,10 @@ export default function ReportHazardScreen() {
       Alert.alert('Missing Type', 'Please select a hazard type.');
       return;
     }
+    if (isOther && !customType.trim()) {
+      Alert.alert('Missing Type', 'Please type what kind of hazard this is.');
+      return;
+    }
     setIsPosting(true);
     try {
       //photos upload one at a time so we can attach the URLs to the report below
@@ -108,9 +116,9 @@ export default function ReportHazardScreen() {
       await createAlert({
         //default title is the hazard type the commuter picked (e.g. "Snow");
         //admins can rename it during review if a report needs something clearer
-        title: selectedLabel ?? selectedType,
+        title: isOther ? getCategoryLabel('hazard', hazardCategory) : selectedLabel ?? selectedType,
         alert_type: 'hazard',
-        category: selectedType,
+        category: hazardCategory,
         description: memo.trim() || undefined,
         lot_name: selectedLot || undefined,
         image_urls: imageUrls.length ? imageUrls : undefined,
@@ -155,7 +163,7 @@ export default function ReportHazardScreen() {
         />
 
         <TouchableOpacity
-          style={styles.typeSelector}
+          style={[styles.typeSelector, isOther && styles.typeSelectorWithOther]}
           onPress={() => setShowDropdown(true)}
         >
           <Text style={[styles.typeSelectorText, !!selectedType && styles.typeSelectorSelected]}>
@@ -163,6 +171,18 @@ export default function ReportHazardScreen() {
           </Text>
           <Ionicons name="chevron-down" size={18} color="#aaa" />
         </TouchableOpacity>
+
+        {isOther && (
+          <TextInput
+            style={styles.otherTypeInput}
+            placeholder="WHAT KIND OF HAZARD? (E.G. POTHOLE)"
+            placeholderTextColor="#aaa"
+            value={customType}
+            onChangeText={setCustomType}
+            maxLength={MAX_CUSTOM_HAZARD_LENGTH}
+            autoFocus
+          />
+        )}
 
         {/* Lot selector — opens the map + nearest-lot list picker */}
         <TouchableOpacity
@@ -288,6 +308,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 40,
+  },
+  typeSelectorWithOther: { marginBottom: 12 },
+  otherTypeInput: {
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 16,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
     marginBottom: 40,
   },
   typeSelectorText: { fontSize: 14, fontWeight: '700', color: '#aaa' },

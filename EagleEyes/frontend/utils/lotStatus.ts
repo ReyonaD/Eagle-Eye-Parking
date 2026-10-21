@@ -2,7 +2,7 @@
 // reported hazards - derived from the published alerts feed, so the map can
 // restyle a lot and pin the matching category icon on it.
 
-import { AlertVisual, getEventVisual, getHazardVisual } from './alertVisuals';
+import { AlertVisual, getEventVisual, getHazardVisual, getCategoryLabel } from './alertVisuals';
 import { getEventRange, parseUTC } from './eventDates';
 
 // Alert.lot_name is a single column; an event can affect several lots (e.g. a
@@ -28,12 +28,19 @@ export function formatLotNames(lotName?: string | null): string | undefined {
 // Event category that means "this lot is closed", not just "busier than usual".
 export const CLOSURE_CATEGORY = 'Closure';
 
-export const CLOSED_FILL_COLOR = '#4B5563';
-export const CLOSED_STROKE_COLOR = '#1F2937';
+// A closed lot is drawn neutral gray (no blue tint) with diagonal stripes
+// over it, in the same gray as its border (see getStripeSegments in
+// utils/geo.ts), instead of a badge.
+export const CLOSED_FILL_COLOR = '#A3A3A3';
+export const CLOSED_STROKE_COLOR = '#737373';
+export const CLOSED_STRIPE_COLOR = CLOSED_STROKE_COLOR;
+export const CLOSED_STRIPE_WIDTH = 1;
 
-// Hazards have no end time and stay in the feed until an admin removes them;
-// only recent reports are treated as still describing the lot right now.
-const HAZARD_MAP_WINDOW_MS = 24 * 60 * 60 * 1000;
+// A published hazard has no end time - it stays on the map/lots until an
+// admin deactivates it once it's over.
+export function isHazardActive(hazard: any): boolean {
+  return !hazard.deactivated_at;
+}
 
 export type LotStatusEvent = {
   alert: any;
@@ -83,8 +90,7 @@ export function buildLotStatuses(hazards: any[], events: any[], now: Date = new 
   });
 
   (hazards || []).forEach((hazard) => {
-    if (!hazard.created_at) return;
-    if (now.getTime() - parseUTC(hazard.created_at).getTime() > HAZARD_MAP_WINDOW_MS) return;
+    if (!isHazardActive(hazard)) return;
     parseLotNames(hazard.lot_name).forEach((name) => statusFor(name).hazards.push(hazard));
   });
 
@@ -116,6 +122,70 @@ export function getLotStatusIcons(status?: LotStatus | null, max = 3): AlertVisu
   status.events.forEach((e) => add(getEventVisual(e.alert.category)));
   status.hazards.forEach((h) => add(getHazardVisual(h.category)));
   return visuals.slice(0, max);
+}
+
+export type LotStatusItem = {
+  key: string;
+  visual: AlertVisual;
+  title: string;
+  detail: string;
+};
+
+const formatTime = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+// One row per closure/event/hazard on the lot, most important first - what the
+// map's lot sheet and the Lots tab's detail screen list under the lot name.
+// Closures/events are named by their kind ("Closure", "Gameday"), not the
+// alert's title; hazards keep their reported title.
+export function getLotStatusItems(status?: LotStatus | null): LotStatusItem[] {
+  if (!status) return [];
+  const items: LotStatusItem[] = [];
+  const eventItem = (e: LotStatusEvent): LotStatusItem => ({
+    key: `event-${e.alert.id}`,
+    visual: getEventVisual(e.alert.category),
+    title: getCategoryLabel('event', e.alert.category),
+    detail: e.active
+      ? (e.openEnded ? 'Until further notice' : `Until ${formatTime(e.end)}`)
+      : `Starts ${formatTime(e.start)}`,
+  });
+  if (status.closure) items.push(eventItem(status.closure));
+  status.events.forEach((e) => items.push(eventItem(e)));
+  status.hazards.forEach((h) => items.push({
+    key: `hazard-${h.id}`,
+    visual: getHazardVisual(h.category),
+    title: h.title,
+    detail: `${getCategoryLabel('hazard', h.category)} · reported ${formatTime(parseUTC(h.created_at))}`,
+  }));
+  return items;
+}
+
+export type LotTakeover = {
+  // 'Closed', or the event's category ('Gameday', 'Concert', ...)
+  label: string;
+  visual: AlertVisual;
+  // 'Until 5:00 PM', 'Until Oct 24, 5:00 PM', or 'Until further notice'
+  until: string;
+};
+
+// A closure or an event in progress takes over the lot: screens then show just
+// its name and what's going on, not permits/occupancy. Hazards alone don't.
+export function getLotTakeover(status?: LotStatus | null): LotTakeover | null {
+  const closed = isLotClosed(status);
+  const entry = closed ? status!.closure! : getActiveEvent(status);
+  if (!entry) return null;
+
+  let until = 'Until further notice';
+  if (!entry.openEnded) {
+    const endsToday = entry.end.toDateString() === new Date().toDateString();
+    until = endsToday
+      ? `Until ${formatTime(entry.end)}`
+      : `Until ${entry.end.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${formatTime(entry.end)}`;
+  }
+  return {
+    label: closed ? 'Closed' : getCategoryLabel('event', entry.alert.category),
+    visual: getEventVisual(entry.alert.category),
+    until,
+  };
 }
 
 // Restyles a map lot for its current situation. A closed lot goes dark gray

@@ -4,40 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDirections } from '../utils/navigation';
 import { getPermitCardStyle } from '../utils/permitColors';
 import { getPremiumParkingLink, dedupePermitLabels } from '../utils/permits';
-import { getEventVisual, getHazardVisual, getCategoryLabel } from '../utils/alertVisuals';
-import { parseUTC } from '../utils/eventDates';
+import { getLotStatusItems, getLotTakeover } from '../utils/lotStatus';
+import PermitHoursList from './PermitHoursList';
 
 const STATUS_COLOR = {
   'Available': '#00853E',
   'Near Capacity': '#F5A623',
   'Full': '#D0021B',
   'Closed': '#374151',
+  'No Data': '#808080',
 };
-
-const formatTime = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
-//closures, events, and recent hazards on this lot, most important first
-function getStatusItems(lotStatus) {
-  if (!lotStatus) return [];
-  const items = [];
-  const eventItem = (e, kind) => ({
-    key: `event-${e.alert.id}`,
-    visual: getEventVisual(e.alert.category),
-    title: e.alert.title,
-    detail: e.active
-      ? `${kind} · ${e.openEnded ? 'until further notice' : `until ${formatTime(e.end)}`}`
-      : `${kind} · starts ${formatTime(e.start)}`,
-  });
-  if (lotStatus.closure) items.push(eventItem(lotStatus.closure, lotStatus.closure.active ? 'Closed' : 'Closing'));
-  lotStatus.events.forEach((e) => items.push(eventItem(e, getCategoryLabel('event', e.alert.category))));
-  lotStatus.hazards.forEach((h) => items.push({
-    key: `hazard-${h.id}`,
-    visual: getHazardVisual(h.category),
-    title: h.title,
-    detail: `${getCategoryLabel('hazard', h.category)} · reported ${formatTime(parseUTC(h.created_at))}`,
-  }));
-  return items;
-}
 
 function formatLotTimestamp(value) {
   if (!value) return 'No time available';
@@ -62,7 +38,12 @@ function InfoRow({ icon, label, value }) {
 export default function LotDetailsSheet({ lot, visible, onClose }) {
   if (!lot) return null;
 
-  const statusColor = STATUS_COLOR[lot.status] || STATUS_COLOR['Available'];
+  //a closure or event in progress: show just the lot and what's going on
+  const takeover = getLotTakeover(lot.lotStatus);
+  const statusLabel = takeover ? takeover.label : (lot.status || 'Available');
+  const statusColor = takeover
+    ? (takeover.label === 'Closed' ? STATUS_COLOR['Closed'] : takeover.visual.iconColor)
+    : STATUS_COLOR[lot.status] || STATUS_COLOR['No Data'];
   const rawPermits = Array.isArray(lot.permitList) && lot.permitList.length > 0
     ? lot.permitList
     : (typeof lot.permits === 'string' ? lot.permits.split(',') : []);
@@ -70,7 +51,7 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
   const hasParkzenCaptureTime = lot.sourceTimestampProvidedByParkzen === true;
   const captureTimeValue = hasParkzenCaptureTime ? formatLotTimestamp(lot.lastUpdatedAt) : 'No time available';
   const premiumParkingLink = getPremiumParkingLink(lot.name, lot.permitList, lot.coordinates);
-  const statusItems = getStatusItems(lot.lotStatus);
+  const statusItems = getLotStatusItems(lot.lotStatus);
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
       {/* dark backdrop, tap to close */}
@@ -83,7 +64,7 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
           <Text style={styles.lotName} numberOfLines={2}>{lot.name}</Text>
           <View style={[styles.statusBadge, { backgroundColor: statusColor + '1A' }]}>
             <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[styles.statusText, { color: statusColor }]}>{lot.status || 'Available'}</Text>
+            <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
           </View>
         </View>
 
@@ -103,59 +84,64 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
           </View>
         )}
 
-        <InfoRow
-          icon="speedometer-outline"
-          label="Occupancy"
-          value={typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% empty` : 'No data'}
-        />
-        <InfoRow
-          icon="time-outline"
-          label="ParkZen capture time"
-          value={captureTimeValue}
-        />
-        <InfoRow
-          icon="car-outline"
-          label="Capacity"
-          value={lot.capacity ? `${lot.capacity} spaces` : null}
-        />
-        <InfoRow icon="location-outline" label="Address" value={lot.address} />
+        {!takeover && (
+          <>
+            <InfoRow
+              icon="speedometer-outline"
+              label="Occupancy"
+              value={typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% empty` : 'No data'}
+            />
+            <InfoRow
+              icon="time-outline"
+              label="ParkZen capture time"
+              value={captureTimeValue}
+            />
+            <InfoRow
+              icon="car-outline"
+              label="Capacity"
+              value={lot.capacity ? `${lot.capacity} spaces` : null}
+            />
+            <InfoRow icon="location-outline" label="Address" value={lot.address} />
 
-        {permits.length > 0 && (
-          <View style={styles.permitsBlock}>
-            <Text style={styles.permitsTitle}>Permits</Text>
-            <ScrollView style={styles.permitsScroll} contentContainerStyle={styles.permitsWrap}>
-              {permits.map((label, i) => {
-                const permitStyle = getPermitCardStyle(label);
-                const borderStyle = permitStyle.border
-                  ? { borderWidth: 1, borderColor: permitStyle.border }
-                  : null;
-                return (
-                  <View key={i} style={[styles.permitChip, { backgroundColor: permitStyle.bg }, borderStyle]}>
-                    <Text style={[styles.permitChipText, { color: permitStyle.text }]}>{label}</Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
+            {permits.length > 0 && (
+              <View style={styles.permitsBlock}>
+                <Text style={styles.permitsTitle}>Permits</Text>
+                <ScrollView style={styles.permitsScroll} contentContainerStyle={styles.permitsWrap}>
+                  {permits.map((label, i) => {
+                    const permitStyle = getPermitCardStyle(label);
+                    const borderStyle = permitStyle.border
+                      ? { borderWidth: 1, borderColor: permitStyle.border }
+                      : null;
+                    return (
+                      <View key={i} style={[styles.permitChip, { backgroundColor: permitStyle.bg }, borderStyle]}>
+                        <Text style={[styles.permitChipText, { color: permitStyle.text }]}>{label}</Text>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+                <PermitHoursList permits={permits} />
+              </View>
+            )}
+
+            {premiumParkingLink && (
+              <TouchableOpacity
+                style={styles.payButton}
+                onPress={() => Linking.openURL(premiumParkingLink)}
+              >
+                <Text style={styles.directionsText}>Premium Parking</Text>
+                <Ionicons name="open-outline" size={22} color="#fff" />
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.directionsButton}
+              onPress={() => { onClose(); openDirections(lot); }}
+            >
+              <Ionicons name="navigate" size={22} color="#fff" />
+              <Text style={styles.directionsText}>Get Directions</Text>
+            </TouchableOpacity>
+          </>
         )}
-
-        {premiumParkingLink && (
-          <TouchableOpacity
-            style={styles.payButton}
-            onPress={() => Linking.openURL(premiumParkingLink)}
-          >
-            <Text style={styles.directionsText}>Premium Parking</Text>
-            <Ionicons name="open-outline" size={22} color="#fff" />
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          style={styles.directionsButton}
-          onPress={() => { onClose(); openDirections(lot); }}
-        >
-          <Ionicons name="navigate" size={22} color="#fff" />
-          <Text style={styles.directionsText}>Get Directions</Text>
-        </TouchableOpacity>
       </View>
     </Modal>
   );

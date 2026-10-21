@@ -17,7 +17,7 @@ from . import models
 #imports custom files
 from app.database import get_db
 from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
@@ -41,6 +41,21 @@ with engine.connect() as _conn:
     #it, but plate_state/plate_number were added after that first run
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_state VARCHAR"))
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
+    #hazards now stay on the map until an admin deactivates them; before that
+    #they simply lapsed 24h after being reported. When the column is first
+    #added, close out those older hazards at their old expiry so they don't
+    #all reappear on the map at once.
+    has_deactivated_at = _conn.execute(text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'alerts' AND column_name = 'deactivated_at'"
+    )).first()
+    if not has_deactivated_at:
+        _conn.execute(text("ALTER TABLE alerts ADD COLUMN deactivated_at TIMESTAMP"))
+        _conn.execute(text(
+            "UPDATE alerts SET deactivated_at = created_at + INTERVAL '24 hours' "
+            "WHERE alert_type = 'hazard' AND status = 'published' "
+            "AND created_at < (NOW() AT TIME ZONE 'UTC') - INTERVAL '24 hours'"
+        ))
     _conn.commit()
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -121,11 +136,19 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 permit_cache = {}
-async def get_permit_name(permit_id: str, token: str):
-    """fetch the real name of permit from Parkzen, using a cache to be fast"""
-    if permit_id in permit_cache:
-        return permit_cache[permit_id]
-    
+#how long a cached ParkZen permit (name + allowed hours) is trusted before
+#it's re-fetched, so an hours change made in the ParkZen dashboard shows up
+#in the app without a backend restart
+PERMIT_CACHE_TTL = timedelta(hours=1)
+
+async def get_permit_info(permit_id: str, token: str) -> Optional[dict]:
+    """Fetch a permit from ParkZen - its name, type, and allowed parking
+    hours (rules.dailyTimeSlots: per weekday, the time slots the permit may
+    park in) - using a cache to be fast. None if ParkZen can't be reached."""
+    cached = permit_cache.get(permit_id)
+    if cached and cached["fetched_at"] > datetime.now() - PERMIT_CACHE_TTL:
+        return cached["info"]
+
     url = f"https://api.parkzenapp.com/api/permits/{permit_id}"
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -135,12 +158,23 @@ async def get_permit_name(permit_id: str, token: str):
             response = await client.get(url, headers=headers)
             if response.status_code == 200:
                 data = response.json()
-                name = data.get("name") or data.get("title") or data.get("type") or "Unknown"
-                permit_cache[permit_id] = name
-                return name
+                rules = data.get("rules") or {}
+                info = {
+                    "name": data.get("name") or data.get("title") or data.get("type") or "Unknown",
+                    "type": data.get("type"),
+                    "dailyTimeSlots": rules.get("dailyTimeSlots") or [],
+                }
+                permit_cache[permit_id] = {"info": info, "fetched_at": datetime.now()}
+                return info
     except httpx.RequestError as e:
-        print(f"Error fetching permit name for {permit_id}: {e}")
-    return "Unknown"
+        print(f"Error fetching permit {permit_id}: {e}")
+    #keep serving a stale copy rather than nothing if ParkZen is unreachable
+    return cached["info"] if cached else None
+
+async def get_permit_name(permit_id: str, token: str):
+    """fetch the real name of permit from Parkzen, using a cache to be fast"""
+    info = await get_permit_info(permit_id, token)
+    return info["name"] if info else "Unknown"
 
 @app.post("/register", status_code=status.HTTP_201_CREATED)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
@@ -429,6 +463,31 @@ async def get_permit_types():
                 permit_names.add(name)
 
         return sorted(permit_names)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
+
+@app.get("/api/permit-hours")
+async def get_permit_hours():
+    """When each permit may park, straight from ParkZen: one entry per permit
+    used by any UNT lot, with its per-weekday allowed time slots
+    (dailyTimeSlots: [{day, timeSlots: [{startTime, endTime}]}], 24h "HH:MM")."""
+    try:
+        actual_lots_array, active_token = await _fetch_raw_lots()
+
+        permit_ids: set[str] = set()
+        for lot in actual_lots_array:
+            for permit_id in lot.get("permits", []) or []:
+                permit_ids.add(permit_id)
+
+        hours = []
+        for permit_id in sorted(permit_ids):
+            info = await get_permit_info(permit_id, active_token)
+            if info and info["name"] != "Unknown":
+                hours.append(info)
+        return sorted(hours, key=lambda permit: permit["name"])
     except HTTPException:
         raise
     except Exception as e:
@@ -890,6 +949,54 @@ def approve_alert(
         alert.image_urls = edits.image_urls
 
     alert.status = "published"
+    db.commit()
+    db.refresh(alert)
+    return alert
+
+@app.put("/alerts/{alert_id}", response_model=AlertResponse)
+def update_event(
+    alert_id: int,
+    payload: AlertEventUpdate,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin edits a published event's details - e.g. setting the end date of
+    an event that was saved with "No end date" once it's known."""
+    alert = db.query(Alert).filter(Alert.id == alert_id, Alert.alert_type == "event").first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    if payload.event_end is not None and payload.event_end < payload.event_start:
+        raise HTTPException(status_code=400, detail="End date/time must be after the start date/time.")
+
+    alert.title = payload.title.strip().upper()
+    alert.category = payload.category
+    alert.description = payload.description
+    alert.lot_name = payload.lot_name or None
+    alert.event_start = payload.event_start
+    alert.event_end = payload.event_end
+    db.commit()
+    db.refresh(alert)
+    return alert
+
+@app.put("/alerts/{alert_id}/active", response_model=AlertResponse)
+def set_hazard_active(
+    alert_id: int,
+    payload: AlertActiveUpdate,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin takes a published hazard off the map/lots once it's over
+    (active=false), or puts it back up (active=true). Unlike DELETE, the
+    hazard stays in the published history."""
+    alert = db.query(Alert).filter(
+        Alert.id == alert_id,
+        Alert.alert_type == "hazard",
+        Alert.status == "published",
+    ).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Published hazard not found.")
+
+    alert.deactivated_at = None if payload.active else datetime.now(timezone.utc)
     db.commit()
     db.refresh(alert)
     return alert

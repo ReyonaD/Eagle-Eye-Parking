@@ -1,24 +1,20 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
-import { nearestLotDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_LEVEL_WEB } from '../utils/geo';
-import { isLotClosed, getActiveEvent, LotStatus } from '../utils/lotStatus';
+import { nearestLotDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_LEVEL_WEB, getStripeSegments } from '../utils/geo';
+import { isLotClosed, getActiveEvent, getLotTakeover, LotStatus, CLOSED_STRIPE_WIDTH } from '../utils/lotStatus';
+import { LIGHT_MAP_STYLE, DARK_MAP_STYLE, getClosedLotColors, getLotStrokeColor, getLotFillOpacity } from '../utils/mapStyles';
 import { getCategoryLabel } from '../utils/alertVisuals';
 
 // One line per closure/event/hazard on the lot, for the click popup.
 function describeLotStatus(status?: LotStatus | null): string {
   if (!status) return '';
   const lines: string[] = [];
-  if (status.closure) lines.push(`${status.closure.active ? 'CLOSED' : 'Closing later today'}: ${status.closure.alert.title}`);
-  status.events.forEach((e) => lines.push(`${e.active ? 'Event now' : 'Event later today'}: ${e.alert.title}`));
+  if (status.closure) lines.push(`${getCategoryLabel('event', status.closure.alert.category)}${status.closure.active ? '' : ' (later today)'}`);
+  status.events.forEach((e) => lines.push(`${getCategoryLabel('event', e.alert.category)}${e.active ? '' : ' (later today)'}`));
   status.hazards.forEach((h) => lines.push(`Hazard (${getCategoryLabel('hazard', h.category)}): ${h.title}`));
   return lines.length ? `\n${lines.join('\n')}` : '';
 }
-
-const MAP_STYLES: any[] = [
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-];
 
 // Same regions/zoom as the native map (components/EagleMap.tsx).
 const CAMPUS_REGIONS: Record<string, { lat: number; lng: number }> = {
@@ -122,13 +118,48 @@ function WebPolygon({ paths, options, onClick }: { paths: any; options: any; onC
   return null;
 }
 
+// Diagonal stripes over a closed lot (same geometry as the native map). Each
+// stripe is a 2-point path of one stroke-only, unclickable polygon, so a whole
+// lot's stripes are a single map object and clicks fall through to the lot.
+function WebStripes({ coordinates, color }: { coordinates: { latitude: number; longitude: number }[]; color: string }) {
+  const map = useMap();
+  const stripesRef = React.useRef<any>(null);
+  const paths = React.useMemo(
+    () => getStripeSegments(coordinates).map((segment) =>
+      segment.map((point) => ({ lat: point.latitude, lng: point.longitude }))),
+    [coordinates],
+  );
+
+  useEffect(() => {
+    if (!map || !(window as any).google) return;
+    stripesRef.current = new (window as any).google.maps.Polygon({
+      map,
+      paths,
+      strokeColor: color,
+      strokeWeight: CLOSED_STRIPE_WIDTH,
+      fillOpacity: 0,
+      clickable: false,
+    });
+    return () => {
+      stripesRef.current?.setMap(null);
+      stripesRef.current = null;
+    };
+  }, [map, paths, color]);
+
+  return null;
+}
+
 interface EagleMapProps {
   liveLots: any[];
   mapType?: 'standard' | 'satellite';
   selectedCampus?: string;
+  darkMap?: boolean;
 }
 
-export default function EagleMap({ liveLots, mapType = 'standard', selectedCampus = 'Main campus' }: EagleMapProps) {
+export default function EagleMap({ liveLots, mapType = 'standard', selectedCampus = 'Main campus', darkMap = false }: EagleMapProps) {
+  // Satellite imagery is dark too, so it gets the same lighter overlay shades.
+  const darkSurface = darkMap || mapType === 'satellite';
+  const closedColors = getClosedLotColors(darkSurface);
   const untCenter = { lat: 33.2140, lng: -97.1475 };
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -142,7 +173,7 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
             gestureHandling={'greedy'}
             disableDefaultUI={true}
             mapTypeId={mapType === 'satellite' ? 'satellite' : 'roadmap'}
-            styles={mapType === 'satellite' ? undefined : MAP_STYLES}
+            styles={mapType === 'satellite' ? undefined : (darkMap ? DARK_MAP_STYLE : LIGHT_MAP_STYLE)}
           >
             <CampusPanController selectedCampus={selectedCampus} />
             <UserLocationAutoZoomController liveLots={liveLots} />
@@ -165,12 +196,19 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
                   <WebPolygon
                     paths={webPaths}
                     options={{
-                      fillColor: hidden ? 'rgba(0,0,0,0)' : lot.fillColor,
-                      strokeColor: hidden ? 'rgba(0,0,0,0)' : lot.strokeColor,
-                      strokeWeight: hidden ? 0 : (getActiveEvent(lot.lotStatus) || isLotClosed(lot.lotStatus) ? 4 : 2),
+                      fillColor: hidden ? 'rgba(0,0,0,0)' : (isLotClosed(lot.lotStatus) ? closedColors.fill : lot.fillColor),
+                      fillOpacity: getLotFillOpacity(darkMap),
+                      strokeColor: hidden ? 'rgba(0,0,0,0)' : (isLotClosed(lot.lotStatus) ? closedColors.stroke : getLotStrokeColor(lot.strokeColor, darkSurface)),
+                      strokeWeight: hidden ? 0 : (getActiveEvent(lot.lotStatus) && !isLotClosed(lot.lotStatus) ? 4 : 2),
                       clickable: !hidden,
                     }}
                     onClick={() => {
+                      // a closure or event in progress: just the lot and what's going on
+                      const takeover = getLotTakeover(lot.lotStatus);
+                      if (takeover) {
+                        window.alert(`${lot.name}\n${takeover.label} · ${takeover.until}` + describeLotStatus(lot.lotStatus));
+                        return;
+                      }
                       window.alert(
                         `${lot.name}\n` +
                         `Permits: ${lot.permits}\n` +
@@ -180,6 +218,7 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
                       );
                     }}
                   />
+                  {!hidden && isLotClosed(lot.lotStatus) && <WebStripes coordinates={lot.coordinates} color={closedColors.stripe} />}
                 </React.Fragment>
               );
             })}
