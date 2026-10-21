@@ -21,10 +21,9 @@ export const register = async (email, password) => {
 //LOGIN
 export const login = async (email, password) => {
     try{
-        console.log("ATTEMPTING TO SEND -> Email:", email, "| Password:", password);
+        console.log("[Auth] Logging in as:", email);
         //FastAPI login requires form-urlencoded, NOT JSON!
         const formData = `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
-        console.log("EXACT PACKAGE BEING SENT:", formData);
         const res = await apiFetch(`${BASE_URL}/login`, {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -77,6 +76,12 @@ export const getCurrentUser = async () => {
 export const getPermitTypes = async () => {
     const response = await apiFetch(`${BASE_URL}/api/permits`);
     if (!response.ok) throw new Error('Failed to fetch permit types');
+    return await response.json();
+};
+//GET PERMIT HOURS - when each ParkZen permit may park ({name, type, dailyTimeSlots})
+export const getPermitHours = async () => {
+    const response = await apiFetch(`${BASE_URL}/api/permit-hours`);
+    if (!response.ok) throw new Error('Failed to fetch permit hours');
     return await response.json();
 };
 //UPDATE PERMIT - save the account's chosen permit type to the backend

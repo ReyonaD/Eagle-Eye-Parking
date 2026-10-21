@@ -39,10 +39,10 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <View style={styles.logoContainer}>
         <Image
-          source={require('../assets/images/Logo_EagleEye.png')}
+          source={require('../assets/images/updated_logo_Oct.webp')}
           style={styles.logoImage}
+          resizeMode="contain"
         />
-        <Text style={styles.logoText}>EagleEyes</Text>
       </View>
       <Text style={styles.subtitle}>UNT Campus Parking</Text>
 
@@ -92,16 +92,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 30, // Pushes the input fields or content down
   },
+  //new lockup is a wide icon+wordmark image (~2.53:1), unlike the old square
+  //icon-only mark, so it carries its own "EagleEyes" name now
   logoImage: {
-    width: 120, 
-    height: 80,
-    resizeMode: 'contain',
-    marginBottom: 10, // Space between the logo and the text
-  },
-  logoText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#00853E', // UNT Green
+    width: 280,
+    height: 111,
   },
   subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 40 },
   input: { height: 52, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, marginBottom: 16, fontSize: 16 },

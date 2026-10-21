@@ -89,6 +89,16 @@ export const getPendingAlerts = async (alertType) => {
     return await response.json();
 };
 
+// GET: Admin history of reports an admin declined (admin-only)
+export const getDeclinedAlerts = async (alertType) => {
+    const token = await AsyncStorage.getItem('token');
+    const response = await apiFetch(`${BASE_URL}/alerts/declined?alert_type=${alertType}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch declined reports');
+    return await response.json();
+};
+
 // PUT: Admin approves a pending report, optionally with edits (admin-only)
 export const approveAlert = async (alertId, edits = {}) => {
     const token = await AsyncStorage.getItem('token');
@@ -101,6 +111,36 @@ export const approveAlert = async (alertId, edits = {}) => {
         body: JSON.stringify(edits),
     });
     if (!response.ok) throw new Error('Failed to approve report');
+    return await response.json();
+};
+// PUT: Admin takes a published hazard off the map/lots (active=false) or puts
+// it back up (active=true). Unlike deleteAlert, it stays in history.
+export const setHazardActive = async (alertId, active) => {
+    const token = await AsyncStorage.getItem('token');
+    const response = await apiFetch(`${BASE_URL}/alerts/${alertId}/active`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ active }),
+    });
+    if (!response.ok) throw new Error('Failed to update hazard');
+    return await response.json();
+};
+// PUT: Admin edits an event's details (admin-only). Sends the whole edited
+// event; event_end: null saves it with no end date.
+export const updateEvent = async (alertId, eventData) => {
+    const token = await AsyncStorage.getItem('token');
+    const response = await apiFetch(`${BASE_URL}/alerts/${alertId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(eventData),
+    });
+    if (!response.ok) throw new Error('Failed to update event');
     return await response.json();
 };
 // DELETE: Admin declines/removes a hazard report (admin-only endpoint)

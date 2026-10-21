@@ -4,11 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDirections } from '../utils/navigation';
 import { getPermitCardStyle } from '../utils/permitColors';
 import { getPremiumParkingLink, dedupePermitLabels } from '../utils/permits';
+import { getLotStatusItems, getLotTakeover } from '../utils/lotStatus';
+import PermitHoursList from './PermitHoursList';
+import AlertIcon from './AlertIcon';
 
 const STATUS_COLOR = {
   'Available': '#00853E',
   'Near Capacity': '#F5A623',
   'Full': '#D0021B',
+  'Closed': '#374151',
+  'No Data': '#808080',
 };
 
 function formatLotTimestamp(value) {
@@ -34,14 +39,20 @@ function InfoRow({ icon, label, value }) {
 export default function LotDetailsSheet({ lot, visible, onClose }) {
   if (!lot) return null;
 
-  const statusColor = STATUS_COLOR[lot.status] || STATUS_COLOR['Available'];
+  //a closure or event in progress: show just the lot and what's going on
+  const takeover = getLotTakeover(lot.lotStatus);
+  const statusLabel = takeover ? takeover.label : (lot.status || 'Available');
+  const statusColor = takeover
+    ? (takeover.label === 'Closed' ? STATUS_COLOR['Closed'] : takeover.visual.iconColor)
+    : STATUS_COLOR[lot.status] || STATUS_COLOR['No Data'];
   const rawPermits = Array.isArray(lot.permitList) && lot.permitList.length > 0
     ? lot.permitList
     : (typeof lot.permits === 'string' ? lot.permits.split(',') : []);
   const permits = dedupePermitLabels(rawPermits);
   const hasParkzenCaptureTime = lot.sourceTimestampProvidedByParkzen === true;
   const captureTimeValue = hasParkzenCaptureTime ? formatLotTimestamp(lot.lastUpdatedAt) : 'No time available';
-  const premiumParkingLink = getPremiumParkingLink(lot.name, lot.permitList);
+  const premiumParkingLink = getPremiumParkingLink(lot.name, lot.permitList, lot.coordinates);
+  const statusItems = getLotStatusItems(lot.lotStatus);
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
       {/* dark backdrop, tap to close */}
@@ -54,63 +65,84 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
           <Text style={styles.lotName} numberOfLines={2}>{lot.name}</Text>
           <View style={[styles.statusBadge, { backgroundColor: statusColor + '1A' }]}>
             <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[styles.statusText, { color: statusColor }]}>{lot.status || 'Available'}</Text>
+            <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
           </View>
         </View>
 
-        <InfoRow
-          icon="speedometer-outline"
-          label="Occupancy"
-          value={typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% empty` : 'No data'}
-        />
-        <InfoRow
-          icon="time-outline"
-          label="ParkZen capture time"
-          value={captureTimeValue}
-        />
-        <InfoRow
-          icon="car-outline"
-          label="Capacity"
-          value={lot.capacity ? `${lot.capacity} spaces` : null}
-        />
-        <InfoRow icon="location-outline" label="Address" value={lot.address} />
-
-        {permits.length > 0 && (
-          <View style={styles.permitsBlock}>
-            <Text style={styles.permitsTitle}>Permits</Text>
-            <ScrollView style={styles.permitsScroll} contentContainerStyle={styles.permitsWrap}>
-              {permits.map((label, i) => {
-                const permitStyle = getPermitCardStyle(label);
-                const borderStyle = permitStyle.border
-                  ? { borderWidth: 1, borderColor: permitStyle.border }
-                  : null;
-                return (
-                  <View key={i} style={[styles.permitChip, { backgroundColor: permitStyle.bg }, borderStyle]}>
-                    <Text style={[styles.permitChipText, { color: permitStyle.text }]}>{label}</Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
+        {statusItems.length > 0 && (
+          <View style={styles.alertsBlock}>
+            {statusItems.map((item) => (
+              <View key={item.key} style={styles.alertRow}>
+                <View style={[styles.alertIcon, { backgroundColor: item.visual.bg }]}>
+                  <AlertIcon visual={item.visual} size={18} />
+                </View>
+                <View style={styles.alertTextCol}>
+                  <Text style={styles.alertTitle} numberOfLines={1}>{item.title}</Text>
+                  <Text style={styles.alertDetail} numberOfLines={1}>{item.detail}</Text>
+                </View>
+              </View>
+            ))}
           </View>
         )}
 
-        {premiumParkingLink && (
-          <TouchableOpacity
-            style={styles.payButton}
-            onPress={() => Linking.openURL(premiumParkingLink)}
-          >
-            <Ionicons name="card-outline" size={22} color="#fff" />
-            <Text style={styles.directionsText}>Pay for Parking</Text>
-          </TouchableOpacity>
-        )}
+        {!takeover && (
+          <>
+            <InfoRow
+              icon="speedometer-outline"
+              label="Occupancy"
+              value={typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% empty` : 'No data'}
+            />
+            <InfoRow
+              icon="time-outline"
+              label="ParkZen capture time"
+              value={captureTimeValue}
+            />
+            <InfoRow
+              icon="car-outline"
+              label="Capacity"
+              value={lot.capacity ? `${lot.capacity} spaces` : null}
+            />
+            <InfoRow icon="location-outline" label="Address" value={lot.address} />
 
-        <TouchableOpacity
-          style={styles.directionsButton}
-          onPress={() => { onClose(); openDirections(lot); }}
-        >
-          <Ionicons name="navigate" size={22} color="#fff" />
-          <Text style={styles.directionsText}>Get Directions</Text>
-        </TouchableOpacity>
+            {permits.length > 0 && (
+              <View style={styles.permitsBlock}>
+                <Text style={styles.permitsTitle}>Permits</Text>
+                <ScrollView style={styles.permitsScroll} contentContainerStyle={styles.permitsWrap}>
+                  {permits.map((label, i) => {
+                    const permitStyle = getPermitCardStyle(label);
+                    const borderStyle = permitStyle.border
+                      ? { borderWidth: 1, borderColor: permitStyle.border }
+                      : null;
+                    return (
+                      <View key={i} style={[styles.permitChip, { backgroundColor: permitStyle.bg }, borderStyle]}>
+                        <Text style={[styles.permitChipText, { color: permitStyle.text }]}>{label}</Text>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+                <PermitHoursList permits={permits} />
+              </View>
+            )}
+
+            {premiumParkingLink && (
+              <TouchableOpacity
+                style={styles.payButton}
+                onPress={() => Linking.openURL(premiumParkingLink)}
+              >
+                <Text style={styles.directionsText}>Premium Parking</Text>
+                <Ionicons name="open-outline" size={22} color="#fff" />
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.directionsButton}
+              onPress={() => { onClose(); openDirections(lot); }}
+            >
+              <Ionicons name="navigate" size={22} color="#fff" />
+              <Text style={styles.directionsText}>Get Directions</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </Modal>
   );
@@ -132,6 +164,12 @@ const styles = StyleSheet.create({
   statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   statusText: { fontSize: 13, fontWeight: '600' },
+  alertsBlock: { marginBottom: 8, gap: 8 },
+  alertRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 10, padding: 8 },
+  alertIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  alertTextCol: { flex: 1 },
+  alertTitle: { fontSize: 14, fontWeight: '700', color: '#333' },
+  alertDetail: { fontSize: 12, color: '#777', marginTop: 1 },
   infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },
   infoIcon: { marginRight: 10 },
   infoLabel: { fontSize: 14, color: '#777', width: 80 },

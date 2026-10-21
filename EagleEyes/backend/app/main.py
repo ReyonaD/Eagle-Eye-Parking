@@ -16,8 +16,8 @@ from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
-from app.models import User, Alert, PasswordResetToken
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
@@ -29,11 +29,33 @@ with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'published'"))
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS lot_name VARCHAR"))
     _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS image_urls JSON"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reporter_emails JSON"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS event_start TIMESTAMP"))
+    _conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS event_end TIMESTAMP"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS permit_type VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT FALSE"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plate_state VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
+    #the notes table itself is new enough that create_all above already made
+    #it, but plate_state/plate_number were added after that first run
+    _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_state VARCHAR"))
+    _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
+    #hazards now stay on the map until an admin deactivates them; before that
+    #they simply lapsed 24h after being reported. When the column is first
+    #added, close out those older hazards at their old expiry so they don't
+    #all reappear on the map at once.
+    has_deactivated_at = _conn.execute(text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'alerts' AND column_name = 'deactivated_at'"
+    )).first()
+    if not has_deactivated_at:
+        _conn.execute(text("ALTER TABLE alerts ADD COLUMN deactivated_at TIMESTAMP"))
+        _conn.execute(text(
+            "UPDATE alerts SET deactivated_at = created_at + INTERVAL '24 hours' "
+            "WHERE alert_type = 'hazard' AND status = 'published' "
+            "AND created_at < (NOW() AT TIME ZONE 'UTC') - INTERVAL '24 hours'"
+        ))
     _conn.commit()
 app = FastAPI(title = "EagleEyes API")
 # CORS configuration
@@ -114,11 +136,19 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 permit_cache = {}
-async def get_permit_name(permit_id: str, token: str):
-    """fetch the real name of permit from Parkzen, using a cache to be fast"""
-    if permit_id in permit_cache:
-        return permit_cache[permit_id]
-    
+#how long a cached ParkZen permit (name + allowed hours) is trusted before
+#it's re-fetched, so an hours change made in the ParkZen dashboard shows up
+#in the app without a backend restart
+PERMIT_CACHE_TTL = timedelta(hours=1)
+
+async def get_permit_info(permit_id: str, token: str) -> Optional[dict]:
+    """Fetch a permit from ParkZen - its name, type, and allowed parking
+    hours (rules.dailyTimeSlots: per weekday, the time slots the permit may
+    park in) - using a cache to be fast. None if ParkZen can't be reached."""
+    cached = permit_cache.get(permit_id)
+    if cached and cached["fetched_at"] > datetime.now() - PERMIT_CACHE_TTL:
+        return cached["info"]
+
     url = f"https://api.parkzenapp.com/api/permits/{permit_id}"
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -128,12 +158,23 @@ async def get_permit_name(permit_id: str, token: str):
             response = await client.get(url, headers=headers)
             if response.status_code == 200:
                 data = response.json()
-                name = data.get("name") or data.get("title") or data.get("type") or "Unknown"
-                permit_cache[permit_id] = name
-                return name
+                rules = data.get("rules") or {}
+                info = {
+                    "name": data.get("name") or data.get("title") or data.get("type") or "Unknown",
+                    "type": data.get("type"),
+                    "dailyTimeSlots": rules.get("dailyTimeSlots") or [],
+                }
+                permit_cache[permit_id] = {"info": info, "fetched_at": datetime.now()}
+                return info
     except httpx.RequestError as e:
-        print(f"Error fetching permit name for {permit_id}: {e}")
-    return "Unknown"
+        print(f"Error fetching permit {permit_id}: {e}")
+    #keep serving a stale copy rather than nothing if ParkZen is unreachable
+    return cached["info"] if cached else None
+
+async def get_permit_name(permit_id: str, token: str):
+    """fetch the real name of permit from Parkzen, using a cache to be fast"""
+    info = await get_permit_info(permit_id, token)
+    return info["name"] if info else "Unknown"
 
 @app.post("/register", status_code=status.HTTP_201_CREATED)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
@@ -428,6 +469,31 @@ async def get_permit_types():
         print(f"Server error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
 
+@app.get("/api/permit-hours")
+async def get_permit_hours():
+    """When each permit may park, straight from ParkZen: one entry per permit
+    used by any UNT lot, with its per-weekday allowed time slots
+    (dailyTimeSlots: [{day, timeSlots: [{startTime, endTime}]}], 24h "HH:MM")."""
+    try:
+        actual_lots_array, active_token = await _fetch_raw_lots()
+
+        permit_ids: set[str] = set()
+        for lot in actual_lots_array:
+            for permit_id in lot.get("permits", []) or []:
+                permit_ids.add(permit_id)
+
+        hours = []
+        for permit_id in sorted(permit_ids):
+            info = await get_permit_info(permit_id, active_token)
+            if info and info["name"] != "Unknown":
+                hours.append(info)
+        return sorted(hours, key=lambda permit: permit["name"])
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
+
 @app.get("/api/lots")
 async def get_parking_lots():
     """Fetches UNT lots drawn in Parkzen Dashboard"""
@@ -627,7 +693,20 @@ def get_pending_alerts(
             .filter(Alert.alert_type == alert_type, Alert.status == "pending")\
             .order_by(desc(Alert.created_at))\
             .all()
-    
+
+@app.get("/alerts/declined", response_model=List[AlertResponse])
+def get_declined_alerts(
+    alert_type: str = Query(..., description="Must be 'hazard' or 'event'"),
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin-only history of reports an admin declined, kept instead of hard-deleted."""
+    return db.query(Alert)\
+            .filter(Alert.alert_type == alert_type, Alert.status == "declined")\
+            .order_by(desc(Alert.created_at))\
+            .all()
+
+
 @app.post("/alerts/upload-image")
 async def upload_alert_image(
     file: UploadFile = File(...),
@@ -657,6 +736,10 @@ async def upload_alert_image(
 
     return {"image_url": f"/uploads/{filename}"}
 
+#reports for the same lot+hazard type stay "live" for this long; a report older
+#than this is treated as resolved/stale and no longer absorbs new duplicates
+DUPLICATE_REPORT_WINDOW = timedelta(hours=48)
+
 @app.post("/alerts", response_model=AlertResponse)
 def create_alert(
     alert_data: AlertCreate,
@@ -666,15 +749,62 @@ def create_alert(
     if alert_data.image_urls and len(alert_data.image_urls) > MAX_IMAGES_PER_ALERT:
         raise HTTPException(status_code=400, detail=f"A report can include at most {MAX_IMAGES_PER_ALERT} photos")
 
+    alert_type = alert_data.alert_type.lower()
+
+    #dedup/merge models "multiple different commuters independently reporting
+    #the same hazard" - it never applies to admin posts (there's no multi-
+    #reporter confirmation signal when it's the same admin posting twice),
+    #and a lot-less report can't be confirmed as "the same incident" as
+    #another lot-less report, so only dedupe for commuters with a lot picked
+    existing = None
+    if current_user.role != "admin" and alert_data.lot_name:
+        existing = db.query(Alert).filter(
+            Alert.alert_type == alert_type,
+            Alert.category == alert_data.category,
+            Alert.lot_name == alert_data.lot_name,
+            Alert.status.in_(["pending", "published"]),
+            Alert.created_at >= datetime.now(timezone.utc) - DUPLICATE_REPORT_WINDOW,
+        ).order_by(desc(Alert.created_at)).first()
+
+    if existing:
+        #merge in any new photos this report added, up to the per-alert cap
+        merged_images = list(existing.image_urls or [])
+        for url in (alert_data.image_urls or []):
+            if url not in merged_images and len(merged_images) < MAX_IMAGES_PER_ALERT:
+                merged_images.append(url)
+        existing.image_urls = merged_images
+
+        #fold in a differing description so admins don't lose the new detail
+        if alert_data.description and alert_data.description != existing.description:
+            existing.description = (
+                f"{existing.description}\nAlso reported: {alert_data.description}"
+                if existing.description else alert_data.description
+            )
+
+        #the same person re-reporting isn't a second confirmation - only a
+        #new distinct reporter should bump the "N students reported this" count
+        reporters = list(existing.reporter_emails or [])
+        if current_user.email not in reporters:
+            reporters.append(current_user.email)
+            existing.reporter_emails = reporters
+            existing.upvotes = len(reporters)
+
+        db.commit()
+        db.refresh(existing)
+        return existing
+
     #admin posts go live immediately; commuter reports wait for admin review
     new_alert = Alert(
         title=alert_data.title.upper(),
-        alert_type=alert_data.alert_type.lower(),
+        alert_type=alert_type,
         category=alert_data.category,
         description=alert_data.description,
         lot_name=alert_data.lot_name,
         image_urls=alert_data.image_urls or [],
-        status="published" if current_user.role == "admin" else "pending"
+        status="published" if current_user.role == "admin" else "pending",
+        reporter_emails=[current_user.email],
+        event_start=alert_data.event_start,
+        event_end=alert_data.event_end,
     )
     db.add(new_alert)
     db.commit()
@@ -695,6 +825,107 @@ def upvote_alert(
     db.refresh(alert)
 
     return alert
+
+#─── Notes (private commuter -> admin messages; see Note model for why this
+#is its own table instead of another Alert category) ────────────────────────
+
+@app.post("/notes", response_model=NoteResponse)
+def create_note(
+    note_data: NoteCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if note_data.image_urls and len(note_data.image_urls) > MAX_IMAGES_PER_ALERT:
+        raise HTTPException(status_code=400, detail=f"A note can include at most {MAX_IMAGES_PER_ALERT} photos")
+
+    new_note = Note(
+        title=note_data.title.strip(),
+        description=note_data.description,
+        lot_name=note_data.lot_name,
+        phone_number=note_data.phone_number,
+        plate_state=note_data.plate_state,
+        plate_number=note_data.plate_number,
+        image_urls=note_data.image_urls or [],
+        event_start=note_data.event_start,
+        event_end=note_data.event_end,
+        reporter_email=current_user.email,
+    )
+    db.add(new_note)
+    db.commit()
+    db.refresh(new_note)
+    return new_note
+
+@app.get("/notes", response_model=List[NoteResponse])
+def get_notes(
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin-only: every note to admin, newest first. The admin UI buckets
+    these into Acknowledgment Pending/Active/Expired client-side from
+    event_end and acknowledged_at - there's no server-side status filter."""
+    return db.query(Note).order_by(desc(Note.created_at)).all()
+
+@app.put("/notes/{note_id}/acknowledge", response_model=NoteResponse)
+def acknowledge_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    note = db.query(Note).filter(Note.id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found.")
+
+    note.acknowledged_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(note)
+    return note
+
+#─── Diagnostic logs (app console output a commuter sends from Help & Support
+#so we can trace bugs that only reproduce on their device) ──────────────────
+
+@app.post("/logs", response_model=DiagnosticLogSummary, status_code=status.HTTP_201_CREATED)
+def submit_diagnostic_log(
+    log_data: DiagnosticLogCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    new_log = DiagnosticLog(
+        reporter_email=current_user.email,
+        description=(log_data.description or "").strip() or None,
+        platform=log_data.platform,
+        os_version=log_data.os_version,
+        app_version=log_data.app_version,
+        device_info=log_data.device_info,
+        logs=log_data.logs,
+    )
+    db.add(new_log)
+    db.commit()
+    db.refresh(new_log)
+    return new_log
+
+@app.get("/logs", response_model=List[DiagnosticLogSummary])
+def list_diagnostic_logs(
+    reporter_email: Optional[str] = Query(None, description="Only logs sent by this user"),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin-only: newest submissions first, without the log body (use GET /logs/{id})."""
+    query = db.query(DiagnosticLog)
+    if reporter_email:
+        query = query.filter(DiagnosticLog.reporter_email == reporter_email)
+    return query.order_by(desc(DiagnosticLog.created_at)).limit(limit).all()
+
+@app.get("/logs/{log_id}", response_model=DiagnosticLogResponse)
+def get_diagnostic_log(
+    log_id: int,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    log = db.query(DiagnosticLog).filter(DiagnosticLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found.")
+    return log
 
 @app.put("/alerts/{alert_id}/approve", response_model=AlertResponse)
 def approve_alert(
@@ -722,17 +953,77 @@ def approve_alert(
     db.refresh(alert)
     return alert
 
+@app.put("/alerts/{alert_id}", response_model=AlertResponse)
+def update_event(
+    alert_id: int,
+    payload: AlertEventUpdate,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin edits a published event's details - e.g. setting the end date of
+    an event that was saved with "No end date" once it's known."""
+    alert = db.query(Alert).filter(Alert.id == alert_id, Alert.alert_type == "event").first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    if payload.event_end is not None and payload.event_end < payload.event_start:
+        raise HTTPException(status_code=400, detail="End date/time must be after the start date/time.")
+
+    alert.title = payload.title.strip().upper()
+    alert.category = payload.category
+    alert.description = payload.description
+    alert.lot_name = payload.lot_name or None
+    alert.event_start = payload.event_start
+    alert.event_end = payload.event_end
+    db.commit()
+    db.refresh(alert)
+    return alert
+
+@app.put("/alerts/{alert_id}/active", response_model=AlertResponse)
+def set_hazard_active(
+    alert_id: int,
+    payload: AlertActiveUpdate,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(require_admin)
+):
+    """Admin takes a published hazard off the map/lots once it's over
+    (active=false), or puts it back up (active=true). Unlike DELETE, the
+    hazard stays in the published history."""
+    alert = db.query(Alert).filter(
+        Alert.id == alert_id,
+        Alert.alert_type == "hazard",
+        Alert.status == "published",
+    ).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Published hazard not found.")
+
+    alert.deactivated_at = None if payload.active else datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(alert)
+    return alert
+
 @app.delete("/alerts/{alert_id}")
 def remove_alert(
     alert_id: int,
     db: Session = Depends(get_db),
     current_role: str = Depends(require_admin)
 ):
+    """
+    One endpoint, three outcomes depending on the report's current status:
+    - pending   -> decline it: keep the row as 'declined' instead of erasing
+                   it, so admins can see what's been turned down
+    - published -> resolved hazard being pulled off the live feed: gone for good
+    - declined  -> admin clearing out old rejected history: gone for good
+    """
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code= 404, detail="Alert not found or already resolved.")
+
+    if alert.status == "pending":
+        alert.status = "declined"
+        db.commit()
+        return {"message": "Report declined."}
+
     db.delete(alert)
     db.commit()
-
     return {"message": "Alert successfully resolved and removed from the feed."}
 

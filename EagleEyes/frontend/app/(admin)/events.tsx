@@ -1,109 +1,82 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Platform } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
-import { getAlerts, createAlert, deleteAlert } from '../../api/alerts';
-import { SafeAreaView} from 'react-native-safe-area-context';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
+import { getAlerts, createAlert, updateEvent, deleteAlert } from '../../api/alerts';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from '../../utils/webCompat';
 import { getEventVisual, EVENT_CATEGORIES } from '../../utils/alertVisuals';
-import { useLots } from '../../context/LotsContext';
-//backend stores timestamps in UTC without a "Z" suffix; append it before
-//parsing so comparisons and displayed times use the device's local time
-const parseUTC = (isoString: string) =>
-  new Date(/Z$|[+-]\d{2}:?\d{2}$/.test(isoString) ? isoString : `${isoString}Z`);
+import DatePickerModal from '../../components/DatePickerModal';
+import LotPickerModal from '../../components/LotPickerModal';
+import { parseLotNames, joinLotNames, formatLotNames, CLOSURE_CATEGORY, isClosureCategory } from '../../utils/lotStatus';
+import { useFocusPolling } from '../../hooks/use-focus-polling';
+import {
+  toLocalDateString, getTodayDateString, isoToLocalDate, formatDate,
+  getEventRange, stripScheduleFromDescription, isAllDayRange, formatEventTimes,
+  startOfDay, endOfDay,
+} from '../../utils/eventDates';
+import ToggleChip from '../../components/ToggleChip';
+import TimePickerField from '../../components/TimePickerField';
 
-const toLocalDateString = (d: Date) => {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+const IS_WEB = Platform.OS === 'web';
+
+//"H:MM" or "HH:MM" + AM/PM -> 24h hours/minutes, or null if malformed
+const parseTime12h = (s: string, period: string): { hours: number; minutes: number } | null => {
+  const m = s.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  let hours = Number(m[1]);
+  const minutes = Number(m[2]);
+  if (hours < 1 || hours > 12 || minutes > 59) return null;
+  if (period === 'PM' && hours !== 12) hours += 12;
+  if (period === 'AM' && hours === 12) hours = 0;
+  return { hours, minutes };
 };
 
-const getTodayDateString = () => toLocalDateString(new Date());
-const NUMBERED_LOTS = Array.from({ length: 99 }, (_, index) => `Lot ${String(index + 1).padStart(2, '0')}`);
-
-const getEventDateKeys = (eventItem: any): string[] => {
-  const scheduleMatch = /^When:\s*(\d{2})\/(\d{2})\/(\d{4}).*?[–-]\s*(\d{2})\/(\d{2})\/(\d{4})/i.exec(
-    String(eventItem.description || ''),
-  );
-
-  if (!scheduleMatch) {
-    return eventItem.created_at ? [toLocalDateString(parseUTC(eventItem.created_at))] : [];
-  }
-
-  const [, startMonth, startDay, startYear, endMonth, endDay, endYear] = scheduleMatch;
-  const startKey = `${startYear}-${startMonth}-${startDay}`;
-  const endKey = `${endYear}-${endMonth}-${endDay}`;
-  const start = new Date(`${startKey}T00:00:00Z`);
-  const end = new Date(`${endKey}T00:00:00Z`);
-
-  if (
-    Number.isNaN(start.getTime()) ||
-    Number.isNaN(end.getTime()) ||
-    start.toISOString().slice(0, 10) !== startKey ||
-    end.toISOString().slice(0, 10) !== endKey ||
-    start > end
-  ) {
-    return [];
-  }
-
-  const dates: string[] = [];
-  for (const date = new Date(start); date <= end; date.setUTCDate(date.getUTCDate() + 1)) {
-    dates.push(date.toISOString().slice(0, 10));
-  }
-  return dates;
+//Date -> the "H:MM" + AM/PM pair the time fields use (inverse of parseTime12h)
+const toTime12h = (d: Date): { time: string; period: 'AM' | 'PM' } => {
+  const h24 = d.getHours();
+  return {
+    time: `${h24 % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}`,
+    period: h24 >= 12 ? 'PM' : 'AM',
+  };
 };
 
-const formatDateInput = (value: string, previousValue: string) => {
-  if (value.length < previousValue.length && previousValue.endsWith('/') && value === previousValue.slice(0, -1)) {
-    return value;
-  }
-
-  const digits = value.replace(/\D/g, '').slice(0, 8);
-  if (digits.length < 2) return digits;
-  if (digits.length === 2) return `${digits}/`;
-  if (digits.length < 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  if (digits.length === 4) return `${digits.slice(0, 2)}/${digits.slice(2)}/`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-};
-
-const formatTimeInput = (value: string, previousValue: string) => {
-  if (value.length < previousValue.length && previousValue.endsWith(':') && value === previousValue.slice(0, -1)) {
-    return value;
-  }
-
-  const digits = value.replace(/\D/g, '').slice(0, 4);
-  if (digits.length < 2) return digits;
-  if (digits.length === 2) return `${digits}:`;
-  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+const combineDateAndTime = (date: Date, time: { hours: number; minutes: number }): Date => {
+  const combined = new Date(date);
+  combined.setHours(time.hours, time.minutes, 0, 0);
+  return combined;
 };
 
 export default function EventsScreen() {
-  const { lots: backendLots } = useLots();
-  const { openAdd } = useLocalSearchParams<{ openAdd?: string }>();
+  const { openAdd, reuseId } = useLocalSearchParams<{ openAdd?: string; reuseId?: string }>();
+  const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState(getTodayDateString());
   const [events, setEvents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  //the event whose details modal is open, and its delete flow
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
 
-  const fetchEvents = async () => {
-    setIsLoading(true);
+  const fetchEvents = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     try {
       const data = await getAlerts('event');
       setEvents(data);
     } catch (error) {
       Alert.alert("Error", "Could not load campus events.");
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchEvents();
-  }, []);
+  useFocusEffect(
+    useCallback(() => { fetchEvents(); }, [])
+  );
+  //keep the calendar/feed fresh while the admin has this tab open, so a new
+  //commuter-triggered event doesn't require leaving and reopening the screen
+  useFocusPolling(() => fetchEvents(false));
   
   const [showAddEventModal, setShowAddEventModal] = useState(false);
 
@@ -115,131 +88,138 @@ export default function EventsScreen() {
 
   const [eventName, setEventName] = useState('');
   const [category, setCategory] = useState<string | null>(null);
+  //free-text category typed in when "Other" is picked
   const [otherCategory, setOtherCategory] = useState('');
-  const [selectedLot, setSelectedLot] = useState('');
-  const [isLotPickerOpen, setIsLotPickerOpen] = useState(false);
-  const [lotSearch, setLotSearch] = useState('');
   const [startDate, setStartDate] = useState('');
-  const [datePickerFor, setDatePickerFor] = useState<'start' | 'end' | null>(null);
   const [startTime, setStartTime] = useState('');
   const [startTimePeriod, setStartTimePeriod] = useState('AM');
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
   const [endTimePeriod, setEndTimePeriod] = useState('AM');
+  //"All day" skips both time fields (midnight -> 11:59 PM); "No end date"
+  //skips the end fields entirely for TBD/permanent events (saved with no event_end)
+  const [allDay, setAllDay] = useState(false);
+  const [noEndDate, setNoEndDate] = useState(false);
   const [description, setDescription] = useState('');
+  //lots this event affects - drives how they look on the commuter map
+  const [affectedLots, setAffectedLots] = useState<string[]>([]);
+  const [showLotPicker, setShowLotPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  //set while the form is editing an existing event instead of adding a new one
+  const [editingEventId, setEditingEventId] = useState<number | null>(null);
+  //which of the two date fields the mini-calendar picker is currently editing
+  const [activeDateField, setActiveDateField] = useState<'start' | 'end' | null>(null);
 
-  const lotOptions = useMemo(() => {
-    const backendLotNames = backendLots
-      .map((lot: any) => String(lot.name || lot.lot_name || '').trim())
-      .filter(Boolean);
-    return [...new Set([...NUMBERED_LOTS, ...backendLotNames])];
-  }, [backendLots]);
-  const filteredLotOptions = lotOptions.filter((lotName) =>
-    lotName.toLowerCase().includes(lotSearch.trim().toLowerCase()),
-  );
-
-  const renderDateCalendar = (field: 'start' | 'end', dateValue: string) => {
-    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dateValue);
-    const calendarDate = match ? `${match[3]}-${match[1]}-${match[2]}` : getTodayDateString();
-
-    return (
-      <View style={styles.dateCalendar}>
-        <Calendar
-          current={calendarDate}
-          onDayPress={({ dateString }) => {
-            const [year, month, day] = dateString.split('-');
-            const formattedDate = `${month}/${day}/${year}`;
-            if (field === 'start') setStartDate(formattedDate);
-            else setEndDate(formattedDate);
-            setDatePickerFor(null);
-          }}
-          markedDates={{
-            [calendarDate]: { selected: true, selectedColor: '#00853E' },
-          }}
-          theme={{
-            textSectionTitleColor: '#00853E',
-            selectedDayBackgroundColor: '#00853E',
-            selectedDayTextColor: '#fff',
-            todayTextColor: '#00853E',
-            dayTextColor: '#333',
-            monthTextColor: '#00853E',
-            arrowColor: '#00853E',
-          }}
-        />
-      </View>
-    );
-  };
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '';
-    const [year, month, day] = dateString.split('-');
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const m = months[Number(month) - 1] ?? '';
-    return `${m} ${Number(day)}, ${year}`;
-  };
-  const activeEvents = events.filter((eventItem) => getEventDateKeys(eventItem).includes(selected));
-  const eventDateMarks: Record<string, { marked: true; dotColor: string }> = {};
-  events.forEach((eventItem) => {
-    getEventDateKeys(eventItem).forEach((date) => {
-      eventDateMarks[date] = { marked: true, dotColor: '#00853E' };
-    });
+  //Events whose [start, end] range actually covers the selected day
+  const activeEvents = events.filter(eventItem => {
+    const { start, end } = getEventRange(eventItem);
+    const day = toLocalDateString(start);
+    const lastDay = toLocalDateString(end);
+    return day <= selected && selected <= lastDay;
   });
-  const calendarMarkedDates = {
-    ...eventDateMarks,
-    [selected]: {
-      ...eventDateMarks[selected],
-      selected: true,
-      disableTouchEvent: true,
-      customStyles: {
-        container: {
-          backgroundColor: 'transparent',
-          borderWidth: 0,
-        },
-        text: {
-          color: selected === getTodayDateString() ? '#00853E' : '#000',
-          fontWeight: 'bold' as const,
-        },
-      },
-    },
-  };
+
+  //already-finished events, most recently ended first - lets an admin reuse a
+  //recurring event (e.g. a weekly gameday) instead of retyping it every time
+  const pastEvents = useMemo(() => {
+    const today = getTodayDateString();
+    return events
+      .filter(eventItem => toLocalDateString(getEventRange(eventItem).end) < today)
+      .sort((a, b) => getEventRange(b).end.getTime() - getEventRange(a).end.getTime())
+      .slice(0, 8);
+  }, [events]);
+
+  //One calendar dot per day that has at least one event, regardless of how
+  //many - merged with the currently-selected day's highlight.
+  const markedDates = useMemo(() => {
+    const marks: Record<string, any> = {};
+    events.forEach(eventItem => {
+      const { start, end } = getEventRange(eventItem);
+      let cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+      let guard = 0;
+      while (cursor <= last && guard < 366) {
+        const key = toLocalDateString(cursor);
+        marks[key] = { ...(marks[key] || {}), marked: true, dotColor: '#00853E' };
+        cursor.setDate(cursor.getDate() + 1);
+        guard++;
+      }
+    });
+    marks[selected] = { ...(marks[selected] || {}), selected: true, disableTouchEvent: true, selectedColor: '#00853E' };
+    return marks;
+  }, [events, selected]);
   // ADD EVENT
 
   const handleSaveEvent = async () => {
     const submittedCategory = category === 'Other' ? otherCategory.trim() : category;
     if (
-      !eventName ||
-      !submittedCategory ||
-      !startDate ||
-      !startTime ||
-      !endDate ||
-      !endTime ||
-      (category === 'Lot Closure' && !selectedLot)
+      !eventName || !submittedCategory || !startDate ||
+      (!allDay && !startTime) ||
+      (!noEndDate && (!endDate || (!allDay && !endTime)))
     ) {
       Alert.alert('Validation Error', 'Please fill in all required fields');
       return;
     }
+
+    if (category === CLOSURE_CATEGORY && affectedLots.length === 0) {
+      Alert.alert('Validation Error', 'Please select at least one lot to close.');
+      return;
+    }
+
+    const startHM = allDay ? null : parseTime12h(startTime, startTimePeriod);
+    const endHM = allDay || noEndDate ? null : parseTime12h(endTime, endTimePeriod);
+    if ((!allDay && !startHM) || (!allDay && !noEndDate && !endHM)) {
+      Alert.alert('Validation Error', 'Please pick a start and end time.');
+      return;
+    }
+
+    const eventStart = startHM
+      ? combineDateAndTime(isoToLocalDate(startDate), startHM)
+      : startOfDay(isoToLocalDate(startDate));
+    let eventEnd: Date | null = null;
+    if (!noEndDate) {
+      eventEnd = endHM
+        ? combineDateAndTime(isoToLocalDate(endDate), endHM)
+        : endOfDay(isoToLocalDate(endDate));
+    }
+    if (eventEnd && eventEnd < eventStart) {
+      Alert.alert('Validation Error', 'End date/time must be after the start date/time.');
+      return;
+    }
+
     setIsSaving(true);
     try {
-      //there's no dedicated start/end column on Alert, so the schedule is folded
-      //into the description text instead of being silently dropped
-      const schedule = `When: ${startDate} ${startTime} ${startTimePeriod} – ${endDate} ${endTime} ${endTimePeriod}`;
+      //still fold the schedule into the description as human-readable text,
+      //but event_start/event_end are now what drive the calendar and filtering
+      const startText = allDay ? formatDate(startDate) : `${formatDate(startDate)} ${startTime} ${startTimePeriod}`;
+      const endText = noEndDate
+        ? 'No end date'
+        : allDay ? formatDate(endDate) : `${formatDate(endDate)} ${endTime} ${endTimePeriod}`;
+      const schedule = allDay && !noEndDate && startDate === endDate
+        ? `When: ${formatDate(startDate)} (All day)`
+        : `When: ${startText} – ${endText}${allDay ? ' (All day)' : ''}`;
       const fullDescription = description.trim() ? `${schedule}\n\n${description.trim()}` : schedule;
 
-      await createAlert({
+      const eventData = {
         title: eventName.trim(),
-        alert_type: 'event',
         category: submittedCategory,
-        lot_name: category === 'Lot Closure' ? selectedLot : null,
         description: fullDescription,
-      });
-
-      Alert.alert('Success', 'Event created successfully');
+        lot_name: affectedLots.length ? joinLotNames(affectedLots) : undefined,
+        event_start: eventStart.toISOString(),
+        event_end: eventEnd ? eventEnd.toISOString() : undefined,
+      };
+      if (editingEventId !== null) {
+        //null (not undefined) so switching to "No end date" clears the old end
+        await updateEvent(editingEventId, { ...eventData, event_end: eventData.event_end ?? null });
+        Alert.alert('Success', 'Event updated successfully');
+      } else {
+        await createAlert({ ...eventData, alert_type: 'event' });
+        Alert.alert('Success', 'Event created successfully');
+      }
       setShowAddEventModal(false);
       resetForm();
       fetchEvents();
     } catch (error) {
-      Alert.alert('Error', 'Could not create the event. Please try again.');
+      Alert.alert('Error', `Could not ${editingEventId !== null ? 'update' : 'create'} the event. Please try again.`);
     } finally {
       setIsSaving(false);
     }
@@ -249,16 +229,17 @@ export default function EventsScreen() {
     setEventName('');
     setCategory(null);
     setOtherCategory('');
-    setSelectedLot('');
-    setIsLotPickerOpen(false);
-    setLotSearch('');
     setStartDate('');
     setStartTime('');
     setStartTimePeriod('AM');
     setEndDate('');
     setEndTime('');
     setEndTimePeriod('AM');
+    setAllDay(false);
+    setNoEndDate(false);
     setDescription('');
+    setAffectedLots([]);
+    setEditingEventId(null);
   };
 
   const handleCancel = () => {
@@ -288,71 +269,197 @@ export default function EventsScreen() {
     setShowDeleteConfirmation(true);
   };
 
+  //pre-fill the Add Event form from a past event, but leave the date/time
+  //fields blank - the whole point is picking a NEW date, never the old one
+  const handleReuseEvent = (eventItem: any) => {
+    setEventName(eventItem.title || '');
+    loadCategory(eventItem.category);
+    setDescription(stripScheduleFromDescription(eventItem.description || ''));
+    setAffectedLots(parseLotNames(eventItem.lot_name));
+    //keep the old event's shape (all-day / open-ended), just not its dates
+    const oldRange = getEventRange(eventItem);
+    setAllDay(isAllDayRange(oldRange));
+    setNoEndDate(oldRange.openEnded);
+    setStartDate('');
+    setStartTime('');
+    setStartTimePeriod('AM');
+    setEndDate('');
+    setEndTime('');
+    setEndTimePeriod('AM');
+    setShowAddEventModal(true);
+  };
+
+  //puts a saved event's category back into the picker: a custom one typed
+  //under "Other" goes back in the text box, and the old "Closure" name maps
+  //to the current closure category
+  const loadCategory = (stored?: string | null) => {
+    if (!stored) { setCategory(null); setOtherCategory(''); return; }
+    if (isClosureCategory(stored)) { setCategory(CLOSURE_CATEGORY); setOtherCategory(''); return; }
+    if (EVENT_CATEGORIES.includes(stored)) { setCategory(stored); setOtherCategory(''); return; }
+    setCategory('Other');
+    setOtherCategory(stored);
+  };
+
+  //open the same form pre-filled with an event's current details, dates
+  //included - e.g. to give an event saved with "No end date" its real end
+  const handleEditEvent = (eventItem: any) => {
+    const range = getEventRange(eventItem);
+    const isAllDay = isAllDayRange(range);
+    setEventName(eventItem.title || '');
+    loadCategory(eventItem.category);
+    setDescription(stripScheduleFromDescription(eventItem.description || ''));
+    setAffectedLots(parseLotNames(eventItem.lot_name));
+    setAllDay(isAllDay);
+    setNoEndDate(range.openEnded);
+    setStartDate(toLocalDateString(range.start));
+    const start12 = toTime12h(range.start);
+    setStartTime(isAllDay ? '' : start12.time);
+    setStartTimePeriod(start12.period);
+    if (range.openEnded) {
+      setEndDate('');
+      setEndTime('');
+      setEndTimePeriod('AM');
+    } else {
+      const end12 = toTime12h(range.end);
+      setEndDate(toLocalDateString(range.end));
+      setEndTime(isAllDay ? '' : end12.time);
+      setEndTimePeriod(end12.period);
+    }
+    setEditingEventId(eventItem.id);
+    setShowAddEventModal(true);
+  };
+
+  //the Past Events page deep-links back here with ?reuseId=<id>; wait for the
+  //matching event to show up in the fetched list, then fire the reuse flow
+  //once (a ref, not state, so re-fetching events after save doesn't reopen it)
+  const reuseHandledRef = useRef(false);
+  useEffect(() => {
+    if (!reuseId || reuseHandledRef.current) return;
+    const found = events.find(e => String(e.id) === String(reuseId));
+    if (found) {
+      reuseHandledRef.current = true;
+      handleReuseEvent(found);
+    }
+  }, [reuseId, events]);
+
   return (
     <SafeAreaView style={styles.mainContainer} edges={['right', 'left']}>
       <ScrollView style={styles.scrollContainer} contentContainerStyle={{ paddingBottom: 100 }}>
         <Text style={styles.title}>Campus Events</Text>
         <Text style={styles.subtitle}>Select a date to view upcoming events</Text>
 
-        <Calendar
-          onDayPress={(day) => setSelected(day.dateString)}
-          markingType="custom"
-          markedDates={calendarMarkedDates}
-          theme={{
-            backgroundColor: '#fff',
-            calendarBackground: '#fff',
-            textSectionTitleColor: '#00853E',
-            selectedDayBackgroundColor: '#00853E',
-            selectedDayTextColor: '#fff',
-            todayTextColor: '#00853E',
-            dayTextColor: '#333',
-            monthTextColor: '#00853E',
-            arrowColor: '#00853E',
-          }}
-        />
-        {selected && (
-          <View style={styles.feedContainer}>
-            
-            {/* --- SECTION 1: ACTIVE EVENTS --- */}
-            <Text style={styles.feedTitle}>Events on {formatDate(selected)}</Text>
-            
-            {isLoading ? (
-              <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 20 }} />
-            ) : activeEvents.length === 0 ? (
-              <Text style={styles.emptyText}>No events scheduled for this date.</Text>
-            ) : (
-              activeEvents.map((eventItem) => {
-                const visual = getEventVisual(eventItem.category);
-                return (
-                  <TouchableOpacity
-                    key={eventItem.id}
-                    style={styles.card}
-                    onPress={() => setSelectedEvent(eventItem)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`View details for ${eventItem.title}`}
-                  >
-                    <View style={styles.cardHeader}>
-                      <View style={styles.titleRow}>
-                        <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
-                          <Ionicons name={visual.icon as any} size={24} color={visual.iconColor} />
-                        </View>
-                        <Text style={styles.cardTitle}>{eventItem.title}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.cardTime}>
-                      {parseUTC(eventItem.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                    {eventItem.lot_name && <Text style={styles.cardDesc}>Lot: {eventItem.lot_name}</Text>}
-                    {eventItem.description && (
-                       <Text style={styles.cardDesc}>{eventItem.description}</Text>
-                    )}
-                    <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-
+        <View style={IS_WEB && styles.webLayout}>
+          <View style={IS_WEB && styles.webCalendarCol}>
+            <Calendar
+              onDayPress={(day) => setSelected(day.dateString)}
+              markedDates={markedDates}
+              theme={{
+                backgroundColor: '#fff',
+                calendarBackground: '#fff',
+                textSectionTitleColor: '#00853E',
+                selectedDayBackgroundColor: '#00853E',
+                selectedDayTextColor: '#fff',
+                todayTextColor: '#00853E',
+                dayTextColor: '#333',
+                monthTextColor: '#00853E',
+                arrowColor: '#00853E',
+              }}
+            />
           </View>
+          {selected && (
+            <View style={[styles.feedContainer, IS_WEB && styles.webFeedCol]}>
+
+              {/* --- SECTION 1: ACTIVE EVENTS --- */}
+              <Text style={styles.feedTitle}>Events on {formatDate(selected)}</Text>
+
+              {isLoading ? (
+                <ActivityIndicator size="large" color="#00853E" style={{ marginTop: 20 }} />
+              ) : activeEvents.length === 0 ? (
+                <Text style={styles.emptyText}>No events scheduled for this date.</Text>
+              ) : (
+                activeEvents.map((eventItem) => {
+                  const visual = getEventVisual(eventItem.category);
+                  return (
+                    <TouchableOpacity
+                      key={eventItem.id}
+                      style={styles.card}
+                      onPress={() => setSelectedEvent(eventItem)}
+                    >
+                      <View style={styles.cardHeader}>
+                        <View style={styles.titleRow}>
+                          <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
+                            <Ionicons name={visual.icon as any} size={24} color={visual.iconColor} />
+                          </View>
+                          <Text style={styles.cardTitle}>{eventItem.title}</Text>
+                        </View>
+                        <View style={styles.badge}>
+                          <Text style={styles.badgeText}>{eventItem.upvotes}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.cardTime}>{formatEventTimes(eventItem)}</Text>
+                      {!!eventItem.lot_name && (
+                        <Text style={styles.cardLots}>📍 {formatLotNames(eventItem.lot_name)}</Text>
+                      )}
+                      {eventItem.description && (
+                         <Text style={styles.cardDesc}>{eventItem.description}</Text>
+                      )}
+                      <View style={styles.cardFooter}>
+                        <TouchableOpacity
+                          style={styles.editButton}
+                          onPress={() => handleEditEvent(eventItem)}
+                          accessibilityLabel={`Edit ${eventItem.title}`}
+                        >
+                          <Ionicons name="create-outline" size={14} color="#00853E" />
+                          <Text style={styles.editButtonText}>EDIT</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+
+            </View>
+          )}
+        </View>
+
+        {IS_WEB && pastEvents.length > 0 && (
+          <View style={styles.pastEventsSection}>
+            <Text style={styles.pastEventsTitle}>REUSE A PAST EVENT</Text>
+            <Text style={styles.pastEventsSubtitle}>
+              Recreate a recurring event with a new date instead of retyping it
+            </Text>
+            {pastEvents.map(eventItem => {
+              const visual = getEventVisual(eventItem.category);
+              const { end } = getEventRange(eventItem);
+              return (
+                <View key={eventItem.id} style={styles.pastEventRow}>
+                  <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
+                    <Ionicons name={visual.icon as any} size={20} color={visual.iconColor} />
+                  </View>
+                  <View style={styles.pastEventInfo}>
+                    <Text style={styles.pastEventTitle} numberOfLines={1}>{eventItem.title}</Text>
+                    <Text style={styles.pastEventMeta}>{eventItem.category} · {formatDate(toLocalDateString(end))}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.reuseButton} onPress={() => handleReuseEvent(eventItem)}>
+                    <Ionicons name="refresh" size={14} color="#00853E" />
+                    <Text style={styles.reuseButtonText}>REUSE</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {!IS_WEB && pastEvents.length > 0 && (
+          <TouchableOpacity
+            style={styles.pastEventsLinkButton}
+            onPress={() => router.push('/(admin)/past-events')}
+          >
+            <Ionicons name="time-outline" size={20} color="#00853E" />
+            <Text style={styles.pastEventsLinkText}>VIEW PAST EVENTS</Text>
+            <Ionicons name="chevron-forward" size={18} color="#999" />
+          </TouchableOpacity>
         )}
       </ScrollView>
 
@@ -371,17 +478,17 @@ export default function EventsScreen() {
       <Modal
         visible={showAddEventModal}
         animationType="slide"
-        transparent={false}
-        presentationStyle="fullScreen"
+        transparent={true}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          {/* full-height modal: push content below the status bar / notch */}
+          <View style={[styles.modalContent, { paddingTop: insets.top + 20 }]}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <TouchableOpacity style={styles.modalBackButton} onPress={handleCancel} disabled={isSaving}>
-                <Ionicons name="chevron-back" size={20} color="#00853E" />
-                <Text style={styles.modalBackText}>Back</Text>
+                {!IS_WEB && <Ionicons name="chevron-back" size={20} color="#00853E" />}
+                <Text style={styles.modalBackText}>{IS_WEB ? 'Cancel' : 'Back'}</Text>
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>Add Event</Text>
+              <Text style={styles.modalTitle}>{editingEventId !== null ? 'Edit Event' : 'Add Event'}</Text>
 
               <Text style={styles.fieldLabel}>Enter Event Name:</Text>
               <TextInput
@@ -398,15 +505,7 @@ export default function EventsScreen() {
                   <TouchableOpacity
                     key={c}
                     style={[styles.categoryButton, category === c && styles.categoryButtonActive]}
-                    onPress={() => {
-                      setCategory(c);
-                      if (c !== 'Other') setOtherCategory('');
-                      if (c !== 'Lot Closure') {
-                        setSelectedLot('');
-                        setIsLotPickerOpen(false);
-                        setLotSearch('');
-                      }
-                    }}
+                    onPress={() => setCategory(c)}
                   >
                     <Text style={[styles.categoryButtonText, category === c && styles.categoryButtonTextActive]}>
                       {c}
@@ -427,149 +526,80 @@ export default function EventsScreen() {
                   />
                 </>
               )}
-              {category === 'Lot Closure' && (
-                <>
-                  <Text style={styles.fieldLabel}>Affected lot:</Text>
-                  <TouchableOpacity
-                    style={styles.lotSelectButton}
-                    onPress={() => setIsLotPickerOpen((open) => !open)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Choose the lot being closed"
-                  >
-                    <Text style={[styles.lotSelectText, !selectedLot && styles.lotSelectPlaceholder]}>
-                      {selectedLot || 'Select a lot'}
-                    </Text>
-                    <Ionicons name={isLotPickerOpen ? 'chevron-up' : 'chevron-down'} size={22} color="#00853E" />
-                  </TouchableOpacity>
-                  {isLotPickerOpen && (
-                    <View style={styles.lotPickerPanel}>
-                      <TextInput
-                        style={[styles.textInput, styles.lotSearchInput]}
-                        placeholder="Search lots"
-                        value={lotSearch}
-                        onChangeText={setLotSearch}
-                        placeholderTextColor="#999"
-                        autoCapitalize="none"
-                      />
-                      <ScrollView style={styles.lotOptionList} keyboardShouldPersistTaps="handled">
-                        {filteredLotOptions.map((lotName) => (
-                          <TouchableOpacity
-                            key={lotName}
-                            style={[styles.lotOption, selectedLot === lotName && styles.lotOptionSelected]}
-                            onPress={() => {
-                              setSelectedLot(lotName);
-                              setIsLotPickerOpen(false);
-                              setLotSearch('');
-                            }}
-                          >
-                            <Text style={[styles.lotOptionText, selectedLot === lotName && styles.lotOptionTextSelected]}>
-                              {lotName}
-                            </Text>
-                            {selectedLot === lotName && <Ionicons name="checkmark" size={20} color="#00853E" />}
-                          </TouchableOpacity>
-                        ))}
-                        {filteredLotOptions.length === 0 && (
-                          <Text style={styles.lotEmptyText}>No matching lots</Text>
-                        )}
-                      </ScrollView>
+
+              <Text style={styles.fieldLabel}>
+                Affected lots{category === CLOSURE_CATEGORY ? ' (required)' : ' (optional)'}:
+              </Text>
+              {affectedLots.length > 0 && (
+                <View style={styles.lotChipRow}>
+                  {affectedLots.map((lotName) => (
+                    <View key={lotName} style={styles.lotChip}>
+                      <Text style={styles.lotChipText}>{lotName}</Text>
+                      <TouchableOpacity
+                        onPress={() => setAffectedLots((prev) => prev.filter((n) => n !== lotName))}
+                        accessibilityLabel={`Remove ${lotName}`}
+                      >
+                        <Ionicons name="close-circle" size={16} color="#00853E" />
+                      </TouchableOpacity>
                     </View>
-                  )}
+                  ))}
+                </View>
+              )}
+              <TouchableOpacity style={styles.dateButton} onPress={() => setShowLotPicker(true)}>
+                <Ionicons name="location-outline" size={18} color="#999" />
+                <Text style={styles.dateButtonText}>ADD LOT</Text>
+              </TouchableOpacity>
+
+              <View style={styles.toggleRow}>
+                <ToggleChip label="All day" value={allDay} onChange={setAllDay} />
+                <ToggleChip label="No end date (TBD / permanent)" value={noEndDate} onChange={setNoEndDate} />
+              </View>
+
+              <Text style={styles.fieldLabel}>Start date:</Text>
+              <TouchableOpacity style={styles.dateButton} onPress={() => setActiveDateField('start')}>
+                <Ionicons name="calendar-outline" size={18} color={startDate ? '#00853E' : '#999'} />
+                <Text style={[styles.dateButtonText, startDate && styles.dateButtonTextFilled]}>
+                  {startDate ? formatDate(startDate) : 'SELECT START DATE'}
+                </Text>
+              </TouchableOpacity>
+
+              {!allDay && (
+                <>
+                  <Text style={styles.fieldLabel}>Start time:</Text>
+                  <TimePickerField
+                    time={startTime}
+                    period={startTimePeriod}
+                    onChange={(t, p) => { setStartTime(t); setStartTimePeriod(p); }}
+                    placeholder="SELECT START TIME"
+                    title="Start time"
+                  />
                 </>
               )}
 
-              <Text style={styles.fieldLabel}>Start date:</Text>
-              <View style={styles.dateInputRow}>
-                <TextInput
-                  style={[styles.textInput, styles.dateTextInput]}
-                  placeholder="MM/DD/YYYY"
-                  value={startDate}
-                  onChangeText={(value) => setStartDate((previous) => formatDateInput(value, previous))}
-                  placeholderTextColor="#999"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                />
-                <TouchableOpacity
-                  style={styles.datePickerButton}
-                  onPress={() => setDatePickerFor(datePickerFor === 'start' ? null : 'start')}
-                  accessibilityRole="button"
-                  accessibilityLabel="Choose start date from calendar"
-                >
-                  <Ionicons name="calendar-outline" size={22} color="#00853E" />
-                </TouchableOpacity>
-              </View>
-              {datePickerFor === 'start' && renderDateCalendar('start', startDate)}
+              {!noEndDate && (
+                <>
+                  <Text style={styles.fieldLabel}>End date:</Text>
+                  <TouchableOpacity style={styles.dateButton} onPress={() => setActiveDateField('end')}>
+                    <Ionicons name="calendar-outline" size={18} color={endDate ? '#00853E' : '#999'} />
+                    <Text style={[styles.dateButtonText, endDate && styles.dateButtonTextFilled]}>
+                      {endDate ? formatDate(endDate) : 'SELECT END DATE'}
+                    </Text>
+                  </TouchableOpacity>
 
-              <Text style={styles.fieldLabel}>Start time:</Text>
-              <View style={styles.timeRow}>
-                <TextInput
-                  style={[styles.textInput, styles.timeInput]}
-                  placeholder="--:--"
-                  value={startTime}
-                  onChangeText={(value) => setStartTime((previous) => formatTimeInput(value, previous))}
-                  placeholderTextColor="#999"
-                  keyboardType="number-pad"
-                  maxLength={5}
-                />
-                <TouchableOpacity
-                  style={[styles.periodButton, startTimePeriod === 'AM' && styles.periodButtonActive]}
-                  onPress={() => setStartTimePeriod('AM')}
-                >
-                  <Text style={[styles.periodButtonText, startTimePeriod === 'AM' && styles.periodButtonTextActive]}>AM</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.periodButton, startTimePeriod === 'PM' && styles.periodButtonActive]}
-                  onPress={() => setStartTimePeriod('PM')}
-                >
-                  <Text style={[styles.periodButtonText, startTimePeriod === 'PM' && styles.periodButtonTextActive]}>PM</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.fieldLabel}>End date:</Text>
-              <View style={styles.dateInputRow}>
-                <TextInput
-                  style={[styles.textInput, styles.dateTextInput]}
-                  placeholder="MM/DD/YYYY"
-                  value={endDate}
-                  onChangeText={(value) => setEndDate((previous) => formatDateInput(value, previous))}
-                  placeholderTextColor="#999"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                />
-                <TouchableOpacity
-                  style={styles.datePickerButton}
-                  onPress={() => setDatePickerFor(datePickerFor === 'end' ? null : 'end')}
-                  accessibilityRole="button"
-                  accessibilityLabel="Choose end date from calendar"
-                >
-                  <Ionicons name="calendar-outline" size={22} color="#00853E" />
-                </TouchableOpacity>
-              </View>
-              {datePickerFor === 'end' && renderDateCalendar('end', endDate)}
-
-              <Text style={styles.fieldLabel}>End time:</Text>
-              <View style={styles.timeRow}>
-                <TextInput
-                  style={[styles.textInput, styles.timeInput]}
-                  placeholder="--:--"
-                  value={endTime}
-                  onChangeText={(value) => setEndTime((previous) => formatTimeInput(value, previous))}
-                  placeholderTextColor="#999"
-                  keyboardType="number-pad"
-                  maxLength={5}
-                />
-                <TouchableOpacity
-                  style={[styles.periodButton, endTimePeriod === 'AM' && styles.periodButtonActive]}
-                  onPress={() => setEndTimePeriod('AM')}
-                >
-                  <Text style={[styles.periodButtonText, endTimePeriod === 'AM' && styles.periodButtonTextActive]}>AM</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.periodButton, endTimePeriod === 'PM' && styles.periodButtonActive]}
-                  onPress={() => setEndTimePeriod('PM')}
-                >
-                  <Text style={[styles.periodButtonText, endTimePeriod === 'PM' && styles.periodButtonTextActive]}>PM</Text>
-                </TouchableOpacity>
-              </View>
+                  {!allDay && (
+                    <>
+                      <Text style={styles.fieldLabel}>End time:</Text>
+                      <TimePickerField
+                        time={endTime}
+                        period={endTimePeriod}
+                        onChange={(t, p) => { setEndTime(t); setEndTimePeriod(p); }}
+                        placeholder="SELECT END TIME"
+                        title="End time"
+                      />
+                    </>
+                  )}
+                </>
+              )}
 
               <Text style={styles.fieldLabel}>Description:</Text>
               <TextInput
@@ -602,6 +632,24 @@ export default function EventsScreen() {
           </View>
         </View>
       </Modal>
+
+      <LotPickerModal
+        visible={showLotPicker}
+        onClose={() => setShowLotPicker(false)}
+        onSelect={(lotName) => setAffectedLots((prev) => (prev.includes(lotName) ? prev : [...prev, lotName]))}
+      />
+
+      <DatePickerModal
+        visible={activeDateField !== null}
+        onClose={() => setActiveDateField(null)}
+        onSelect={(dateString) => {
+          if (activeDateField === 'start') setStartDate(dateString);
+          if (activeDateField === 'end') setEndDate(dateString);
+        }}
+        initialDate={(activeDateField === 'start' ? startDate : endDate) || undefined}
+        minDate={activeDateField === 'end' ? (startDate || undefined) : undefined}
+        title={activeDateField === 'start' ? 'Select start date' : 'Select end date'}
+      />
 
       <Modal
         visible={selectedEvent !== null}
@@ -638,10 +686,18 @@ export default function EventsScreen() {
               </TouchableOpacity>
             </View>
 
-            {selectedEvent?.lot_name && (
+            {selectedEvent && (
+              <View style={styles.detailsLotRow}>
+                <Ionicons name="time-outline" size={19} color="#00853E" />
+                <Text style={styles.detailsLotText}>{formatEventTimes(selectedEvent)}</Text>
+              </View>
+            )}
+            {!!selectedEvent?.lot_name && (
               <View style={styles.detailsLotRow}>
                 <Ionicons name="location-outline" size={19} color="#00853E" />
-                <Text style={styles.detailsLotText}>Affected lot: {selectedEvent.lot_name}</Text>
+                <Text style={styles.detailsLotText}>
+                  {parseLotNames(selectedEvent.lot_name).length > 1 ? 'Affected lots' : 'Affected lot'}: {formatLotNames(selectedEvent.lot_name)}
+                </Text>
               </View>
             )}
 
@@ -710,59 +766,6 @@ export default function EventsScreen() {
 
 const styles = StyleSheet.create({
   mainContainer: { flex: 1, backgroundColor: '#f5f5f5' },
-  scrollContainer: { flex: 1, padding: 16 },
-  title: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 4 },
-  subtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
-  
-  feedContainer: {
-    marginTop: 24,
-    padding: 16,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    borderLeftWidth: 5,
-    borderLeftColor: '#00853E',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  feedTitle: { fontSize: 18, fontWeight: 'bold', color: '#00853E', marginBottom: 16 },
-  emptyText: { fontSize: 14, color: '#666', fontStyle: 'italic', marginBottom: 8 },
-  
-  card: {
-    backgroundColor: '#fff',
-    padding: 14,
-    borderRadius: 10,
-    marginBottom: 12,
-    position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  iconBox: {
-    backgroundColor: '#e8f5ee',
-    padding: 8,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  cardTitle: { fontSize: 15, fontWeight: '900', color: '#1a1a1a', flexShrink: 1 },
-  cardTime: { fontSize: 12, color: '#555', marginBottom: 4, fontWeight: '600', textTransform: 'uppercase' },
-  cardDesc: { fontSize: 14, color: '#444', marginBottom: 12, lineHeight: 20 },
-  clickDetails: { fontSize: 10, color: '#999', fontStyle: 'italic', textAlign: 'right', fontWeight: 'bold' },
   detailsOverlay: {
     flex: 1,
     justifyContent: 'center',
@@ -870,6 +873,159 @@ const styles = StyleSheet.create({
     backgroundColor: '#B42318',
   },
   confirmationDeleteText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  scrollContainer: { flex: 1, padding: 16 },
+  title: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 4 },
+  subtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
+  
+  webLayout: {
+    flexDirection: 'row',
+    gap: 20,
+  },
+  webCalendarCol: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderLeftWidth: 5,
+    borderLeftColor: '#00853E',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  webFeedCol: {
+    flex: 1,
+    marginTop: 0,
+  },
+  pastEventsSection: {
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderLeftWidth: 5,
+    borderLeftColor: '#999',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  pastEventsTitle: { fontSize: 14, fontWeight: '900', color: '#888', letterSpacing: 1, marginBottom: 4 },
+  pastEventsSubtitle: { fontSize: 12, color: '#999', marginBottom: 14 },
+  pastEventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  pastEventInfo: { flex: 1 },
+  pastEventTitle: { fontSize: 14, fontWeight: '700', color: '#333' },
+  pastEventMeta: { fontSize: 12, color: '#888', marginTop: 2 },
+  reuseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#E8F5EE',
+  },
+  reuseButtonText: { fontSize: 11, fontWeight: '800', color: '#00853E', letterSpacing: 0.5 },
+  pastEventsLinkButton: {
+    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  pastEventsLinkText: { flex: 1, fontSize: 14, fontWeight: '800', color: '#00853E', letterSpacing: 0.5 },
+  feedContainer: {
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderLeftWidth: 5,
+    borderLeftColor: '#00853E',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  feedTitle: { fontSize: 18, fontWeight: 'bold', color: '#00853E', marginBottom: 16 },
+  emptyText: { fontSize: 14, color: '#666', fontStyle: 'italic', marginBottom: 8 },
+  
+  card: {
+    backgroundColor: '#fff',
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 12,
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  iconBox: {
+    backgroundColor: '#e8f5ee',
+    padding: 8,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  cardTitle: { fontSize: 15, fontWeight: '900', color: '#1a1a1a', flexShrink: 1 },
+  badge: {
+    backgroundColor: '#E74C3C',
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    borderWidth: 2,
+    borderColor: '#f5f5f5',
+    zIndex: 1,
+    paddingHorizontal: 6,
+  },
+  badgeText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
+  cardTime: { fontSize: 12, color: '#555', marginBottom: 4, fontWeight: '600', textTransform: 'uppercase' },
+  cardDesc: { fontSize: 14, color: '#444', marginBottom: 12, lineHeight: 20 },
+  clickDetails: { fontSize: 10, color: '#999', fontStyle: 'italic', textAlign: 'right', fontWeight: 'bold' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#00853E',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  editButtonText: { fontSize: 11, color: '#00853E', fontWeight: '800' },
 
   pastEventsWrapper: { marginTop: 8 },
   divider: { height: 1, backgroundColor: '#ddd', marginBottom: 16 },
@@ -920,14 +1076,15 @@ const styles = StyleSheet.create({
   fabText: { color: '#fff', fontWeight: 'bold', marginLeft: 8, fontSize: 16 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    flex: 1,
     backgroundColor: '#f5f5f5',
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 30,
+    height: '100%',
   },
   modalTitle: {
     fontSize: 26,
@@ -963,61 +1120,59 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 16,
   },
-  dateInputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  dateTextInput: {
-    flex: 1,
-    marginBottom: 16,
-  },
-  datePickerButton: {
-    width: 52,
-    height: 52,
-    marginLeft: 8,
-    marginBottom: 16,
-    borderRadius: 8,
-    backgroundColor: '#e0e0e0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dateCalendar: {
-    marginBottom: 16,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    overflow: 'hidden',
-  },
   descriptionInput: {
     height: 140,
     textAlignVertical: 'top',
   },
-  timeRow: {
+  toggleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  cardLots: {
+    fontSize: 13,
+    color: '#00853E',
+    fontWeight: '600',
     marginBottom: 4,
   },
-  timeInput: {
-    flex: 1,
-    marginRight: 8,
+  lotChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
   },
-  periodButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: '#e0e0e0',
-    marginRight: 6,
+  lotChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E8F5EE',
+    borderRadius: 14,
+    paddingVertical: 4,
+    paddingLeft: 10,
+    paddingRight: 6,
   },
-  periodButtonActive: {
-    backgroundColor: '#00853E',
-    borderColor: '#00853E',
-  },
-  periodButtonText: {
+  lotChipText: {
     fontSize: 13,
+    color: '#00853E',
     fontWeight: '600',
-    color: '#666',
   },
-  periodButtonTextActive: {
-    color: '#fff',
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+  },
+  dateButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#999',
+  },
+  dateButtonTextFilled: {
+    color: '#333',
   },
   categoryRow: {
     flexDirection: 'row',
@@ -1042,41 +1197,6 @@ const styles = StyleSheet.create({
   categoryButtonTextActive: {
     color: '#fff',
   },
-  lotSelectButton: {
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 8,
-    backgroundColor: '#e0e0e0',
-  },
-  lotSelectText: { fontSize: 14, color: '#333' },
-  lotSelectPlaceholder: { color: '#999' },
-  lotPickerPanel: {
-    marginBottom: 16,
-    padding: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-  },
-  lotSearchInput: { marginBottom: 8 },
-  lotOptionList: { maxHeight: 220 },
-  lotOption: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  lotOptionSelected: { backgroundColor: '#E8F5EE' },
-  lotOptionText: { fontSize: 14, color: '#333' },
-  lotOptionTextSelected: { color: '#00853E', fontWeight: '700' },
-  lotEmptyText: { paddingVertical: 16, fontSize: 14, color: '#777', textAlign: 'center' },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

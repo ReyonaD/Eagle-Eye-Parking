@@ -11,10 +11,13 @@ import {
   Modal,
 } from 'react-native';
 import { getAlerts, BASE_URL } from '../../api/alerts';
+import { formatLotNames } from '../../utils/lotStatus';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { getAlertVisual, getCategoryLabel } from '../../utils/alertVisuals';
+import AlertIcon from '../../components/AlertIcon';
+import { useAlertsBadge } from '../../context/AlertsBadgeContext';
 
 type FilterType = 'All' | 'Hazard' | 'Event';
 
@@ -76,7 +79,7 @@ function toAlertItem(raw: any): AlertItem {
     section: sectionFor(raw.created_at),
     alertType: raw.alert_type === 'event' ? 'event' : 'hazard',
     category: raw.category || undefined,
-    lotName: raw.lot_name || undefined,
+    lotName: formatLotNames(raw.lot_name),
     imageUrls: Array.isArray(raw.image_urls) && raw.image_urls.length ? raw.image_urls : undefined,
   };
 }
@@ -168,7 +171,7 @@ function CollapsibleSectionHeader({
   );
 }
 
-function AlertCard({ alert, onPress }: { alert: AlertItem; onPress: () => void }) {
+function AlertCard({ alert, unread, onPress }: { alert: AlertItem; unread: boolean; onPress: () => void }) {
   const visual = getAlertVisual(alert.alertType, alert.category);
   const thumbnailUrl = alert.imageUrls?.[0];
   const extraPhotoCount = (alert.imageUrls?.length ?? 0) - 1;
@@ -176,11 +179,14 @@ function AlertCard({ alert, onPress }: { alert: AlertItem; onPress: () => void }
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.iconWrap, { backgroundColor: visual.bg }]}>
-        <Ionicons name={visual.icon as any} size={27} color={visual.iconColor} />
+        <AlertIcon visual={visual} size={27} />
       </View>
 
       <View style={styles.cardBody}>
-        <Text style={styles.cardTitle} numberOfLines={1}>{alert.title}</Text>
+        <View style={styles.cardTitleRow}>
+          {unread && <View style={styles.unreadDot} accessibilityLabel="Unread" />}
+          <Text style={styles.cardTitle} numberOfLines={1}>{alert.title}</Text>
+        </View>
 
         {!!alert.lotName && (
           <View style={styles.lotRow}>
@@ -244,7 +250,7 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
       <ScrollView contentContainerStyle={styles.detailContent}>
         <View style={styles.detailIconRow}>
           <View style={[styles.iconWrap, styles.detailIconWrap, { backgroundColor: visual.bg }]}>
-            <Ionicons name={visual.icon as any} size={30} color={visual.iconColor} />
+            <AlertIcon visual={visual} size={30} />
           </View>
           <View style={styles.detailTitleWrap}>
             <Text style={[styles.detailEyebrow, { color: visual.iconColor }]}>{eyebrowLabel}</Text>
@@ -308,6 +314,17 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
 
 export default function AlertsScreen() {
   const router = useRouter();
+  const { refreshBadge, markAlertsSeen, unreadIds, markAlertRead } = useAlertsBadge();
+
+  //entering this tab counts as "seen": refresh the latest max id, then clear the bell badge
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        await refreshBadge();
+        await markAlertsSeen();
+      })();
+    }, [refreshBadge, markAlertsSeen])
+  );
   const [filter, setFilter] = useState<FilterType>('All');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -331,9 +348,13 @@ export default function AlertsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadAlerts();
-  }, [loadAlerts]);
+  //tabs stay mounted, so reload on every focus — otherwise tapping the bell for a
+  //new alert lands on the list as it was when the tab was first opened
+  useFocusEffect(
+    useCallback(() => {
+      loadAlerts();
+    }, [loadAlerts])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -361,11 +382,19 @@ export default function AlertsScreen() {
     setEarlierExpanded((prev) => !prev);
   }, []);
 
-  const todayItems = filteredAlerts.filter((a) => a.section === 'Today');
-  const yesterdayItems = filteredAlerts.filter((a) => a.section === 'Yesterday');
-  const earlierItems = filteredAlerts.filter((a) => a.section === 'Earlier');
+  //unread alerts stay pinned under NEW regardless of age, so an old alert the user
+  //never opened can't hide inside the collapsed Earlier section
+  const newItems = filteredAlerts.filter((a) => unreadIds.has(a.id));
+  const readItems = filteredAlerts.filter((a) => !unreadIds.has(a.id));
+  const todayItems = readItems.filter((a) => a.section === 'Today');
+  const yesterdayItems = readItems.filter((a) => a.section === 'Yesterday');
+  const earlierItems = readItems.filter((a) => a.section === 'Earlier');
 
   const listData: any[] = [];
+  if (newItems.length) {
+    listData.push({ id: 'NEW-header', kind: 'header', label: 'NEW' });
+    newItems.forEach((a) => listData.push({ ...a, kind: 'alert' }));
+  }
   if (todayItems.length) {
     listData.push({ id: 'TODAY-header', kind: 'header', label: 'TODAY' });
     todayItems.forEach((a) => listData.push({ ...a, kind: 'alert' }));
@@ -404,7 +433,16 @@ export default function AlertsScreen() {
             );
           }
 
-          return <AlertCard alert={item} onPress={() => setSelectedAlert(item)} />;
+          return (
+            <AlertCard
+              alert={item}
+              unread={unreadIds.has(item.id)}
+              onPress={() => {
+                setSelectedAlert(item);
+                markAlertRead(item.id);
+              }}
+            />
+          );
         }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -433,7 +471,7 @@ export default function AlertsScreen() {
         accessibilityRole="button"
         accessibilityLabel="Report a hazard"
       >
-        <Ionicons name="warning" size={30} color="#FACC15" />
+        <Ionicons name="warning" size={34} color="#FACC15" />
       </TouchableOpacity>
 
       <Modal
@@ -463,13 +501,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f9f9f9', // matches the app's overall background
   },
+  // same size/placement as the map tab's hazard button (index.tsx hazardFab)
+  // so it doesn't jump around when switching between the two tabs
   fab: {
     position: 'absolute',
     right: 20,
     bottom: 16,
-    width: 48,
-    height: 48,
-    borderRadius: 8,
+    width: 56,
+    height: 56,
+    borderRadius: 10,
     backgroundColor: '#00853E',
     alignItems: 'center',
     justifyContent: 'center',
@@ -598,12 +638,24 @@ const styles = StyleSheet.create({
   cardBody: {
     flex: 1,
   },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E02D2D',
+  },
   cardTitle: {
+    flexShrink: 1,
     fontSize: 16,
     fontWeight: '700',
     color: '#334155',
     lineHeight: 21,
-    marginBottom: 4,
   },
   cardTimeRow: {
     flexDirection: 'row',

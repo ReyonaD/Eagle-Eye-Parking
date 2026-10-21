@@ -9,7 +9,13 @@ const withAllowBackupFix = (config) => {
     // Inject the tools namespace and the override command
     androidManifest.$['xmlns:tools'] = 'http://schemas.android.com/tools';
     app.$['tools:replace'] = 'android:allowBackup';
-    
+
+    // The ParkZen SDK ships its own Maps key; make ours win the merge
+    const mapsKey = (app['meta-data'] || []).find(
+      (m) => m.$['android:name'] === 'com.google.android.geo.API_KEY'
+    );
+    if (mapsKey) mapsKey.$['tools:replace'] = 'android:value';
+
     return config;
   });
 };

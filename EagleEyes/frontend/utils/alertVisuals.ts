@@ -24,7 +24,16 @@ export const HAZARD_CATEGORIES: { label: string; value: string }[] = [
   { label: 'Traffic Jam', value: 'traffic jam' },
   { label: 'Tree Branch', value: 'tree branch' },
   { label: 'Item on Road', value: 'item on road' },
+  // Not a stored category itself: picking it asks for the hazard type in a text
+  // box, and what's typed (lowercased, e.g. "pothole") is saved as the category.
+  { label: 'Other', value: 'other' },
 ];
+
+export const OTHER_HAZARD_VALUE = 'other';
+export const MAX_CUSTOM_HAZARD_LENGTH = 30;
+
+// "pothole" -> "Pothole", for hazard types typed in under Other.
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 const HAZARD_VISUALS: Record<string, AlertVisual> = {
   snow: { icon: 'snow-outline', bg: '#DBEAFE', iconColor: '#2C5F8A' },
@@ -50,14 +59,20 @@ export function getHazardVisual(category?: string | null): AlertVisual {
 }
 
 // Event categories an admin can pick when scheduling a campus event.
+// 'Lot Closure' marks its affected lots as closed on the map (see utils/lotStatus.ts).
 export const EVENT_CATEGORIES: string[] = ['Gameday', 'Tailgate', 'Concert', 'Career', 'Lot Closure', 'Other'];
 
+// Closures read as a quiet gray lock; events saved before the category was
+// renamed from 'Closure' to 'Lot Closure' keep the same look.
+const CLOSURE_VISUAL: AlertVisual = { icon: 'lock-closed', bg: '#E5E7EB', iconColor: '#374151' };
+
 const EVENT_VISUALS: Record<string, AlertVisual> = {
+  'lot closure': CLOSURE_VISUAL,
+  closure: CLOSURE_VISUAL,
   gameday: { icon: 'american-football-outline', bg: '#FDE7D8', iconColor: '#C2560B' },
   tailgate: { icon: 'flame-outline', bg: '#FDE1DC', iconColor: '#D3452D' },
   concert: { icon: 'musical-notes-outline', bg: '#EAE0FB', iconColor: '#7C3AED' },
   career: { icon: 'briefcase-outline', bg: '#DCE7FB', iconColor: '#2755B8' },
-  'lot closure': { icon: 'ban-outline', bg: '#FDE2E2', iconColor: '#B42318' },
 };
 const DEFAULT_EVENT_VISUAL: AlertVisual = { icon: 'megaphone-outline', bg: '#DCFCE7', iconColor: '#1F8A4C' };
 
@@ -74,10 +89,11 @@ export function getAlertVisual(alertType: string, category?: string | null): Ale
 // Human-readable category label. Hazard categories are stored lowercase
 // ("traffic jam") so this looks up the matching HAZARD_CATEGORIES label;
 // event categories are already stored capitalized ("Gameday") so they pass
-// through as-is.
+// through as-is. A hazard type typed in under Other ("pothole") is capitalized.
+// Its icon is the default warning sign, since getHazardVisual doesn't know it.
 export function getCategoryLabel(alertType: string, category?: string | null): string {
   if (!category) return alertType === 'event' ? 'Event' : 'Hazard';
   if (alertType === 'event') return category;
   const match = HAZARD_CATEGORIES.find((c) => c.value === category.toLowerCase());
-  return match ? match.label : category;
+  return match ? match.label : capitalize(category);
 }

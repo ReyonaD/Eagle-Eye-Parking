@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from '../../context/UserContext';
 import { Alert } from '../../utils/webCompat';
 import { PINNED_LOTS_STORAGE_KEY } from './lots';
 import InitialsAvatar from '../../components/InitialsAvatar';
 import { getPermitCardStyle } from '../../utils/permitColors';
+import { useLots } from '../../context/LotsContext';
+import { lookupPermitHours, summarizePermitHours } from '../../utils/permitHours';
 // function TopBar() {
 //   const router = useRouter();
 //   return (
@@ -83,8 +85,17 @@ export function ProfileScreen() {
   const router = useRouter();
   const { user, refreshUser } = useUser();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  // Re-sync with the backend whenever this tab is shown, so a profile fetch
+  // that failed on app start (offline / cold server) recovers on its own.
+  // refreshUser isn't memoized, so listing it would refetch on every render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useFocusEffect(useCallback(() => { refreshUser(); }, []));
   const hasPermit = !!user.parkingProfile.permitType;
   const permitCardStyle = getPermitCardStyle(user.parkingProfile.permitType);
+  // when this permit may park, from ParkZen ("Any time", "Daily 3:30 PM – 7:00 AM")
+  const { permitHours } = useLots();
+  const ownPermitHours = lookupPermitHours(permitHours, user.parkingProfile.permitType);
 
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -152,6 +163,11 @@ export function ProfileScreen() {
                 >
                   {user.parkingProfile.permitType}
                 </Text>
+                {ownPermitHours && (
+                  <Text style={[styles.permitHours, { color: permitCardStyle.label }]} numberOfLines={2}>
+                    {summarizePermitHours(ownPermitHours)}
+                  </Text>
+                )}
               </View>
               <View style={[
                 styles.permitBadge,
@@ -185,7 +201,7 @@ export function ProfileScreen() {
           >
             <View style={styles.permitEmptyIconWrap}>
               <Image
-                source={require('../../assets/images/Logo_EagleEye.png')}
+                source={require('../../assets/images/updated_logo_Oct.webp')}
                 style={styles.permitEmptyLogo}
                 resizeMode="contain"
               />
@@ -314,6 +330,11 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 10,
   },
+  permitHours: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
   permitLabel: {
     fontSize: 11,
     fontWeight: '700',
@@ -378,18 +399,21 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
+  //new lockup is a wide icon+wordmark image (~2.53:1), not the old square
+  //icon-only mark, so this badge is now a pill instead of a circle
   permitEmptyIconWrap: {
-    width: 44,
+    width: 78,
     height: 44,
     borderRadius: 22,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    paddingHorizontal: 6,
   },
   permitEmptyLogo: {
-    width: 28,
-    height: 28,
+    width: 66,
+    height: 26,
   },
   permitEmptyTextWrap: {
     flex: 1,
@@ -452,7 +476,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#1a1a1a',
-    fontWeight: '700',
+    fontWeight: '500',
   },
   rowLabelDanger: {
     color: '#D0021B',

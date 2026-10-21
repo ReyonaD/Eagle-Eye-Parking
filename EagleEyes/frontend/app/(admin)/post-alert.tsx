@@ -10,8 +10,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { createAlert, uploadAlertImage } from '../../api/alerts';
 import LotPickerModal from '../../components/LotPickerModal';
 import { Alert } from '../../utils/webCompat';
-import { HAZARD_CATEGORIES as ALERT_TYPES } from '../../utils/alertVisuals';
+import { HAZARD_CATEGORIES as ALERT_TYPES, OTHER_HAZARD_VALUE, MAX_CUSTOM_HAZARD_LENGTH } from '../../utils/alertVisuals';
 
+const IS_WEB = Platform.OS === 'web';
 const MAX_PHOTOS = 3;
 
 //on native, uri alone is enough for RN's fetch polyfill; on web, expo-image-picker
@@ -35,6 +36,10 @@ export default function PostAlertScreen() {
   const [isPosting, setIsPosting]       = useState(false);
 
   const selectedLabel = ALERT_TYPES.find(t => t.value === selectedType)?.label;
+  //"Other" asks for the hazard type in a text box; what's typed becomes the category
+  const [customType, setCustomType] = useState('');
+  const isOther = selectedType === OTHER_HAZARD_VALUE;
+  const hazardCategory = isOther ? customType.trim().toLowerCase() : selectedType;
 
   const addPhoto = (photo: PickedPhoto) => setPhotos(prev => [...prev, photo]);
   const removePhoto = (uri: string) => setPhotos(prev => prev.filter(p => p.uri !== uri));
@@ -92,6 +97,10 @@ export default function PostAlertScreen() {
       Alert.alert('Missing Type', 'Please select an alert type.');
       return;
     }
+    if (isOther && !customType.trim()) {
+      Alert.alert('Missing Type', 'Please type what kind of hazard this is.');
+      return;
+    }
     setIsPosting(true);
     try {
       //photos upload one at a time so we can attach the URLs to the alert below
@@ -104,7 +113,7 @@ export default function PostAlertScreen() {
       await createAlert({
         title: title.trim(),
         alert_type: 'hazard',
-        category: selectedType,
+        category: hazardCategory,
         description: memo.trim() || undefined,
         lot_name: selectedLot || undefined,
         image_urls: imageUrls.length ? imageUrls : undefined,
@@ -125,9 +134,10 @@ export default function PostAlertScreen() {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
+        {IS_WEB && <Text style={styles.screenTitle}>Post New Alert</Text>}
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace(backDestination)}>
-          <Ionicons name="chevron-back" size={20} color="#00853E" />
-          <Text style={styles.backText}>Back</Text>
+          {!IS_WEB && <Ionicons name="chevron-back" size={20} color="#00853E" />}
+          <Text style={styles.backText}>{IS_WEB ? 'Cancel' : 'Back'}</Text>
         </TouchableOpacity>
 
         {/* Alert title */}
@@ -153,7 +163,7 @@ export default function PostAlertScreen() {
 
         {/* Alert type selector */}
         <TouchableOpacity
-          style={styles.typeSelector}
+          style={[styles.typeSelector, isOther && styles.typeSelectorWithOther]}
           onPress={() => setShowDropdown(true)}
         >
           <Text style={[styles.typeSelectorText, !!selectedType && styles.typeSelectorSelected]}>
@@ -161,6 +171,18 @@ export default function PostAlertScreen() {
           </Text>
           <Ionicons name="chevron-down" size={18} color="#aaa" />
         </TouchableOpacity>
+
+        {isOther && (
+          <TextInput
+            style={styles.otherTypeInput}
+            placeholder="WHAT KIND OF HAZARD? (E.G. POTHOLE)"
+            placeholderTextColor="#aaa"
+            value={customType}
+            onChangeText={setCustomType}
+            maxLength={MAX_CUSTOM_HAZARD_LENGTH}
+            autoFocus
+          />
+        )}
 
         {/* Lot selector — opens the map + nearest-lot list picker */}
         <TouchableOpacity
@@ -258,6 +280,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   scroll: { padding: 20, paddingBottom: 40 },
 
+  screenTitle: { fontSize: 26, fontWeight: 'bold', color: '#00853E', marginBottom: 16 },
   backButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
   backText: { color: '#00853E', fontSize: 16, fontWeight: '600' },
 
@@ -286,6 +309,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 40,
+  },
+  typeSelectorWithOther: { marginBottom: 12 },
+  otherTypeInput: {
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 16,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
     marginBottom: 40,
   },
   typeSelectorText: { fontSize: 14, fontWeight: '700', color: '#aaa' },
