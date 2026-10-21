@@ -18,6 +18,10 @@ android {
 }
 
 dependencies {
-  //tell android to look in the local folder for the .aar file
-  implementation files('libs/parkzen-core-0.1.aar')
+  //ParkZenCore SDK from ParkZen's GitHub Packages repo; the repo and its
+  //credentials are added to android/build.gradle by app.config.js
+  implementation("com.parkzenlib:parkzen-core-dist:1.0.4")
+  //ParkZenCore.requestPermissions() takes a ComponentActivity; a low floor
+  //version so this never upgrades the one React Native already ships
+  implementation("androidx.activity:activity:1.8.0")
 }

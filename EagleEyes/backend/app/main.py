@@ -16,11 +16,12 @@ from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
-from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken, PushToken
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest, PushTokenRegister
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
+from app.core.push import send_alert_published, is_expo_push_token
 from typing import List, Optional
 Base.metadata.create_all(bind=engine)
 #create_all does not add new columns to existing tables, so patch them in here.
@@ -373,6 +374,40 @@ def update_current_user_plate(
     db.commit()
     db.refresh(current_user)
     return {"plate_state": current_user.plate_state, "plate_number": current_user.plate_number}
+
+@app.post("/users/me/push-token")
+def register_push_token(
+    payload: PushTokenRegister,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Called by the app after the user allows notifications, so this device
+    gets a push whenever an alert is published. Re-registering is harmless."""
+    if not is_expo_push_token(payload.token):
+        raise HTTPException(status_code=400, detail="Not a valid Expo push token.")
+
+    row = db.query(PushToken).filter(PushToken.token == payload.token).first()
+    if row:
+        #same phone, possibly a different account now: the latest login owns it
+        row.user_id = current_user.id
+        row.platform = payload.platform
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        db.add(PushToken(user_id=current_user.id, token=payload.token, platform=payload.platform))
+    db.commit()
+    return {"message": "Push token registered."}
+
+@app.delete("/users/me/push-token")
+def remove_push_token(
+    token: str = Query(..., description="The Expo push token to stop sending to"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Called on logout or when the user turns notifications off in Profile."""
+    db.query(PushToken).filter(PushToken.token == token, PushToken.user_id == current_user.id)\
+        .delete(synchronize_session=False)
+    db.commit()
+    return {"message": "Push token removed."}
 
 async def get_parkzen_token(username: str, password: str, force_refresh: bool = False) -> str:
     """Return a valid ParkZen token, logging in only when the cached one is
@@ -743,6 +778,7 @@ DUPLICATE_REPORT_WINDOW = timedelta(hours=48)
 @app.post("/alerts", response_model=AlertResponse)
 def create_alert(
     alert_data: AlertCreate,
+    background_tasks: BackgroundTasks,
     db: Session= Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -809,6 +845,9 @@ def create_alert(
     db.add(new_alert)
     db.commit()
     db.refresh(new_alert)
+    #commuter reports are pushed later, when an admin approves them
+    if new_alert.status == "published":
+        background_tasks.add_task(send_alert_published, new_alert.id, current_user.id)
     return new_alert
 
 @app.put("/alerts/{alert_id}/upvote", response_model=AlertResponse)
@@ -931,6 +970,7 @@ def get_diagnostic_log(
 def approve_alert(
     alert_id: int,
     edits: AlertApprove,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_role: str = Depends(require_admin)
 ):
@@ -948,9 +988,12 @@ def approve_alert(
     if edits.image_urls is not None:
         alert.image_urls = edits.image_urls
 
+    was_published = alert.status == "published"
     alert.status = "published"
     db.commit()
     db.refresh(alert)
+    if not was_published:
+        background_tasks.add_task(send_alert_published, alert.id)
     return alert
 
 @app.put("/alerts/{alert_id}", response_model=AlertResponse)

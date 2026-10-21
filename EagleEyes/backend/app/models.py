@@ -133,3 +133,18 @@ class PasswordResetToken(Base):
     used_at = Column(DateTime(timezone=True), nullable=True)
     #how many wrong codes were tried against this token (max 5, then it dies)
     attempts = Column(Integer, default=0, nullable=False)
+
+class PushToken(Base):
+    """
+    One row per device that has turned on alert notifications. A token is an
+    Expo push token (ExponentPushToken[...]) and belongs to whoever last signed
+    in on that device, so switching accounts moves it instead of duplicating it.
+    """
+    __tablename__ = "push_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    #"ios" / "android", only kept for debugging which devices are registered
+    platform = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

@@ -136,3 +136,8 @@ class DiagnosticLogSummary(BaseModel):
 
 class DiagnosticLogResponse(DiagnosticLogSummary):
     logs: str
+
+class PushTokenRegister(BaseModel):
+    #Expo push token from expo-notifications' getExpoPushTokenAsync()
+    token: str = Field(min_length=1, max_length=255)
+    platform: Optional[str] = Field(default=None, max_length=20)

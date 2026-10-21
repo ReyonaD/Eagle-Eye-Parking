@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAlerts } from '../api/alerts';
 
@@ -100,9 +101,14 @@ export function AlertsBadgeProvider({ children }: { children: ReactNode }) {
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') refreshBadge();
     });
+    //an alert push arriving while the app is open means the feed just changed
+    const pushSub = Platform.OS !== 'web'
+      ? Notifications.addNotificationReceivedListener(() => refreshBadge())
+      : null;
     return () => {
       clearInterval(id);
       sub.remove();
+      pushSub?.remove();
     };
   }, [refreshBadge]);
 

@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isPushEnabled, setPushEnabled, unregisterAlertPush } from '../../utils/pushNotifications';
 import { useUser } from '../../context/UserContext';
 import { Alert } from '../../utils/webCompat';
 import { PINNED_LOTS_STORAGE_KEY } from './lots';
@@ -85,6 +86,16 @@ export function ProfileScreen() {
   const router = useRouter();
   const { user, refreshUser } = useUser();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  useFocusEffect(useCallback(() => { isPushEnabled().then(setNotificationsEnabled); }, []));
+
+  const handleNotificationsToggle = async (enabled: boolean) => {
+    setNotificationsEnabled(enabled);
+    const nowEnabled = await setPushEnabled(enabled);
+    setNotificationsEnabled(nowEnabled);
+    if (enabled && !nowEnabled) {
+      Alert.alert('Notifications are off', 'Allow notifications for EagleEyes in your device settings, then turn this on again.');
+    }
+  };
 
   // Re-sync with the backend whenever this tab is shown, so a profile fetch
   // that failed on app start (offline / cold server) recovers on its own.
@@ -104,6 +115,8 @@ export function ProfileScreen() {
         text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
+          //needs the auth token, so it has to run before it's removed
+          await unregisterAlertPush();
           await AsyncStorage.removeItem('token');
           await AsyncStorage.removeItem('role');
           await AsyncStorage.removeItem('isOwner');
@@ -223,7 +236,7 @@ export function ProfileScreen() {
             <Text style={styles.rowLabel}>Notifications</Text>
             <Switch
               value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
+              onValueChange={handleNotificationsToggle}
               trackColor={{ false: '#ddd', true: '#00853E' }}
               thumbColor="#fff"
             />

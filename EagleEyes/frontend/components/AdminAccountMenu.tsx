@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from 'react
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { unregisterAlertPush } from '../utils/pushNotifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUser } from '../context/UserContext';
 import { PINNED_LOTS_STORAGE_KEY } from '../app/(tabs)/lots';
@@ -29,6 +30,8 @@ export default function AdminAccountMenu() {
         text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
+          //needs the auth token, so it has to run before it's removed
+          await unregisterAlertPush();
           await AsyncStorage.removeItem('token');
           await AsyncStorage.removeItem('role');
           await AsyncStorage.removeItem('isOwner');

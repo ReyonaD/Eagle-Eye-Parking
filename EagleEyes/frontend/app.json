@@ -45,11 +45,13 @@
         }
       },
       "permissions": [
+        "INTERNET",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "BLUETOOTH",
         "BLUETOOTH_SCAN",
+        "BLUETOOTH_ADVERTISE",
         "BLUETOOTH_CONNECT",
         "ACTIVITY_RECOGNITION",
         "FOREGROUND_SERVICE",
@@ -63,6 +65,13 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#00853E"
+        }
+      ],
       [
         "expo-image-picker",
         {

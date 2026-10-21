@@ -7,6 +7,7 @@ import { LotsProvider } from '../context/LotsContext';
 import { AlertsBadgeProvider } from '../context/AlertsBadgeContext';
 import { UserProvider } from '../context/UserContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useAlertPushNotifications } from '../utils/pushNotifications';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -14,6 +15,7 @@ export default function RootLayout() {
   
   // This tells us if Expo's internal navigation system has fully booted up
   const navigationState = useRootNavigationState();
+  useAlertPushNotifications(!!navigationState?.key);
 
   useEffect(() => {
     // If the router isn't fully mounted yet, do absolutely nothing.
