@@ -286,6 +286,9 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
 
   const handleMapReady = () => {
     console.log('[EagleMap] onMapReady | size:', mapSize.width, 'x', mapSize.height);
+    mapReadyRef.current = true;
+    // initialRegion is Main campus; move if another campus was already selected
+    if (selectedCampus !== 'Main campus') animateToCampus(selectedCampus);
     if (mapLoadTimeoutRef.current) clearTimeout(mapLoadTimeoutRef.current);
     mapLoadTimeoutRef.current = setTimeout(() => {
       if (!mapLoadedRef.current) {
@@ -299,11 +302,18 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     console.log('[EagleMap] onMapLoaded (tiles rendered)');
   };
 
-  useEffect(() => {
-    const region = CAMPUS_REGIONS[selectedCampus];
+  // Animating before onMapReady throws natively on Android ("Map size can't be
+  // 0"), so campus changes wait for the map; handleMapReady catches up.
+  const mapReadyRef = useRef(false);
+  const animateToCampus = (campus: string) => {
+    const region = CAMPUS_REGIONS[campus];
     if (region) {
       mapRef.current?.animateToRegion(region, 800);
     }
+  };
+
+  useEffect(() => {
+    if (mapReadyRef.current) animateToCampus(selectedCampus);
   }, [selectedCampus]);
 
   // On app entry, if the user is near a lot, zoom in on them instead of the

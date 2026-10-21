@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1021449693499",
+    "project_id": "eagleeyes-7b00c",
+    "storage_bucket": "eagleeyes-7b00c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1021449693499:android:6b64ef31b8e33ffb6eef1e",
+        "android_client_info": {
+          "package_name": "com.anonymous.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAh4INNxEnG8CMQXTSK22vq4otccUCyMes"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -73,12 +73,22 @@ const withParkZenMaven = (config) => {
     gradle.contents = gradle.contents.replace(allprojectsRepos, (match) => match + PARKZEN_MAVEN_REPO);
     return config;
   });
-  // ParkZenCore still uses support libraries that have to be migrated to AndroidX
   return withGradleProperties(config, (config) => {
+    const properties = {
+      // ParkZenCore still uses support libraries that have to be migrated to AndroidX
+      'android.enableJetifier': 'true',
+      // React Native's own libraries are already AndroidX; rewriting them is slow
+      // and is what ran the build out of memory
+      'android.jetifier.ignorelist': 'react-android,hermes-android,fbjni',
+      // Jetifier needs more than the template's 2 GB heap
+      'org.gradle.jvmargs': '-Xmx4096m -XX:MaxMetaspaceSize=1024m',
+    };
     config.modResults = config.modResults.filter(
-      (item) => !(item.type === 'property' && item.key === 'android.enableJetifier')
+      (item) => !(item.type === 'property' && item.key in properties)
     );
-    config.modResults.push({ type: 'property', key: 'android.enableJetifier', value: 'true' });
+    for (const [key, value] of Object.entries(properties)) {
+      config.modResults.push({ type: 'property', key, value });
+    }
     return config;
   });
 };
