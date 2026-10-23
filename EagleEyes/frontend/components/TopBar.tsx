@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAlertsBadge } from '../context/AlertsBadgeContext';
 import { useAdminNotesBadge } from '../context/AdminNotesBadgeContext';
+import { useLots } from '../context/LotsContext';
 import AdminAccountMenu from './AdminAccountMenu';
 
 const IS_WEB = Platform.OS === 'web';
@@ -15,12 +16,14 @@ interface TopBarProps {
 export default function TopBar({ role = 'commuter' }: TopBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { isDarkMap } = useLots();
+  const darkHeader = role === 'commuter' && isDarkMap;
   const { unseenCount } = useAlertsBadge();
   //safe to call even on the commuter side, where no provider is mounted -
   //see useAdminNotesBadge's own comment for why
   const { pendingCount } = useAdminNotesBadge();
   return (
-    <View style={[styles.topBar, { paddingTop: insets.top }]}>
+    <View style={[styles.topBar, darkHeader && { backgroundColor: '#171717', borderBottomColor: '#333' }, { paddingTop: insets.top }]}>
 
       <View style={styles.leftGroup}>
         <Image
@@ -41,7 +44,7 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
               accessibilityLabel="Notes from Commuters"
             >
               <View>
-                <Ionicons name="document-text-outline" size={32} color="#333" />
+                <Ionicons name="document-text-outline" size={32} color={darkHeader ? '#eee' : '#333'} />
                 {pendingCount > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>{pendingCount > 9 ? '9+' : pendingCount}</Text>
@@ -60,7 +63,7 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
           onPress={() => router.push('/(tabs)/alerts')}
         >
           <View>
-            <Ionicons name="notifications-outline" size={32} color="#333" />
+            <Ionicons name="notifications-outline" size={32} color={darkHeader ? '#eee' : '#333'} />
             {unseenCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unseenCount > 9 ? '9+' : unseenCount}</Text>

@@ -3,10 +3,22 @@ import '../utils/logCapture';
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LotsProvider } from '../context/LotsContext';
+import { LotsProvider, useLots } from '../context/LotsContext';
 import { AlertsBadgeProvider } from '../context/AlertsBadgeContext';
 import { UserProvider } from '../context/UserContext';
+import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+function ThemeStatusBar() {
+  const { isDarkMap } = useLots();
+
+  return (
+    <StatusBar
+      style={isDarkMap ? 'light' : 'dark'}
+      backgroundColor={isDarkMap ? '#171717' : '#fff'}
+    />
+  );
+}
 
 export default function RootLayout() {
   const router = useRouter();
@@ -57,6 +69,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <LotsProvider>
+        <ThemeStatusBar />
         <AlertsBadgeProvider>
         <UserProvider>
           <Stack screenOptions={{ headerShown: false }}>

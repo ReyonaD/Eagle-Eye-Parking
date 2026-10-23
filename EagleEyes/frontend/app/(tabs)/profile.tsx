@@ -50,15 +50,16 @@ interface MenuRowProps {
 }
 
 function MenuRow({ icon, label, value, onPress, danger = false, showChevron = true }: MenuRowProps) {
+  const { isDarkMap } = useLots();
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.5}>
+    <TouchableOpacity style={[styles.row, isDarkMap && { backgroundColor: '#1e1e1e' }]} onPress={onPress} activeOpacity={0.5}>
       <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
         <Ionicons name={icon} size={27} color={danger ? '#D0021B' : '#00853E'} />
       </View>
-      <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
+      <Text style={[styles.rowLabel, danger && styles.rowLabelDanger, isDarkMap && !danger && { color: '#f5f5f5' }]}>{label}</Text>
       <View style={styles.rowRight}>
-        {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        {!danger && showChevron && <Ionicons name="chevron-forward" size={27} color="#ccc" />}
+        {value ? <Text style={[styles.rowValue, isDarkMap && { color: '#aaa' }]}>{value}</Text> : null}
+        {!danger && showChevron && <Ionicons name="chevron-forward" size={27} color={isDarkMap ? '#777' : '#ccc'} />}
       </View>
     </TouchableOpacity>
   );
@@ -66,9 +67,10 @@ function MenuRow({ icon, label, value, onPress, danger = false, showChevron = tr
 
 // Section wrapper
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const { isDarkMap } = useLots();
   return (
-    <View style={styles.card}>
-      {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
+    <View style={[styles.card, isDarkMap && { backgroundColor: '#1e1e1e' }]}>
+      {title ? <Text style={[styles.sectionTitle, isDarkMap && { color: '#aaa' }]}>{title}</Text> : null}
       {children}
     </View>
   );
@@ -76,7 +78,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 // Divider
 function Divider() {
-  return <View style={styles.divider} />;
+  const { isDarkMap } = useLots();
+  return <View style={[styles.divider, isDarkMap && { backgroundColor: '#383838' }]} />;
 }
 
 
@@ -94,7 +97,7 @@ export function ProfileScreen() {
   const hasPermit = !!user.parkingProfile.permitType;
   const permitCardStyle = getPermitCardStyle(user.parkingProfile.permitType);
   // when this permit may park, from ParkZen ("Any time", "Daily 3:30 PM – 7:00 AM")
-  const { permitHours } = useLots();
+  const { permitHours, isDarkMap } = useLots();
   const ownPermitHours = lookupPermitHours(permitHours, user.parkingProfile.permitType);
 
   const handleLogout = () => {
@@ -117,14 +120,14 @@ export function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['right', 'left']}>
+    <SafeAreaView style={[styles.screen, isDarkMap && { backgroundColor: '#121212' }]} edges={['right', 'left']}>
       <ScrollView showsVerticalScrollIndicator={false}>
 
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, isDarkMap && { backgroundColor: '#1e1e1e', borderBottomColor: '#333' }]}>
           <InitialsAvatar name={user.name} style={styles.avatar} />
           <View style={styles.nameRow}>
-            <Text style={[styles.name, !user.name && styles.namePlaceholder]}>
+            <Text style={[styles.name, !user.name && styles.namePlaceholder, isDarkMap && { color: user.name ? '#f5f5f5' : '#aaa' }]}>
               {user.name || 'Add your name'}
             </Text>
             <TouchableOpacity
@@ -136,7 +139,7 @@ export function ProfileScreen() {
               <Ionicons name="pencil" size={14} color="#00853E" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.email}>{user.email}</Text>
+          <Text style={[styles.email, isDarkMap && { color: '#aaa' }]}>{user.email}</Text>
         </View>
 
         {/* Permit card */}
@@ -220,7 +223,7 @@ export function ProfileScreen() {
             <View style={styles.rowIcon}>
               <Ionicons name="notifications-outline" size={27} color="#00853E" />
             </View>
-            <Text style={styles.rowLabel}>Notifications</Text>
+            <Text style={[styles.rowLabel, isDarkMap && { color: '#f5f5f5' }]}>Notifications</Text>
             <Switch
               value={notificationsEnabled}
               onValueChange={setNotificationsEnabled}
@@ -252,7 +255,7 @@ export function ProfileScreen() {
           />
         </Section>
 
-        <Text style={styles.version}>EagleEyes v1.0.0 · UNT Capstone Project</Text>
+        <Text style={[styles.version, isDarkMap && { color: '#777' }]}>EagleEyes v1.0.0 · UNT Capstone Project</Text>
 
       </ScrollView>
     </SafeAreaView>

@@ -120,8 +120,8 @@ export default function MapScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text>Loading EagleEyes Maps...</Text>
+      <View style={[styles.loadingContainer, isDarkMap && { backgroundColor: '#121212' }]}>
+        <Text style={isDarkMap && { color: '#f5f5f5' }}>Loading EagleEyes Maps...</Text>
       </View>
     );
   }
@@ -183,39 +183,39 @@ export default function MapScreen() {
   const dayNightActiveColor = isLivePreview ? '#00853E' : PREVIEW_AMBER_DARK;
 
   return (
-     <SafeAreaView style={styles.container} edges={['right', 'left']}>
+     <SafeAreaView style={[styles.container, isDarkMap && { backgroundColor: '#121212' }]} edges={['right', 'left']}>
 
       {/* ROW: CAMPUS (left) + PERMIT (right) */}
       <View
-        style={styles.dropdownRow}
+        style={[styles.dropdownRow, isDarkMap && { backgroundColor: '#1e1e1e' }]}
         onLayout={(e) => setDropdownRowBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
       >
         {/* CAMPUS TRIGGER */}
-        <View style={[styles.dropdownWrapper, { marginRight: 8 }]}>
-          <Text style={styles.dropdownLabel}>CAMPUS</Text>
-          <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenCampus(!openCampus); setOpenPermit(false); }}>
-            <Text style={styles.dropdownText}>{selectedCampus}</Text>
-            <Ionicons name={openCampus ? "chevron-up" : "chevron-down"} size={27} color="#333" />
+        <View style={[styles.dropdownWrapper, isDarkMap && { backgroundColor: '#1e1e1e' }, { marginRight: 8 }]}>
+          <Text style={[styles.dropdownLabel, isDarkMap && { color: '#aaa' }]}>CAMPUS</Text>
+          <TouchableOpacity style={[styles.dropdownBox, isDarkMap && { backgroundColor: '#292929', borderColor: '#444' }]} onPress={() => { setOpenCampus(!openCampus); setOpenPermit(false); }}>
+            <Text style={[styles.dropdownText, isDarkMap && { color: '#f5f5f5' }]}>{selectedCampus}</Text>
+            <Ionicons name={openCampus ? "chevron-up" : "chevron-down"} size={27} color={isDarkMap ? '#ddd' : '#333'} />
           </TouchableOpacity>
         </View>
 
         {/* PERMIT TRIGGER */}
-        <View style={[styles.dropdownWrapper, { marginLeft: 8 }]}>
-          <Text style={styles.dropdownLabel}>PERMIT</Text>
-          <TouchableOpacity style={styles.dropdownBox} onPress={() => { setOpenPermit(!openPermit); setOpenCampus(false); }}>
-            <Text style={styles.dropdownText} numberOfLines={1}>{permitDropdownLabel}</Text>
-            <Ionicons name={openPermit ? "chevron-up" : "chevron-down"} size={27} color="#333" />
+        <View style={[styles.dropdownWrapper, isDarkMap && { backgroundColor: '#1e1e1e' }, { marginLeft: 8 }]}>
+          <Text style={[styles.dropdownLabel, isDarkMap && { color: '#aaa' }]}>PERMIT</Text>
+          <TouchableOpacity style={[styles.dropdownBox, isDarkMap && { backgroundColor: '#292929', borderColor: '#444' }]} onPress={() => { setOpenPermit(!openPermit); setOpenCampus(false); }}>
+            <Text style={[styles.dropdownText, isDarkMap && { color: '#f5f5f5' }]} numberOfLines={1}>{permitDropdownLabel}</Text>
+            <Ionicons name={openPermit ? "chevron-up" : "chevron-down"} size={27} color={isDarkMap ? '#ddd' : '#333'} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <View style={[styles.liveStatusBar, !isLivePreview && styles.liveStatusBarPreview]}>
+      <View style={[styles.liveStatusBar, isDarkMap && { backgroundColor: '#1a1a1a', borderBottomColor: '#333' }, !isLivePreview && styles.liveStatusBarPreview]}>
         <Ionicons
           name={isLivePreview ? 'time-outline' : (previewingNight ? 'moon' : 'sunny')}
           size={14}
-          color={isLivePreview ? '#5d6d7e' : PREVIEW_AMBER_DARK}
+          color={isLivePreview ? (isDarkMap ? '#aaa' : '#5d6d7e') : PREVIEW_AMBER_DARK}
         />
-        <Text style={[styles.liveStatusText, !isLivePreview && styles.liveStatusTextPreview]}>
+        <Text style={[styles.liveStatusText, isDarkMap && { color: '#bbb' }, !isLivePreview && styles.liveStatusTextPreview]}>
           {isLivePreview
             ? `Last synced: ${refreshLabel}`
             : `Previewing ${previewingNight ? `Night rules (${NIGHT_HOURS_LABEL})` : `Day rules (${DAY_HOURS_LABEL})`}`}
@@ -346,7 +346,7 @@ export default function MapScreen() {
       {/* DROPDOWN OVERLAYS - rendered at root so touch events work over map */}
       {openCampus && (
         <FlatList
-          style={[styles.dropdownOverlay, styles.dropdownOverlayLeft, { top: dropdownRowBottom - 6 }]}
+          style={[styles.dropdownOverlay, isDarkMap && { backgroundColor: '#252525', borderColor: '#444' }, styles.dropdownOverlayLeft, { top: dropdownRowBottom - 6 }]}
           data={campuses}
           keyExtractor={(item) => item}
           nestedScrollEnabled
@@ -354,17 +354,17 @@ export default function MapScreen() {
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <TouchableOpacity
-              style={styles.dropdownItem}
+              style={[styles.dropdownItem, isDarkMap && { borderBottomColor: '#383838' }]}
               onPress={() => { setSelectedCampus(item); setOpenCampus(false); }}
             >
-              <Text style={styles.dropdownItemText}>{item}</Text>
+              <Text style={[styles.dropdownItemText, isDarkMap && { color: '#eee' }]}>{item}</Text>
             </TouchableOpacity>
           )}
         />
       )}
       {openPermit && (
         <FlatList
-          style={[styles.dropdownOverlay, styles.dropdownOverlayRight, { top: dropdownRowBottom - 6 }]}
+          style={[styles.dropdownOverlay, isDarkMap && { backgroundColor: '#252525', borderColor: '#444' }, styles.dropdownOverlayRight, { top: dropdownRowBottom - 6 }]}
           data={[{ kind: 'all' } as const, ...permitOptions]}
           keyExtractor={(item) => (item.kind === 'all' ? 'All Permits' : item.kind === 'group' ? item.label : item.value)}
           nestedScrollEnabled
@@ -374,10 +374,10 @@ export default function MapScreen() {
             if (item.kind === 'all') {
               return (
                 <TouchableOpacity
-                  style={styles.dropdownItem}
+                  style={[styles.dropdownItem, isDarkMap && { borderBottomColor: '#383838' }]}
                   onPress={() => { setSelectedPermit('All Permits'); setPermitManuallySelected(true); setOpenPermit(false); }}
                 >
-                  <Text style={styles.dropdownItemText}>All Permits</Text>
+                  <Text style={[styles.dropdownItemText, isDarkMap && { color: '#eee' }]}>All Permits</Text>
                 </TouchableOpacity>
               );
             }
@@ -385,10 +385,10 @@ export default function MapScreen() {
               const selectedSub = item.options.find((o) => o.value === selectedPermit);
               return (
                 <TouchableOpacity
-                  style={styles.dropdownItem}
+                  style={[styles.dropdownItem, isDarkMap && { borderBottomColor: '#383838' }]}
                   onPress={() => { setOpenGroupLabel(item.label); setOpenPermit(false); }}
                 >
-                  <Text style={styles.dropdownItemText}>
+                  <Text style={[styles.dropdownItemText, isDarkMap && { color: '#eee' }]}>
                     {item.label}{selectedSub ? ` · ${selectedSub.label}` : ''}
                   </Text>
                 </TouchableOpacity>
@@ -396,10 +396,10 @@ export default function MapScreen() {
             }
             return (
               <TouchableOpacity
-                style={styles.dropdownItem}
+                style={[styles.dropdownItem, isDarkMap && { borderBottomColor: '#383838' }]}
                 onPress={() => { setSelectedPermit(item.value); setPermitManuallySelected(true); setOpenPermit(false); }}
               >
-                <Text style={styles.dropdownItemText}>{item.value}</Text>
+                <Text style={[styles.dropdownItemText, isDarkMap && { color: '#eee' }]}>{item.value}</Text>
               </TouchableOpacity>
             );
           }}
@@ -417,9 +417,9 @@ export default function MapScreen() {
           activeOpacity={1}
           onPress={() => setOpenGroupLabel(null)}
         >
-          <View style={styles.pickerSheet}>
-            <Text style={styles.pickerTitle}>Which {openGroup?.label} lot do you want to see?</Text>
-            <Text style={styles.pickerSubtitle}>
+          <View style={[styles.pickerSheet, isDarkMap && { backgroundColor: '#1e1e1e' }]}>
+            <Text style={[styles.pickerTitle, isDarkMap && { color: '#f5f5f5' }]}>Which {openGroup?.label} lot do you want to see?</Text>
+            <Text style={[styles.pickerSubtitle, isDarkMap && { color: '#aaa' }]}>
               Pick a specific lot to show just that one, or &quot;{openGroup?.label}&quot;
               to show all of them.
             </Text>
@@ -427,14 +427,14 @@ export default function MapScreen() {
               {openGroup?.options.map((item) => (
                 <TouchableOpacity
                   key={item.value}
-                  style={styles.pickerOption}
+                  style={[styles.pickerOption, isDarkMap && { borderBottomColor: '#383838' }]}
                   onPress={() => {
                     setSelectedPermit(item.value);
                     setPermitManuallySelected(true);
                     setOpenGroupLabel(null);
                   }}
                 >
-                  <Text style={[styles.pickerOptionText, selectedPermit === item.value && styles.pickerOptionActive]}>
+                  <Text style={[styles.pickerOptionText, isDarkMap && { color: '#eee' }, selectedPermit === item.value && styles.pickerOptionActive]}>
                     {item.label}
                   </Text>
                   {selectedPermit === item.value && <Ionicons name="checkmark" size={20} color="#00853E" />}
