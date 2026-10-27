@@ -6,33 +6,29 @@ public class ParkzenCoreModule: Module {
     // The name the JavaScript code will use to find this module
     Name("ParkzenCore")
 
-    // 1. A function for frontend team to trigger the iOS permission popups
-    Function("requestPermissions") {
-      ParkZenV2.requestPermissions()
-    }
-
-    // 2. The function that asks ParkZen where the car is!
-    AsyncFunction("getParkedLocation") { () -> [String: Double]? in
-      if let loc = ParkZenV2.getParkedLoc() {
-          return [
-            "latitude": loc.latitude,
-            "longitude": loc.longitude
-          ]
+    //ParkZen's own helper (location & motion). The guide says to call it after
+    //configure, which also asks for notification permission, so this is where
+    //a commuter's first setup happens; later launches configure natively.
+    AsyncFunction("requestPermissions") {
+      if ParkZenSetup.configure() {
+        ParkZenV2.requestPermissions()
       }
-      return nil // Returns null if they haven't parked yet
-    }
-    // This goes inside your definition() block in Swift
-    Function("initializeParkZen") { (clientId: String, username: String, password: String) in
-      // 1. Catch the credentials from JS
-      // 2. Pass them to the actual ParkZen SDK
-      // Example: ParkZen.login(clientId: clientId, ...)
-      // ParkZenV2.authenticate(
-      //     clientId: clientId, 
-      //     username: username, 
-      //     password: password
-      // )
-      
-      print("✅ParkZen SDK successfully fed credentials!")
-    }
+    }.runOnQueue(.main)
+
+    //returns whether ParkZenCore is running, so JS can tell setup is incomplete
+    AsyncFunction("configureIfReady") { () -> Bool in
+      ParkZenSetup.isEnabled ? ParkZenSetup.configure() : false
+    }.runOnQueue(.main)
+
+    // The function that asks ParkZen where the car is!
+    AsyncFunction("getParkedLocation") { () -> [String: Double]? in
+      guard ParkZenSetup.isConfigured, let loc = ParkZenV2.getParkedLoc() else {
+        return nil // Returns null if they haven't parked yet
+      }
+      return [
+        "latitude": loc.latitude,
+        "longitude": loc.longitude
+      ]
+    }.runOnQueue(.main)
   }
 }

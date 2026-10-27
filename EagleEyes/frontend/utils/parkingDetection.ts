@@ -7,16 +7,16 @@ import { requestPermissions } from '../modules/parkzen-core';
 const ASKED_KEY = 'parkzen_permissions_asked';
 
 /**
- * Shows ParkZen's permission prompts once per install, for commuters on
- * Android. Once location is "Allow all the time", the native module configures
- * ParkZenCore, which then detects parking and sends its own notifications
- * (e.g. "how full is this lot?" on arrival). Run it after the alert
- * notification prompt has been answered: Android shows one permission prompt
- * at a time, and ParkZen asks for notification permission too.
+ * Shows ParkZen's permission prompts once per install, for commuters. Once
+ * location is "Allow all the time" (Android) or ParkZen has been set up
+ * (iOS), the native module configures ParkZenCore, which then detects parking
+ * and sends its own notifications (e.g. "how full is this lot?" on arrival).
+ * Run it after the alert notification prompt has been answered: the OS shows
+ * one permission prompt at a time, and ParkZen asks for notification
+ * permission too.
  */
 export async function askParkingPermissionsOnce(): Promise<void> {
-  //iOS needs ParkZenV2.configure wired up first (see modules/parkzen-core/ios)
-  if (Platform.OS !== 'android') return;
+  if (Platform.OS === 'web') return;
   if ((await AsyncStorage.getItem('role')) === 'admin') return;
   if (await AsyncStorage.getItem(ASKED_KEY)) return;
   try {

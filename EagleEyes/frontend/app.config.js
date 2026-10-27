@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { withAndroidManifest, withAndroidColors, withProjectBuildGradle, withGradleProperties, withStringsXml } = require('@expo/config-plugins');
+const { withAndroidManifest, withAndroidColors, withProjectBuildGradle, withGradleProperties, withStringsXml, withPodfile, withInfoPlist } = require('@expo/config-plugins');
 
 // 1. Automatically fixes the ParkZen Manifest Merger error
 const withAllowBackupFix = (config) => {
@@ -93,15 +93,19 @@ const withParkZenMaven = (config) => {
   });
 };
 
-// 4. ParkZen's API key and client ID for Android, from frontend/.env
-// (PARKZEN_ANDROID_API_KEY / PARKZEN_ANDROID_CLIENT_ID). They're built in as
-// string resources so the native module can configure ParkZenCore in
-// Application.onCreate, before any JS runs, which is what keeps parking
-// detection alive after Android restarts the app in the background. (Not
-// manifest meta-data: Android turns an all-digit value there into a number.)
+// 4. ParkZen credentials for Android, from frontend/.env: the ParkZen login
+// (PARKZEN_USERNAME / PARKZEN_PASSWORD, the same one iOS uses), the client ID
+// (PARKZEN_CLIENT_ID) and PARKZEN_ANDROID_API_KEY, which configure() still
+// takes but 1.0.4 doesn't use. They're built in as string resources so the
+// native module can configure ParkZenCore in Application.onCreate, before any
+// JS runs, which is what keeps parking detection alive after Android restarts
+// the app in the background. (Not manifest meta-data: Android turns an
+// all-digit value there into a number.)
 const PARKZEN_STRINGS = {
   parkzen_api_key: process.env.PARKZEN_ANDROID_API_KEY,
-  parkzen_client_id: process.env.PARKZEN_ANDROID_CLIENT_ID,
+  parkzen_client_id: process.env.PARKZEN_CLIENT_ID,
+  parkzen_username: process.env.PARKZEN_USERNAME,
+  parkzen_password: process.env.PARKZEN_PASSWORD,
 };
 
 const withParkZenCredentials = (config) => {
@@ -111,6 +115,44 @@ const withParkZenCredentials = (config) => {
       if (value) strings.push({ $: { name, translatable: 'false' }, _: value });
     }
     config.modResults.resources.string = strings;
+    return config;
+  });
+};
+
+// 5. ParkZenCoreV2 for iOS comes from ParkZen's CocoaPod (see the iOS SDK
+// guide). modules/parkzen-core depends on it, but a podspec can't say where a
+// git-hosted pod lives, so the Podfile has to.
+const PARKZEN_IOS_POD =
+  "  pod 'ParkZenCore-Dist/Parking', :git => 'https://github.com/ParkZenApp/ParkZenCore-Dist.git', :tag => '0.0.24'";
+
+const withParkZenPod = (config) => {
+  return withPodfile(config, (config) => {
+    const podfile = config.modResults;
+    if (podfile.contents.includes('ParkZenCore-Dist')) return config;
+    if (!podfile.contents.includes('use_expo_modules!')) {
+      throw new Error('ParkZen: could not find use_expo_modules! in ios/Podfile');
+    }
+    podfile.contents = podfile.contents.replace('use_expo_modules!', (match) => `${match}\n${PARKZEN_IOS_POD}`);
+    return config;
+  });
+};
+
+// 6. The same ParkZen login and client ID for iOS, from frontend/.env
+// (PARKZEN_USERNAME / PARKZEN_PASSWORD / PARKZEN_CLIENT_ID). Built into
+// Info.plist so the app delegate can call ParkZenV2.configure at launch,
+// before any JS runs.
+const PARKZEN_INFO_PLIST = {
+  ParkZenUsername: process.env.PARKZEN_USERNAME,
+  ParkZenPassword: process.env.PARKZEN_PASSWORD,
+  ParkZenClientId: process.env.PARKZEN_CLIENT_ID,
+};
+
+const withParkZenIosCredentials = (config) => {
+  return withInfoPlist(config, (config) => {
+    for (const [key, value] of Object.entries(PARKZEN_INFO_PLIST)) {
+      if (value) config.modResults[key] = value;
+      else delete config.modResults[key];
+    }
     return config;
   });
 };
@@ -127,5 +169,7 @@ module.exports = ({ config }) => {
   config = withParkZenColors(config);
   config = withParkZenMaven(config);
   config = withParkZenCredentials(config);
+  config = withParkZenPod(config);
+  config = withParkZenIosCredentials(config);
   return config;
 };

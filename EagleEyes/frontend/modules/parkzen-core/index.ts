@@ -5,24 +5,21 @@ import { requireOptionalNativeModule } from 'expo-modules-core';
 // every call below quietly does nothing there instead of crashing the app
 const ParkzenCore = requireOptionalNativeModule('ParkzenCore');
 
-//initialize sdk using credentials (iOS only: Android reads its API key and
-//client ID from the build, see app.config.js)
-export function initializeParkZen(clientId: string, username: string, password: string): void {
-  if (Platform.OS === 'ios') ParkzenCore?.initializeParkZen(clientId, username, password);
-}
-
 // Expose the permissions function. On Android this is ParkZen's own helper:
 // location, background location, activity recognition, Bluetooth and
-// (Android 13+) notification permission.
+// (Android 13+) notification permission. On iOS it first configures ParkZenCore
+// (credentials are built in from frontend/.env, see app.config.js), which asks
+// for notification permission, then asks for location & motion.
 export async function requestPermissions(): Promise<void> {
   await ParkzenCore?.requestPermissions();
 }
 
-// Android: ParkZenCore configures itself natively at launch and whenever the
-// app returns to the foreground with permissions granted. This retries now and
-// reports whether it's running.
+// ParkZenCore configures itself natively at launch (Android: also whenever the
+// app returns to the foreground with permissions granted; iOS: once
+// requestPermissions has run on this device). This retries now and reports
+// whether it's running.
 export async function configureIfReady(): Promise<boolean> {
-  if (Platform.OS !== 'android' || !ParkzenCore) return false;
+  if (Platform.OS === 'web' || !ParkzenCore) return false;
   return await ParkzenCore.configureIfReady();
 }
 

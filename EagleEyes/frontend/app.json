@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.parkzen.eagleeyes.capstone",
+      "appleTeamId": "2HUZX5BEF7",
       "config": {
         "googleMapsApiKey": "AIzaSyAeKFvAPWQat4h6U_sMDIxERr8Oy2b4t8U"
       },
@@ -99,15 +100,15 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "39024e53-7f34-4924-87d9-257bfc49fc81"
+        "projectId": "e9f87299-9686-4f58-8aaf-2d3ca1c855bc"
       }
     },
-    "owner": "alperend",
+    "owner": "monicavu0411",
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/39024e53-7f34-4924-87d9-257bfc49fc81"
+      "url": "https://u.expo.dev/e9f87299-9686-4f58-8aaf-2d3ca1c855bc"
     }
   }
 }

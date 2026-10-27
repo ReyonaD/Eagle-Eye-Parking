@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.parkzenlib.parkzencore.ParkZenCore
+import com.parkzenlib.parkzencore.ParkZenCoreMain
 import com.parkzenlib.parkzencore.configuration.ConfigurationFailure
 import com.parkzenlib.parkzencore.configuration.ConfigurationHandler
 
@@ -30,12 +31,23 @@ object ParkZenSetup {
     //built in from frontend/.env by app.config.js
     val apiKey = readString(context, "parkzen_api_key")
     val clientId = readString(context, "parkzen_client_id")
-    if (apiKey.isNullOrBlank() || clientId.isNullOrBlank()) {
-      Log.w(TAG, "ParkZen API key/client ID missing: set PARKZEN_ANDROID_API_KEY and PARKZEN_ANDROID_CLIENT_ID in frontend/.env and rebuild")
+    val username = readString(context, "parkzen_username")
+    val password = readString(context, "parkzen_password")
+    if (apiKey.isNullOrBlank() || clientId.isNullOrBlank() || username.isNullOrBlank() || password.isNullOrBlank()) {
+      Log.w(TAG, "ParkZen credentials missing: set PARKZEN_ANDROID_API_KEY, PARKZEN_CLIENT_ID, PARKZEN_USERNAME and PARKZEN_PASSWORD in frontend/.env and rebuild")
       return false
     }
 
-    ParkZenCore.configure(apiKey, clientId, context.applicationContext)
+    val appContext = context.applicationContext
+    ParkZenCore.configure(apiKey, clientId, appContext)
+    //missing from the guide (per ParkZen): without these the SDK can't fetch
+    //lots or upload parking events, so no lot notifications ever appear
+    ParkZenCoreMain.setBaseUrl(
+      "https://us-central1-parkzen-33bc1.cloudfunctions.net",
+      "https://api.parkzenapp.com",
+      appContext
+    )
+    ParkZenCoreMain.setServiceAccountCredentials(appContext, username, password)
     configured = true
     Log.i(TAG, "ParkZenCore configured")
     logConfigurationCheck(context.applicationContext)
