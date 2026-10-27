@@ -771,8 +771,8 @@ async def upload_alert_image(
 
     return {"image_url": f"/uploads/{filename}"}
 
-#reports for the same lot+hazard type stay "live" for this long; a report older
-#than this is treated as resolved/stale and no longer absorbs new duplicates
+#pending reports for the same lot+hazard type absorb duplicates for this long;
+#a report older than this is treated as stale and no longer absorbs them
 DUPLICATE_REPORT_WINDOW = timedelta(hours=48)
 
 @app.post("/alerts", response_model=AlertResponse)
@@ -791,14 +791,17 @@ def create_alert(
     #the same hazard" - it never applies to admin posts (there's no multi-
     #reporter confirmation signal when it's the same admin posting twice),
     #and a lot-less report can't be confirmed as "the same incident" as
-    #another lot-less report, so only dedupe for commuters with a lot picked
+    #another lot-less report, so only dedupe for commuters with a lot picked.
+    #Only pending reports absorb duplicates: once one is published, a new
+    #report goes to the admin queue on its own (it may be a new incident, and
+    #folding it into a live alert would skip review and send no notification)
     existing = None
     if current_user.role != "admin" and alert_data.lot_name:
         existing = db.query(Alert).filter(
             Alert.alert_type == alert_type,
             Alert.category == alert_data.category,
             Alert.lot_name == alert_data.lot_name,
-            Alert.status.in_(["pending", "published"]),
+            Alert.status == "pending",
             Alert.created_at >= datetime.now(timezone.utc) - DUPLICATE_REPORT_WINDOW,
         ).order_by(desc(Alert.created_at)).first()
 
