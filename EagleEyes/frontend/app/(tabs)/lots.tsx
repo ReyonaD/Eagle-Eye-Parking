@@ -196,6 +196,7 @@ function LotCard({
   onPress: (lot: any) => void;
   onTogglePin: (lot: any) => void;
 }) {
+  const { isDarkMap } = useLots();
   // A closure or event in progress takes over the card: the event's icon,
   // label, and end time replace the permit badge, status, and occupancy.
   const takeover = getLotTakeover(lot.lotStatus);
@@ -270,7 +271,7 @@ function LotCard({
   return (
     <View style={[styles.cardWrapper, isGrid && styles.cardWrapperGrid]}>
       <TouchableOpacity
-        style={[styles.card, isGrid && styles.cardGrid]}
+        style={[styles.card, isGrid && styles.cardGrid, isDarkMap && { backgroundColor: '#1e1e1e' }]}
         onPress={() => onPress(lot)}
         onLongPress={Platform.OS === 'web' ? undefined : handleLongPress}
         delayLongPress={500}
@@ -290,7 +291,7 @@ function LotCard({
                 <Text style={styles.lotNameTagText} numberOfLines={1}>{lot.name}</Text>
               </View>
             ) : (
-              <Text style={styles.lotNameGrid} numberOfLines={2}>
+              <Text style={[styles.lotNameGrid, isDarkMap && { color: '#f5f5f5' }]} numberOfLines={2}>
                 {lot.name}
               </Text>
             )}
@@ -313,7 +314,7 @@ function LotCard({
                 <Text style={styles.lotNameTagText} numberOfLines={1}>{lot.name}</Text>
               </View>
             ) : (
-              <Text style={styles.lotName}>{lot.name}</Text>
+              <Text style={[styles.lotName, isDarkMap && { color: '#f5f5f5' }]}>{lot.name}</Text>
             )}
             <View style={styles.percentRow}>
               <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
@@ -359,17 +360,18 @@ function FilterHeader({
   isLivePreview: boolean;
   onToggleDayNight: () => void;
 }) {
+  const { isDarkMap } = useLots();
   const allActive = permitFilter === 'all' && availabilityFilter === 'all';
   const permitActive = permitFilter !== 'all';
   const availabilityActive = availabilityFilter !== 'all';
 
   return (
-    <View style={styles.filterHeader}>
+    <View style={[styles.filterHeader, isDarkMap && { backgroundColor: '#1e1e1e', borderBottomColor: '#333' }]}>
       {/* Search Bar */}
-      <View style={styles.searchWrapper}>
+      <View style={[styles.searchWrapper, isDarkMap && { backgroundColor: '#292929' }]}>
         <Ionicons name="search-outline" size={27} color="#aaa" style={styles.searchIcon} />
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, isDarkMap && { color: '#f5f5f5' }]}
           placeholder="Lot Search"
           placeholderTextColor="#aaa"
           value={query}
@@ -386,56 +388,56 @@ function FilterHeader({
       {/* Filter Buttons */}
       <View style={styles.filterRow}>
         <TouchableOpacity
-          style={[styles.filterBtn, allActive && styles.filterBtnActive]}
+          style={[styles.filterBtn, isDarkMap && { backgroundColor: '#292929', borderColor: '#444' }, allActive && styles.filterBtnActive]}
           onPress={onAllPermits}
         >
-          <Text style={[styles.filterBtnText, allActive && styles.filterBtnTextActive]}>
+          <Text style={[styles.filterBtnText, isDarkMap && { color: '#ddd' }, allActive && styles.filterBtnTextActive]}>
             ALL PERMITS
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.filterBtn, permitActive && styles.filterBtnActive]}
+          style={[styles.filterBtn, isDarkMap && { backgroundColor: '#292929', borderColor: '#444' }, permitActive && styles.filterBtnActive]}
           onPress={onPermitPress}
         >
-          <Text style={[styles.filterBtnText, permitActive && styles.filterBtnTextActive]}>
+          <Text style={[styles.filterBtnText, isDarkMap && { color: '#ddd' }, permitActive && styles.filterBtnTextActive]}>
             {permitFilter !== 'all' ? permitFilter : 'PERMIT'}
           </Text>
           <Ionicons
             name="chevron-down"
             size={12}
-            color={permitActive ? '#fff' : '#555'}
+            color={permitActive ? '#fff' : isDarkMap ? '#ccc' : '#555'}
             style={{ marginLeft: 3 }}
           />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.filterBtn, availabilityActive && styles.filterBtnActive]}
+          style={[styles.filterBtn, isDarkMap && { backgroundColor: '#292929', borderColor: '#444' }, availabilityActive && styles.filterBtnActive]}
           onPress={onAvailabilityPress}
         >
-          <Text style={[styles.filterBtnText, availabilityActive && styles.filterBtnTextActive]}>
+          <Text style={[styles.filterBtnText, isDarkMap && { color: '#ddd' }, availabilityActive && styles.filterBtnTextActive]}>
             {availabilityFilter !== 'all' ? availabilityFilter.toUpperCase() : 'AVAILABILITY'}
           </Text>
           <Ionicons
             name="chevron-down"
             size={12}
-            color={availabilityActive ? '#fff' : '#555'}
+            color={availabilityActive ? '#fff' : isDarkMap ? '#ccc' : '#555'}
             style={{ marginLeft: 3 }}
           />
         </TouchableOpacity>
 
         {/* Previews the other time-of-day's permit rules */}
         <TouchableOpacity
-          style={[styles.filterBtn, !isLivePreview && styles.filterBtnPreview]}
+          style={[styles.filterBtn, isDarkMap && { backgroundColor: '#292929', borderColor: '#444' }, !isLivePreview && styles.filterBtnPreview]}
           onPress={onToggleDayNight}
         >
           <Ionicons
             name={previewingNight ? 'moon' : 'sunny'}
             size={12}
-            color={isLivePreview ? '#555' : PREVIEW_AMBER_DARK}
+            color={isLivePreview ? (isDarkMap ? '#ccc' : '#555') : PREVIEW_AMBER_DARK}
             style={{ marginRight: 3 }}
           />
-          <Text style={[styles.filterBtnText, !isLivePreview && styles.filterBtnTextPreview]}>
+          <Text style={[styles.filterBtnText, isDarkMap && { color: '#ddd' }, !isLivePreview && styles.filterBtnTextPreview]}>
             {previewingNight ? 'NIGHT' : 'DAY'}{isLivePreview ? '' : ' (PREVIEW)'}
           </Text>
         </TouchableOpacity>
@@ -462,7 +464,7 @@ export default function LotsScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const listRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
-  const { lots, isLoading, lastRefreshAt, filterByPermit, previewMode, setPreviewMode, actuallyNight } = useLots();
+  const { lots, isLoading, lastRefreshAt, filterByPermit, previewMode, setPreviewMode, actuallyNight, isDarkMap } = useLots();
   // null previewMode = follow the real clock.
   const previewingNight = previewMode === null ? actuallyNight : previewMode === 'night';
   const isLivePreview = previewingNight === actuallyNight;
@@ -667,22 +669,22 @@ export default function LotsScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
+      <SafeAreaView style={[styles.screen, isDarkMap && { backgroundColor: '#121212' }, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#00853E" />
-        <Text style={{ marginTop: 12, color: '#666', fontSize: 16 }}>Loading Parking Data...</Text>
+        <Text style={{ marginTop: 12, color: isDarkMap ? '#bbb' : '#666', fontSize: 16 }}>Loading Parking Data...</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['right', 'left']}>
-      <View style={[styles.liveStatusBar, !isLivePreview && styles.liveStatusBarPreview]}>
+    <SafeAreaView style={[styles.screen, isDarkMap && { backgroundColor: '#121212' }]} edges={['right', 'left']}>
+      <View style={[styles.liveStatusBar, isDarkMap && { backgroundColor: '#1a1a1a', borderBottomColor: '#333' }, !isLivePreview && styles.liveStatusBarPreview]}>
         <Ionicons
           name={isLivePreview ? 'time-outline' : (previewingNight ? 'moon' : 'sunny')}
           size={14}
-          color={isLivePreview ? '#5d6d7e' : PREVIEW_AMBER_DARK}
+          color={isLivePreview ? (isDarkMap ? '#aaa' : '#5d6d7e') : PREVIEW_AMBER_DARK}
         />
-        <Text style={[styles.liveStatusText, !isLivePreview && styles.liveStatusTextPreview]}>
+        <Text style={[styles.liveStatusText, isDarkMap && { color: '#bbb' }, !isLivePreview && styles.liveStatusTextPreview]}>
           {isLivePreview
             ? `Last synced: ${refreshLabel}`
             : `Previewing ${previewingNight ? `Night rules (${NIGHT_HOURS_LABEL})` : `Day rules (${DAY_HOURS_LABEL})`}`}
@@ -701,9 +703,9 @@ export default function LotsScreen() {
         onToggleDayNight={() => setPreviewMode(previewingNight ? 'day' : 'night')}
       />
       {showPinHint ? (
-        <View style={styles.pinHintBanner}>
+        <View style={[styles.pinHintBanner, isDarkMap && { backgroundColor: '#202a36' }]}>
           <Ionicons name="pin" size={16} color={PIN_COLOR} />
-          <Text style={styles.pinHintText}>Long-press a lot to pin it to the top</Text>
+          <Text style={[styles.pinHintText, isDarkMap && { color: '#c7d8ef' }]}>Long-press a lot to pin it to the top</Text>
           <TouchableOpacity
             onPress={() => setShowPinHint(false)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -715,8 +717,8 @@ export default function LotsScreen() {
         </View>
       ) : null}
       {pinnedLots.length > 0 ? (
-        <View style={styles.pinnedSection}>
-          <Text style={styles.pinnedSectionTitle}>Pinned</Text>
+        <View style={[styles.pinnedSection, isDarkMap && { backgroundColor: '#121212', borderBottomColor: '#333' }]}>
+          <Text style={[styles.pinnedSectionTitle, isDarkMap && { color: '#aaa' }]}>Pinned</Text>
           <View style={cardLayout === 'grid' ? styles.pinnedGridWrap : undefined}>
             {pinnedLots.map((lot) => (
               <View key={lot.id} style={cardLayout === 'grid' ? styles.pinnedGridCard : undefined}>
@@ -748,9 +750,9 @@ export default function LotsScreen() {
             onTogglePin={togglePin}
           />
         )}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, isDarkMap && { backgroundColor: '#121212' }]}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>
+          <Text style={[styles.emptyText, isDarkMap && { color: '#aaa' }]}>
             {filtered.length === 0 ? 'No lots match your search.' : 'All matching lots are pinned above.'}
           </Text>
         }
@@ -858,20 +860,20 @@ export default function LotsScreen() {
       <Modal transparent animationType="fade" visible={permitPickerVisible} onRequestClose={() => setPermitPickerVisible(false)}>
         <View style={styles.pickerOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setPermitPickerVisible(false)} />
-          <View style={[styles.pickerSheet, { maxHeight: windowHeight * 0.9, paddingBottom: Math.max(insets.bottom - 12, 8) }]}>
-            <Text style={styles.pickerTitle}>Filter by Permit</Text>
+          <View style={[styles.pickerSheet, isDarkMap && { backgroundColor: '#1e1e1e' }, { maxHeight: windowHeight * 0.9, paddingBottom: Math.max(insets.bottom - 12, 8) }]}>
+            <Text style={[styles.pickerTitle, isDarkMap && { color: '#f5f5f5' }]}>Filter by Permit</Text>
             <ScrollView
               style={[styles.permitOptions, { maxHeight: windowHeight * 0.68 }]}
               showsVerticalScrollIndicator
               keyboardShouldPersistTaps="handled"
             >
-              <TouchableOpacity style={styles.pickerOption} onPress={() => { setPermitFilter('all'); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
-                <Text style={[styles.pickerOptionText, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
+              <TouchableOpacity style={[styles.pickerOption, isDarkMap && { borderBottomColor: '#383838' }]} onPress={() => { setPermitFilter('all'); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
+                <Text style={[styles.pickerOptionText, isDarkMap && { color: '#eee' }, permitFilter === 'all' && styles.pickerOptionActive]}>All Permits</Text>
                 {permitFilter === 'all' && <Ionicons name="checkmark" size={27} color="#00853E" />}
               </TouchableOpacity>
               {uniquePermits.map((p) => (
-                <TouchableOpacity key={p} style={styles.pickerOption} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
-                  <Text style={[styles.pickerOptionText, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
+                <TouchableOpacity key={p} style={[styles.pickerOption, isDarkMap && { borderBottomColor: '#383838' }]} onPress={() => { setPermitFilter(p); setPermitManuallySelected(true); setPermitPickerVisible(false); }}>
+                  <Text style={[styles.pickerOptionText, isDarkMap && { color: '#eee' }, permitFilter === p && styles.pickerOptionActive]}>{p}</Text>
                   {permitFilter === p && <Ionicons name="checkmark" size={27} color="#00853E" />}
                 </TouchableOpacity>
               ))}
@@ -883,11 +885,11 @@ export default function LotsScreen() {
       {/* Availability Picker Modal */}
       <Modal transparent animationType="fade" visible={availabilityPickerVisible} onRequestClose={() => setAvailabilityPickerVisible(false)}>
         <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setAvailabilityPickerVisible(false)}>
-          <View style={styles.pickerSheet}>
-            <Text style={styles.pickerTitle}>Filter by Availability</Text>
+          <View style={[styles.pickerSheet, isDarkMap && { backgroundColor: '#1e1e1e' }]}>
+            <Text style={[styles.pickerTitle, isDarkMap && { color: '#f5f5f5' }]}>Filter by Availability</Text>
             {(['all', 'Available', 'Near Capacity', 'Full', 'Closed'] as const).map((opt) => (
-              <TouchableOpacity key={opt} style={styles.pickerOption} onPress={() => { setAvailabilityFilter(opt); setAvailabilityPickerVisible(false); }}>
-                <Text style={[styles.pickerOptionText, availabilityFilter === opt && styles.pickerOptionActive]}>
+              <TouchableOpacity key={opt} style={[styles.pickerOption, isDarkMap && { borderBottomColor: '#383838' }]} onPress={() => { setAvailabilityFilter(opt); setAvailabilityPickerVisible(false); }}>
+                <Text style={[styles.pickerOptionText, isDarkMap && { color: '#eee' }, availabilityFilter === opt && styles.pickerOptionActive]}>
                   {opt === 'all' ? 'All' : opt}
                 </Text>
                 {availabilityFilter === opt && <Ionicons name="checkmark" size={27} color="#00853E" />}
@@ -904,22 +906,22 @@ export default function LotsScreen() {
         visible={modalVisible}
         onRequestClose={closeModal}
       >
-        <View style={styles.modalContainer}>
-          <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 20) }]}>
+        <View style={[styles.modalContainer, isDarkMap && { backgroundColor: '#121212' }]}>
+          <View style={[styles.modalHeader, isDarkMap && { backgroundColor: '#1e1e1e', borderBottomColor: '#333' }, { paddingTop: Math.max(insets.top, 20) }]}>
             <TouchableOpacity onPress={closeModal} style={{ padding: 10 }}>
               <Ionicons name="chevron-back" size={27} color="#00853E" />
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Lot Details</Text>
+            <Text style={[styles.modalTitle, isDarkMap && { color: '#f5f5f5' }]}>Lot Details</Text>
             <View style={{ width: 48 }} />
           </View>
 
           {selectedLot ? (
             <ScrollView style={styles.modalContent}>
-              <View style={styles.detailCard}>
+              <View style={[styles.detailCard, isDarkMap && { backgroundColor: '#1e1e1e' }]}>
                 <Text style={styles.detailLotName}>{selectedLot.name}</Text>
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Status:</Text>
+                <View style={[styles.detailRow, isDarkMap && { borderBottomColor: '#383838' }]}>
+                  <Text style={[styles.detailLabel, isDarkMap && { color: '#bbb' }]}>Status:</Text>
                   <View style={[
                     styles.statusBadgeDetail,
                     { backgroundColor: selectedStatusColor + '1A' }
@@ -938,29 +940,29 @@ export default function LotsScreen() {
                 </View>
 
                 {getLotStatusItems(selectedLot.lotStatus).map((item) => (
-                  <View key={item.key} style={styles.lotAlertRow}>
+                  <View key={item.key} style={[styles.lotAlertRow, isDarkMap && { backgroundColor: '#252525' }]}>
                     <View style={[styles.lotAlertIcon, { backgroundColor: item.visual.bg }]}>
                       <AlertIcon visual={item.visual} size={18} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.lotAlertTitle} numberOfLines={1}>{item.title}</Text>
-                      <Text style={styles.lotAlertDetail} numberOfLines={1}>{item.detail}</Text>
+                      <Text style={[styles.lotAlertTitle, isDarkMap && { color: '#eee' }]} numberOfLines={1}>{item.title}</Text>
+                      <Text style={[styles.lotAlertDetail, isDarkMap && { color: '#aaa' }]} numberOfLines={1}>{item.detail}</Text>
                     </View>
                   </View>
                 ))}
 
                 {!selectedTakeover && (
                   <>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Available Occupancy:</Text>
-                      <Text style={styles.detailValue}>
+                    <View style={[styles.detailRow, isDarkMap && { borderBottomColor: '#383838' }]}>
+                      <Text style={[styles.detailLabel, isDarkMap && { color: '#bbb' }]}>Available Occupancy:</Text>
+                      <Text style={[styles.detailValue, isDarkMap && { color: '#f5f5f5' }]}>
                         {typeof selectedLot.percentEmpty === 'number' ? `${selectedLot.percentEmpty}%` : 'Unknown'}
                       </Text>
                     </View>
 
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>ParkZen capture time:</Text>
-                      <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]}>
+                    <View style={[styles.detailRow, isDarkMap && { borderBottomColor: '#383838' }]}>
+                      <Text style={[styles.detailLabel, isDarkMap && { color: '#bbb' }]}>ParkZen capture time:</Text>
+                      <Text style={[styles.detailValue, isDarkMap && { color: '#f5f5f5' }, { flex: 1, textAlign: 'right' }]}>
                         {selectedLot.sourceTimestampProvidedByParkzen === true && selectedLot.lastUpdatedAt
                           ? new Date(selectedLot.lastUpdatedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
                           : 'No time available'}
@@ -988,30 +990,30 @@ export default function LotsScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: '#f0f0f0', marginTop: 12 }]}
+                  style={[styles.actionButton, { backgroundColor: isDarkMap ? '#292929' : '#f0f0f0', marginTop: 12 }]}
                     onPress={() => setMoreInfoVisible(!moreInfoVisible)}
                   >
-                    <Ionicons name={moreInfoVisible ? "chevron-up-circle-outline" : "information-circle-outline"} size={27} color="#00853E" />
-                    <Text style={[styles.actionButtonText, { color: '#00853E' }]}>More Info</Text>
+                  <Ionicons name={moreInfoVisible ? "chevron-up-circle-outline" : "information-circle-outline"} size={27} color={isDarkMap ? '#38C172' : '#00853E'} />
+                  <Text style={[styles.actionButtonText, { color: isDarkMap ? '#38C172' : '#00853E' }]}>More Info</Text>
                   </TouchableOpacity>
 
                   {moreInfoVisible && (
-                    <View style={[styles.detailCard, { marginTop: 12 }]}>
+                  <View style={[styles.detailCard, isDarkMap && { backgroundColor: '#1e1e1e' }, { marginTop: 12 }]}>
                       {selectedLot.address ? (
-                        <View style={styles.detailRow}>
-                          <Text style={styles.detailLabel}>Address:</Text>
-                          <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>{selectedLot.address}</Text>
+                      <View style={[styles.detailRow, isDarkMap && { borderBottomColor: '#383838' }]}>
+                        <Text style={[styles.detailLabel, isDarkMap && { color: '#bbb' }]}>Address:</Text>
+                        <Text style={[styles.detailValue, isDarkMap && { color: '#f5f5f5' }, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>{selectedLot.address}</Text>
                         </View>
                       ) : null}
                       {selectedLot.capacity ? (
-                        <View style={styles.detailRow}>
-                          <Text style={styles.detailLabel}>Capacity:</Text>
-                          <Text style={styles.detailValue}>{selectedLot.capacity} spaces</Text>
+                      <View style={[styles.detailRow, isDarkMap && { borderBottomColor: '#383838' }]}>
+                        <Text style={[styles.detailLabel, isDarkMap && { color: '#bbb' }]}>Capacity:</Text>
+                        <Text style={[styles.detailValue, isDarkMap && { color: '#f5f5f5' }]}>{selectedLot.capacity} spaces</Text>
                         </View>
                       ) : null}
                       {(selectedLot.permitList || []).length > 0 && (
                         <View style={{ marginTop: 6 }}>
-                          <Text style={styles.detailLabel}>Permits:</Text>
+                          <Text style={[styles.detailLabel, isDarkMap && { color: '#bbb' }]}>Permits:</Text>
                           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                             {dedupePermitLabels(selectedLot.permitList).map((label, i) => {
                               const permitStyle = getPermitCardStyle(label);

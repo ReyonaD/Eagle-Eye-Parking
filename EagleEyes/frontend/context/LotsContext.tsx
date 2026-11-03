@@ -37,6 +37,7 @@ interface LotsContextType {
     // Commuter's preferred map rendering, set from Profile Setting.
     mapType: 'standard' | 'satellite';
     setMapType: (value: 'standard' | 'satellite') => void;
+    setMapAppearance: (mapType: 'standard' | 'satellite', mapTheme: MapTheme) => void;
     // Light or dark map. 'auto' follows the phone's dark mode, independent of
     // the Day/Night permit rules (those cover weekend daytime too).
     mapTheme: MapTheme;
@@ -172,6 +173,15 @@ export function LotsProvider({ children }: { children : ReactNode }) {
       AsyncStorage.setItem(MAP_TYPE_STORAGE_KEY, value).catch(
         (error) => console.error('Error saving map type preference:', error)
       );
+    };
+
+    const setMapAppearance = (type: 'standard' | 'satellite', theme: MapTheme) => {
+      setMapTypeState(type);
+      setMapThemeState(theme);
+      AsyncStorage.multiSet([
+        [MAP_TYPE_STORAGE_KEY, type],
+        [MAP_THEME_STORAGE_KEY, theme],
+      ]).catch((error) => console.error('Error saving map appearance preferences:', error));
     };
 
     const fetchLots = async (showLoading = false) => {
@@ -353,7 +363,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     return (
         <LotsContext.Provider value={{
           lots, isLoading, lastRefreshAt, fetchLots, fetchLotStatuses, permitHours, filterByPermit, setFilterByPermit,
-          previewMode, setPreviewMode, actuallyNight, mapType, setMapType, mapTheme, setMapTheme, isDarkMap,
+          previewMode, setPreviewMode, actuallyNight, mapType, setMapType, setMapAppearance, mapTheme, setMapTheme, isDarkMap,
         }}>
             {children}
         </LotsContext.Provider>
@@ -368,4 +378,3 @@ export const useLots = () => {
     }
     return context;
 };
-

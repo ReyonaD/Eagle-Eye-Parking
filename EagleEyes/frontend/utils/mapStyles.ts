@@ -14,20 +14,22 @@ const HIDDEN_FEATURES = [
 
 export const LIGHT_MAP_STYLE: any[] = HIDDEN_FEATURES;
 
-// Neutral grays (Google's "Dark" preset, no blue tint) so the lots' occupancy
-// colors stay the most colorful thing on screen.
+// Neutral grays keep the map subdued while brighter roads remain readable
+// beneath the lot overlays.
 export const DARK_MAP_STYLE: any[] = [
   { elementType: 'geometry', stylers: [{ color: '#212121' }] },
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#bdbdbd' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#212121' }] },
   { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#757575' }] },
   { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#2a2a2a' }] },
-  { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#8a8a8a' }] },
-  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#373737' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3c3c3c' }] },
-  { featureType: 'road.local', elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#454545' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#505050' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#c4c4c4' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#505050' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#606060' }] },
+  { featureType: 'road.local', elementType: 'geometry', stylers: [{ color: '#414141' }] },
+  { featureType: 'road.local', elementType: 'labels.text.fill', stylers: [{ color: '#a8a8a8' }] },
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#000000' }] },
   { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#3d3d3d' }] },
   ...HIDDEN_FEATURES,

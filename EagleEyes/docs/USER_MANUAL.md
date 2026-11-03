@@ -109,12 +109,12 @@ Send a one-way message to UNT Transportation Services about a situation that doe
    - Tap the same button on the **Alerts** screen.
    - Go to **PROFILE → Help & Support**.
 2. Tap **Note to Admin**.
-3. Fill in **Lot / Location**, **Reason**, **Start Date**, **Start Time**, **End Time** (24hr, End of day, Overnight, or Custom), **License Plate Number**, and **Phone Number**. **Detail** and **Photo** are optional.
+3. On the phone app, enter your **Name** and **Email**. Fill in **Lot / Location**, **Reason**, **Start Date**, **Start Time**, **End Time** (24hr, End of day, Overnight, or Custom), **License Plate Number**, and **Phone Number**. **Detail** and **Photo** are optional.
 4. Tap **Continue**, review your information, and submit.
 
 ![Report options, Note to Admin form, and Continue button](images/note-to-admin.png)
 
-> **Disclaimer:** There is no in-app reply. A note does not guarantee your vehicle won't be moved or cited.
+> **Disclaimer:** Submitting a Note to Admin does not guarantee exemption from parking citations or towing. There is no in-app reply.
 
 #### Feature 8: Report a Hazard
 1. Open the report options (same entry points as Feature 7) and tap **Report a Hazard**.

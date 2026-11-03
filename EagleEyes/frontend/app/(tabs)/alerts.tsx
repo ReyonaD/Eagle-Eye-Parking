@@ -18,6 +18,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { getAlertVisual, getCategoryLabel } from '../../utils/alertVisuals';
 import AlertIcon from '../../components/AlertIcon';
 import { useAlertsBadge } from '../../context/AlertsBadgeContext';
+import { useLots } from '../../context/LotsContext';
 
 type FilterType = 'All' | 'Hazard' | 'Event';
 
@@ -85,8 +86,9 @@ function toAlertItem(raw: any): AlertItem {
 }
 
 function AlertsHeader({ onBack }: { onBack: () => void }) {
+  const { isDarkMap } = useLots();
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, isDarkMap && { backgroundColor: '#1e1e1e', borderBottomColor: '#333' }]}>
       <TouchableOpacity
         onPress={onBack}
         style={styles.backButton}
@@ -94,9 +96,9 @@ function AlertsHeader({ onBack }: { onBack: () => void }) {
         accessibilityRole="button"
         accessibilityLabel="Go back"
       >
-        <Ionicons name="chevron-back" size={27} color="#00853E" />
+        <Ionicons name="chevron-back" size={27} color={isDarkMap ? '#38C172' : '#00853E'} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Alerts</Text>
+      <Text style={[styles.headerTitle, isDarkMap && { color: '#f5f5f5' }]}>Alerts</Text>
       <View style={styles.headerSpacer} />
     </View>
   );
@@ -110,22 +112,23 @@ function FilterTabs({
   onSelect: (value: FilterType) => void;
 }) {
   const tabs: FilterType[] = ['All', 'Hazard', 'Event'];
+  const { isDarkMap } = useLots();
 
   return (
-    <View style={styles.filterHeader}>
-      <View style={styles.filterRow}>
+    <View style={[styles.filterHeader, isDarkMap && { backgroundColor: '#1e1e1e', borderBottomColor: '#333' }]}>
+      <View style={[styles.filterRow, isDarkMap && { backgroundColor: '#292929' }]}>
         {tabs.map((tab) => {
           const active = selected === tab;
 
           return (
             <TouchableOpacity
               key={tab}
-              style={[styles.filterBtn, active && styles.filterBtnActive]}
+              style={[styles.filterBtn, isDarkMap && { backgroundColor: '#292929' }, active && styles.filterBtnActive]}
               onPress={() => onSelect(tab)}
               activeOpacity={0.7}
             >
               <Text
-                style={[styles.filterBtnText, active && styles.filterBtnTextActive]}
+                style={[styles.filterBtnText, isDarkMap && { color: '#ddd' }, active && styles.filterBtnTextActive]}
                 numberOfLines={1}
               >
                 {tab}
@@ -139,7 +142,8 @@ function FilterTabs({
 }
 
 function SectionHeader({ title }: { title: string }) {
-  return <Text style={styles.sectionTitle}>{title}</Text>;
+  const { isDarkMap } = useLots();
+  return <Text style={[styles.sectionTitle, isDarkMap && { color: '#aaa' }]}>{title}</Text>;
 }
 
 function CollapsibleSectionHeader({
@@ -153,6 +157,7 @@ function CollapsibleSectionHeader({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { isDarkMap } = useLots();
   return (
     <TouchableOpacity
       style={styles.collapsibleSectionHeader}
@@ -163,8 +168,8 @@ function CollapsibleSectionHeader({
       accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} ${title.toLowerCase()} alerts`}
       accessibilityHint={`${count} alert${count === 1 ? '' : 's'}`}
     >
-      <Text style={styles.sectionTitle}>
-        {title} <Text style={styles.collapsibleCount}>({count})</Text>
+      <Text style={[styles.sectionTitle, isDarkMap && { color: '#aaa' }]}>
+        {title} <Text style={[styles.collapsibleCount, isDarkMap && { color: '#777' }]}>({count})</Text>
       </Text>
       <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color="#94A3B8" />
     </TouchableOpacity>
@@ -172,12 +177,13 @@ function CollapsibleSectionHeader({
 }
 
 function AlertCard({ alert, unread, onPress }: { alert: AlertItem; unread: boolean; onPress: () => void }) {
+  const { isDarkMap } = useLots();
   const visual = getAlertVisual(alert.alertType, alert.category);
   const thumbnailUrl = alert.imageUrls?.[0];
   const extraPhotoCount = (alert.imageUrls?.length ?? 0) - 1;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[styles.card, isDarkMap && { backgroundColor: '#1e1e1e' }]} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.iconWrap, { backgroundColor: visual.bg }]}>
         <AlertIcon visual={visual} size={27} />
       </View>
@@ -185,13 +191,13 @@ function AlertCard({ alert, unread, onPress }: { alert: AlertItem; unread: boole
       <View style={styles.cardBody}>
         <View style={styles.cardTitleRow}>
           {unread && <View style={styles.unreadDot} accessibilityLabel="Unread" />}
-          <Text style={styles.cardTitle} numberOfLines={1}>{alert.title}</Text>
+          <Text style={[styles.cardTitle, isDarkMap && { color: '#f5f5f5' }]} numberOfLines={1}>{alert.title}</Text>
         </View>
 
         {!!alert.lotName && (
           <View style={styles.lotRow}>
-            <Ionicons name="location" size={13} color="#00853E" />
-            <Text style={styles.lotText}>{alert.lotName}</Text>
+            <Ionicons name="location" size={13} color={isDarkMap ? '#38C172' : '#00853E'} />
+            <Text style={[styles.lotText, isDarkMap && { color: '#38C172' }]}>{alert.lotName}</Text>
           </View>
         )}
 
@@ -216,6 +222,7 @@ function AlertCard({ alert, unread, onPress }: { alert: AlertItem; unread: boole
 }
 
 function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }) {
+  const { isDarkMap } = useLots();
   const visual = getAlertVisual(alert.alertType, alert.category);
   const categoryLabel = getCategoryLabel(alert.alertType, alert.category);
   const eyebrowLabel = alert.alertType === 'event' ? 'CAMPUS EVENT' : 'HAZARD REPORT';
@@ -232,8 +239,8 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'right', 'left']}>
-      <View style={styles.header}>
+    <SafeAreaView style={[styles.screen, isDarkMap && { backgroundColor: '#121212' }]} edges={['top', 'right', 'left']}>
+      <View style={[styles.header, isDarkMap && { backgroundColor: '#1e1e1e', borderBottomColor: '#333' }]}>
         <TouchableOpacity
           onPress={onBack}
           style={styles.backButton}
@@ -241,20 +248,20 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={27} color="#00853E" />
+          <Ionicons name="chevron-back" size={27} color={isDarkMap ? '#38C172' : '#00853E'} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Alert Details</Text>
+        <Text style={[styles.headerTitle, isDarkMap && { color: '#f5f5f5' }]}>Alert Details</Text>
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.detailContent}>
+      <ScrollView contentContainerStyle={[styles.detailContent, isDarkMap && { backgroundColor: '#121212' }]}>
         <View style={styles.detailIconRow}>
           <View style={[styles.iconWrap, styles.detailIconWrap, { backgroundColor: visual.bg }]}>
             <AlertIcon visual={visual} size={30} />
           </View>
           <View style={styles.detailTitleWrap}>
             <Text style={[styles.detailEyebrow, { color: visual.iconColor }]}>{eyebrowLabel}</Text>
-            <Text style={styles.detailTitle}>{alert.title}</Text>
+            <Text style={[styles.detailTitle, isDarkMap && { color: '#f5f5f5' }]}>{alert.title}</Text>
             <View style={styles.detailMetaRow}>
               <View style={[styles.detailCategoryPill, { backgroundColor: visual.bg }]}>
                 <Text style={[styles.detailCategoryPillText, { color: visual.iconColor }]}>
@@ -266,28 +273,28 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
           </View>
         </View>
 
-        <View style={styles.detailInfoCard}>
+        <View style={[styles.detailInfoCard, isDarkMap && { backgroundColor: '#1e1e1e' }]}>
           {infoRows.map((row, index) => (
             <View
               key={row.label}
-              style={[styles.detailInfoRow, index === infoRows.length - 1 && styles.detailInfoRowLast]}
+              style={[styles.detailInfoRow, isDarkMap && { borderBottomColor: '#383838' }, index === infoRows.length - 1 && styles.detailInfoRowLast]}
             >
-              <Text style={styles.detailInfoLabel}>{row.label}</Text>
-              <Text style={styles.detailInfoValue}>{row.value}</Text>
+              <Text style={[styles.detailInfoLabel, isDarkMap && { color: '#aaa' }]}>{row.label}</Text>
+              <Text style={[styles.detailInfoValue, isDarkMap && { color: '#f5f5f5' }]}>{row.value}</Text>
             </View>
           ))}
         </View>
 
         {!!alert.description && (
           <>
-            <Text style={styles.detailSectionLabel}>Description</Text>
-            <Text style={styles.detailDescription}>{alert.description}</Text>
+            <Text style={[styles.detailSectionLabel, isDarkMap && { color: '#aaa' }]}>Description</Text>
+            <Text style={[styles.detailDescription, isDarkMap && { color: '#ccc' }]}>{alert.description}</Text>
           </>
         )}
 
         {!!alert.imageUrls?.length && (
           <>
-            <Text style={styles.detailSectionLabel}>Photos</Text>
+            <Text style={[styles.detailSectionLabel, isDarkMap && { color: '#aaa' }]}>Photos</Text>
             <View style={styles.detailPhotoGrid}>
               {alert.imageUrls.map((url) => (
                 <TouchableOpacity key={url} onPress={() => setPreviewUri(`${BASE_URL}${url}`)} activeOpacity={0.85}>
@@ -314,6 +321,7 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
 
 export default function AlertsScreen() {
   const router = useRouter();
+  const { isDarkMap } = useLots();
   const { refreshBadge, markAlertsSeen, unreadIds, markAlertRead } = useAlertsBadge();
 
   //entering this tab counts as "seen": refresh the latest max id, then clear the bell badge
@@ -411,7 +419,7 @@ export default function AlertsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'right', 'left']}>
+    <SafeAreaView style={[styles.screen, isDarkMap && { backgroundColor: '#121212' }]} edges={['top', 'right', 'left']}>
       <AlertsHeader onBack={() => router.back()} />
       <FilterTabs selected={filter} onSelect={setFilter} />
 
@@ -446,20 +454,20 @@ export default function AlertsScreen() {
         }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="notifications-off-outline" size={32} color="#C4CBD2" />
-            <Text style={styles.emptyText}>No alerts right now</Text>
-            <Text style={styles.emptySubtext}>Pull down to refresh</Text>
+            <Ionicons name="notifications-off-outline" size={32} color={isDarkMap ? '#777' : '#C4CBD2'} />
+            <Text style={[styles.emptyText, isDarkMap && { color: '#aaa' }]}>No alerts right now</Text>
+            <Text style={[styles.emptySubtext, isDarkMap && { color: '#777' }]}>Pull down to refresh</Text>
           </View>
         }
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#00853E"
+            tintColor={isDarkMap ? '#38C172' : '#00853E'}
             colors={['#00853E']}
           />
         }
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, isDarkMap && { backgroundColor: '#121212' }]}
         showsVerticalScrollIndicator={false}
       />
 

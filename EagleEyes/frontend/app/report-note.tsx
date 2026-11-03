@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,6 +55,8 @@ export default function ReportNoteScreen() {
   const { user } = useUser();
   const [step, setStep] = useState<'form' | 'review'>('form');
 
+  const [contactName, setContactName] = useState(user.name);
+  const [contactEmail, setContactEmail] = useState(user.email);
   const [reason, setReason] = useState('');
   const [detail, setDetail] = useState('');
   const [selectedLot, setSelectedLot] = useState<string | null>(null);
@@ -72,6 +74,14 @@ export default function ReportNoteScreen() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (user.name) setContactName((current) => current || user.name);
+  }, [user.name]);
+
+  useEffect(() => {
+    if (user.email) setContactEmail((current) => current || user.email);
+  }, [user.email]);
 
   const handleAddPhotoPress = async () => {
     if (Platform.OS === 'web') {
@@ -114,12 +124,17 @@ export default function ReportNoteScreen() {
       !selectedLot ||
       !plateState.trim() ||
       !plateNumber.trim() ||
-      !phoneNumber.trim()
+      !phoneNumber.trim() ||
+      (Platform.OS !== 'web' && (!contactName.trim() || !contactEmail.trim()))
     ) {
       Alert.alert(
         'Missing information',
-        'Reason, Lot/Location, Start time, License Plate, and Phone Number are required before continuing.'
+        `${Platform.OS !== 'web' ? 'Name, contact email, ' : ''}Reason, Lot/Location, Start time, License Plate, and Phone Number are required before continuing.`
       );
+      return;
+    }
+    if (Platform.OS !== 'web' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.trim())) {
+      Alert.alert('Invalid email', 'Enter a valid contact email address.');
       return;
     }
     if (!startDate) {
@@ -213,6 +228,8 @@ export default function ReportNoteScreen() {
 
       await createNote({
         title: reason.trim(),
+        reporter_name: Platform.OS !== 'web' ? contactName.trim() : undefined,
+        reporter_email: Platform.OS !== 'web' ? contactEmail.trim() : undefined,
         description: detail.trim() || undefined,
         lot_name: selectedLot || undefined,
         event_start: window.eventStart.toISOString(),
@@ -234,8 +251,8 @@ export default function ReportNoteScreen() {
 
   if (step === 'review') {
     return (
-      <SafeAreaView style={styles.screen} edges={['top', 'right', 'left']}>
-        <ScrollView contentContainerStyle={styles.content}>
+      <SafeAreaView style={styles.screen} edges={['top', 'right', 'bottom', 'left']}>
+        <ScrollView style={styles.reviewScroll} contentContainerStyle={[styles.content, styles.reviewContent]}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack} disabled={submitting}>
             <Ionicons name="chevron-back" size={20} color="#00853E" />
             <Text style={styles.backText}>Back</Text>
@@ -244,6 +261,12 @@ export default function ReportNoteScreen() {
           <Text style={styles.title}>Note to Admin Confirmation</Text>
 
           <View style={styles.reviewCard}>
+            {Platform.OS !== 'web' && (
+              <>
+                <Text style={styles.reviewLabel}>Contact name: <Text style={styles.reviewValue}>{contactName.trim()}</Text></Text>
+                <Text style={styles.reviewLabel}>Contact email: <Text style={styles.reviewValue}>{contactEmail.trim()}</Text></Text>
+              </>
+            )}
             <Text style={styles.reviewLabel}>Reason: <Text style={styles.reviewValue}>{reason}</Text></Text>
             {!!detail.trim() && (
               <>
@@ -273,6 +296,15 @@ export default function ReportNoteScreen() {
               </View>
             )}
 
+            {Platform.OS !== 'web' && (
+              <View style={[styles.disclaimerBox, styles.reviewDisclaimerBox]}>
+                <Ionicons name="information-circle-outline" size={20} color="#8A5A00" />
+                <Text style={styles.disclaimerText}>
+                  Disclaimer: Submitting a Note to Admin does not guarantee exemption from parking citations or towing.
+                </Text>
+              </View>
+            )}
+
             <TouchableOpacity
               style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
               onPress={handleSubmit}
@@ -285,20 +317,48 @@ export default function ReportNoteScreen() {
               )}
             </TouchableOpacity>
           </View>
+
         </ScrollView>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'right', 'left']}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <SafeAreaView style={styles.screen} edges={['top', 'right', 'bottom', 'left']}>
+      <ScrollView style={styles.reviewScroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="chevron-back" size={20} color="#00853E" />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
 
         <Text style={styles.title}>Note to Admin</Text>
+
+        {Platform.OS !== 'web' && (
+          <>
+            <Text style={styles.sectionLabel}>YOUR NAME *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="YOUR NAME *"
+              placeholderTextColor="#888"
+              value={contactName}
+              onChangeText={setContactName}
+              autoCapitalize="words"
+              maxLength={100}
+            />
+            <Text style={styles.sectionLabel}>EMAIL *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="EMAIL ADDRESS *"
+              placeholderTextColor="#888"
+              value={contactEmail}
+              onChangeText={setContactEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={254}
+            />
+          </>
+        )}
 
         <TouchableOpacity style={styles.lotButton} onPress={() => setShowLotPicker(true)}>
           <View style={styles.lotButtonLabel}>
@@ -413,6 +473,15 @@ export default function ReportNoteScreen() {
           )}
         </View>
 
+        {Platform.OS !== 'web' && (
+          <View style={styles.disclaimerBox}>
+            <Ionicons name="information-circle-outline" size={20} color="#8A5A00" />
+            <Text style={styles.disclaimerText}>
+              Disclaimer: Submitting a Note to Admin does not guarantee exemption from parking citations or towing.
+            </Text>
+          </View>
+        )}
+
         <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
           <Text style={styles.continueButtonText}>CONTINUE</Text>
         </TouchableOpacity>
@@ -442,6 +511,13 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 36,
   },
+  reviewScroll: {
+    flex: 1,
+  },
+  reviewContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
+  },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -458,6 +534,46 @@ const styles = StyleSheet.create({
     fontSize: 25,
     fontWeight: '800',
     marginBottom: 20,
+  },
+  disclaimerBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: '#FFF4D6',
+    borderRadius: 8,
+    padding: 12,
+    marginHorizontal: 20,
+    marginBottom: 8,
+  },
+  reviewDisclaimerBox: {
+    marginHorizontal: 0,
+    marginTop: 16,
+    marginBottom: 0,
+  },
+  disclaimerText: {
+    flex: 1,
+    color: '#684600',
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  emailSummary: {
+    backgroundColor: '#E0E0E0',
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 14,
+  },
+  emailLabel: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  emailValue: {
+    color: '#333',
+    fontSize: 14,
+    fontWeight: '600',
   },
   input: {
     backgroundColor: '#E0E0E0',

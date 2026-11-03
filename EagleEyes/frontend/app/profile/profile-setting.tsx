@@ -36,7 +36,9 @@ const FALLBACK_PERMIT_TYPES = [
 export default function ParkingProfileScreen() {
   const router = useRouter();
   const { user, updateUser } = useUser();
-  const { filterByPermit, setFilterByPermit, mapType, setMapType, permitHours } = useLots();
+  const { filterByPermit, setFilterByPermit, mapType, setMapAppearance, isDarkMap, permitHours } = useLots();
+  const darkMode = isDarkMap;
+  const styles = useMemo(() => createStyles(darkMode), [darkMode]);
   const { parkingProfile } = user;
 
   const [plateState, setPlateState] = useState(parkingProfile.plateState);
@@ -140,9 +142,9 @@ export default function ParkingProfileScreen() {
                   : (permitType ? getPermitDisplayLabel(permitType, permitOptions) : 'Select permit type')}
               </Text>
               {permitTypesLoading ? (
-                <ActivityIndicator size="small" color="#333" />
+                <ActivityIndicator size="small" color={darkMode ? '#ddd' : '#333'} />
               ) : (
-                <Ionicons name={permitTypeOpen ? 'chevron-up' : 'chevron-down'} size={20} color="#333" />
+                <Ionicons name={permitTypeOpen ? 'chevron-up' : 'chevron-down'} size={20} color={darkMode ? '#ddd' : '#333'} />
               )}
             </TouchableOpacity>
             {permitTypeOpen && (
@@ -246,22 +248,39 @@ export default function ParkingProfileScreen() {
             <Text style={styles.toggleLabel}>Map type</Text>
             <Text style={styles.toggleHint}>Choose how the map renders on the Map and Lots tabs.</Text>
             <View style={styles.mapTypeRow}>
-              {(['standard', 'satellite'] as const).map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[styles.mapTypeOption, mapType === type && styles.mapTypeOptionActive]}
-                  onPress={() => setMapType(type)}
-                >
-                  <Ionicons
-                    name={type === 'standard' ? 'map-outline' : 'globe-outline'}
-                    size={16}
-                    color={mapType === type ? '#fff' : '#555'}
-                  />
-                  <Text style={[styles.mapTypeOptionText, mapType === type && styles.mapTypeOptionTextActive]}>
-                    {type === 'standard' ? 'Standard' : 'Satellite'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {([
+                { id: 'standard' as const, label: 'Standard', icon: 'map-outline' as const },
+                { id: 'satellite' as const, label: 'Satellite', icon: 'globe-outline' as const },
+                { id: 'dark' as const, label: 'Dark', icon: 'moon-outline' as const },
+              ]).map((option) => {
+                const selected = option.id === 'dark'
+                  ? darkMode
+                  : !darkMode && mapType === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[styles.mapTypeOption, selected && styles.mapTypeOptionActive]}
+                    onPress={() => {
+                      setMapAppearance(
+                        option.id === 'dark' ? 'standard' : option.id,
+                        option.id === 'dark' ? 'dark' : 'light',
+                      );
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${option.label} map view`}
+                    accessibilityState={{ selected }}
+                  >
+                    <Ionicons
+                      name={option.icon}
+                      size={16}
+                      color={selected ? '#fff' : darkMode ? '#ccc' : '#555'}
+                    />
+                    <Text style={[styles.mapTypeOptionText, selected && styles.mapTypeOptionTextActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
 
@@ -339,10 +358,10 @@ export default function ParkingProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (darkMode: boolean) => StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f2f2f7',
+    backgroundColor: darkMode ? '#121212' : '#f2f2f7',
   },
   header: {
     flexDirection: 'row',
@@ -350,14 +369,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: '#fff',
+    backgroundColor: darkMode ? '#1e1e1e' : '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: darkMode ? '#333' : '#eee',
   },
   headerTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#1a1a1a',
+    color: darkMode ? '#f5f5f5' : '#1a1a1a',
   },
   content: {
     padding: 16,
@@ -365,12 +384,12 @@ const styles = StyleSheet.create({
   },
   helperText: {
     fontSize: 13,
-    color: '#888',
+    color: darkMode ? '#aaa' : '#888',
     marginBottom: 12,
     lineHeight: 18,
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: darkMode ? '#1e1e1e' : '#fff',
     borderRadius: 14,
     padding: 16,
     shadowColor: '#000',
@@ -393,7 +412,7 @@ const styles = StyleSheet.create({
   toggleLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: darkMode ? '#f5f5f5' : '#1a1a1a',
     marginBottom: 3,
   },
   infoHeaderRow: {
@@ -404,7 +423,7 @@ const styles = StyleSheet.create({
   },
   toggleHint: {
     fontSize: 12,
-    color: '#888',
+    color: darkMode ? '#aaa' : '#888',
     lineHeight: 16,
   },
   mapTypeRow: {
@@ -421,8 +440,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#f9f9f9',
+    borderColor: darkMode ? '#444' : '#ddd',
+    backgroundColor: darkMode ? '#292929' : '#f9f9f9',
   },
   mapTypeOptionActive: {
     backgroundColor: '#00853E',
@@ -431,7 +450,7 @@ const styles = StyleSheet.create({
   mapTypeOptionText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#555',
+    color: darkMode ? '#ddd' : '#555',
   },
   mapTypeOptionTextActive: {
     color: '#fff',
@@ -439,7 +458,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#888',
+    color: darkMode ? '#aaa' : '#888',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 6,
@@ -447,11 +466,11 @@ const styles = StyleSheet.create({
   },
   input: {
     height: 46,
-    backgroundColor: '#f2f2f7',
+    backgroundColor: darkMode ? '#292929' : '#f2f2f7',
     borderRadius: 8,
     paddingHorizontal: 14,
     fontSize: 15,
-    color: '#1a1a1a',
+    color: darkMode ? '#f5f5f5' : '#1a1a1a',
   },
   plateRow: {
     flexDirection: 'row',
@@ -469,23 +488,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     height: 46,
-    backgroundColor: '#f2f2f7',
+    backgroundColor: darkMode ? '#292929' : '#f2f2f7',
     borderRadius: 8,
     paddingHorizontal: 14,
   },
   dropdownText: {
     fontSize: 15,
-    color: '#1a1a1a',
+    color: darkMode ? '#f5f5f5' : '#1a1a1a',
     flexShrink: 1,
     marginRight: 6,
   },
   dropdownPlaceholder: {
-    color: '#999',
+    color: darkMode ? '#888' : '#999',
   },
   dropdownList: {
     marginTop: 8,
     borderRadius: 8,
-    backgroundColor: '#f2f2f7',
+    backgroundColor: darkMode ? '#252525' : '#f2f2f7',
     overflow: 'hidden',
   },
   purchasePermitRow: {
@@ -493,7 +512,7 @@ const styles = StyleSheet.create({
   },
   purchasePermitText: {
     fontSize: 13,
-    color: '#666',
+    color: darkMode ? '#bbb' : '#666',
   },
   purchasePermitLink: {
     color: '#00853E',
@@ -512,7 +531,7 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 8,
   },
-  permitHoursNoteText: { flex: 1, fontSize: 13, color: '#555' },
+  permitHoursNoteText: { flex: 1, fontSize: 13, color: darkMode ? '#ccc' : '#555' },
   premiumParkingNote: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -537,11 +556,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5ea',
+    borderBottomColor: darkMode ? '#383838' : '#e5e5ea',
   },
   dropdownItemText: {
     fontSize: 14,
-    color: '#333',
+    color: darkMode ? '#eee' : '#333',
   },
   pickerOverlay: {
     flex: 1,
@@ -549,7 +568,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   pickerSheet: {
-    backgroundColor: '#fff',
+    backgroundColor: darkMode ? '#1e1e1e' : '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
@@ -559,12 +578,12 @@ const styles = StyleSheet.create({
   pickerTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#1a1a1a',
+    color: darkMode ? '#f5f5f5' : '#1a1a1a',
     marginBottom: 6,
   },
   pickerSubtitle: {
     fontSize: 13,
-    color: '#888',
+    color: darkMode ? '#aaa' : '#888',
     lineHeight: 18,
     marginBottom: 14,
   },
@@ -577,11 +596,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: darkMode ? '#383838' : '#f0f0f0',
   },
   pickerOptionText: {
     fontSize: 15,
-    color: '#333',
+    color: darkMode ? '#eee' : '#333',
     fontWeight: '500',
   },
   pickerOptionActive: {

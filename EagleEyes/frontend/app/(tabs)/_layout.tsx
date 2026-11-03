@@ -3,14 +3,12 @@ import React from 'react';
 import { Platform, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
 import TopBar from '../../components/TopBar'
+import { useLots } from '../../context/LotsContext';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { isDarkMap } = useLots();
   // Alerts has its own back button + title, so the brand topbar (logo + bell)
   // would just stack redundant chrome above it — hide it on that screen only.
   const pathname = usePathname();
@@ -22,8 +20,8 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         // Hardcoding the exact UNT Green from your mockup for the active tab
-        tabBarActiveTintColor: '#00853E',
-        tabBarInactiveTintColor: '#A3D1B6', // A faded green for the inactive tabs
+        tabBarActiveTintColor: isDarkMap ? '#38C172' : '#00853E',
+        tabBarInactiveTintColor: isDarkMap ? '#8A8A8A' : '#A3D1B6',
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarLabelPosition: Platform.select({ web: 'beside-icon', default: 'below-icon' }),
@@ -31,6 +29,8 @@ export default function TabLayout() {
           web: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
         }),
         tabBarStyle: {
+          backgroundColor: isDarkMap ? '#171717' : '#fff',
+          borderTopColor: isDarkMap ? '#333' : '#e5e5e5',
           ...Platform.select({
             web: { height: 82, paddingBottom: 10, paddingTop: 10 },
             default: { paddingBottom: 5, paddingTop: 5 },
