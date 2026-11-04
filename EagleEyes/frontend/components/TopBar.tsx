@@ -15,7 +15,9 @@ interface TopBarProps {
 export default function TopBar({ role = 'commuter' }: TopBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { unseenCount } = useAlertsBadge();
+  const { unseenCount, myUpdatesUnread } = useAlertsBadge();
+  //the commuter bell covers new public alerts plus unread personal My Updates
+  const bellCount = unseenCount + myUpdatesUnread;
   //safe to call even on the commuter side, where no provider is mounted -
   //see useAdminNotesBadge's own comment for why
   const { pendingCount } = useAdminNotesBadge();
@@ -57,13 +59,21 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
       ) : (
         <TouchableOpacity
           style={styles.bellWrapper}
-          onPress={() => router.push('/(tabs)/alerts')}
+          //if everything new is personal, open straight to My Updates
+          onPress={() =>
+            router.push(
+              myUpdatesUnread > 0 && unseenCount === 0
+                ? { pathname: '/(tabs)/alerts', params: { view: 'updates' } }
+                : '/(tabs)/alerts'
+            )
+          }
+          accessibilityLabel={bellCount > 0 ? `Alerts, ${bellCount} new` : 'Alerts'}
         >
           <View>
             <Ionicons name="notifications-outline" size={32} color="#333" />
-            {unseenCount > 0 && (
+            {bellCount > 0 && (
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>{unseenCount > 9 ? '9+' : unseenCount}</Text>
+                <Text style={styles.badgeText}>{bellCount > 9 ? '9+' : bellCount}</Text>
               </View>
             )}
           </View>

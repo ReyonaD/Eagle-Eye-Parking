@@ -16,11 +16,12 @@ from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
-from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken, UserNotification
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest, UserNotificationResponse, UnreadCountResponse
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
+from app.core.notifications import notify_report_reviewed, notify_note_acknowledged
 from typing import List, Optional
 Base.metadata.create_all(bind=engine)
 #create_all does not add new columns to existing tables, so patch them in here.
@@ -373,6 +374,64 @@ def update_current_user_plate(
     db.commit()
     db.refresh(current_user)
     return {"plate_state": current_user.plate_state, "plate_number": current_user.plate_number}
+
+#─── My Updates (a commuter's own review/acknowledgment history). Every query
+#here is scoped to current_user, so nobody can read or mark another user's ──
+
+@app.get("/users/me/notifications", response_model=List[UserNotificationResponse])
+def list_my_notifications(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """The logged-in user's updates, newest first."""
+    return db.query(UserNotification)\
+            .filter(UserNotification.user_id == current_user.id)\
+            .order_by(desc(UserNotification.created_at), desc(UserNotification.id))\
+            .limit(limit)\
+            .all()
+
+@app.get("/users/me/notifications/unread-count", response_model=UnreadCountResponse)
+def count_my_unread_notifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Cheap call for the bell/tab badge, which polls it."""
+    count = db.query(UserNotification)\
+            .filter(UserNotification.user_id == current_user.id, UserNotification.read_at.is_(None))\
+            .count()
+    return {"count": count}
+
+@app.put("/users/me/notifications/read-all", response_model=UnreadCountResponse)
+def mark_all_my_notifications_read(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db.query(UserNotification)\
+        .filter(UserNotification.user_id == current_user.id, UserNotification.read_at.is_(None))\
+        .update({UserNotification.read_at: datetime.now(timezone.utc)}, synchronize_session=False)
+    db.commit()
+    return {"count": 0}
+
+@app.put("/users/me/notifications/{notification_id}/read", response_model=UserNotificationResponse)
+def mark_my_notification_read(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    #someone else's update id gets the same 404 as a missing one, so ids can't be probed
+    notification = db.query(UserNotification).filter(
+        UserNotification.id == notification_id,
+        UserNotification.user_id == current_user.id,
+    ).first()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Update not found.")
+
+    if notification.read_at is None:
+        notification.read_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(notification)
+    return notification
 
 async def get_parkzen_token(username: str, password: str, force_refresh: bool = False) -> str:
     """Return a valid ParkZen token, logging in only when the cached one is
@@ -875,7 +934,13 @@ def acknowledge_note(
     if not note:
         raise HTTPException(status_code=404, detail="Note not found.")
 
+    #acknowledging again is a no-op: keeps the original time and doesn't
+    #send the commuter a second update
+    if note.acknowledged_at is not None:
+        return note
+
     note.acknowledged_at = datetime.now(timezone.utc)
+    notify_note_acknowledged(db, note)
     db.commit()
     db.refresh(note)
     return note
@@ -939,6 +1004,10 @@ def approve_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found or already resolved.")
 
+    #only a real review (pending -> published) tells the submitters; re-saving
+    #an already-published alert through here doesn't
+    was_pending = alert.status == "pending"
+
     if edits.title is not None and edits.title.strip():
         alert.title = edits.title.strip().upper()
     if edits.category is not None and edits.category.strip():
@@ -949,6 +1018,8 @@ def approve_alert(
         alert.image_urls = edits.image_urls
 
     alert.status = "published"
+    if was_pending:
+        notify_report_reviewed(db, alert, approved=True)
     db.commit()
     db.refresh(alert)
     return alert
@@ -1020,6 +1091,7 @@ def remove_alert(
 
     if alert.status == "pending":
         alert.status = "declined"
+        notify_report_reviewed(db, alert, approved=False)
         db.commit()
         return {"message": "Report declined."}
 
