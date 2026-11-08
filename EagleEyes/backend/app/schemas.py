@@ -141,3 +141,19 @@ class PushTokenRegister(BaseModel):
     #Expo push token from expo-notifications' getExpoPushTokenAsync()
     token: str = Field(min_length=1, max_length=255)
     platform: Optional[str] = Field(default=None, max_length=20)
+
+class UserNotificationResponse(BaseModel):
+    """One "My Updates" entry. Never includes the note's phone number, plate,
+    or description - only the snapshot fields the commuter already wrote."""
+    id: int
+    kind: str
+    source_type: str
+    source_id: int
+    title: str
+    body: Optional[str] = None
+    lot_name: Optional[str] = None
+    created_at: datetime
+    read_at: Optional[datetime] = None
+
+class UnreadCountResponse(BaseModel):
+    count: int
