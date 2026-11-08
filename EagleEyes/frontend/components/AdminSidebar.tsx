@@ -21,7 +21,12 @@ export default function AdminSidebar({
   onToggleCollapsed: () => void;
 }) {
   const pathname = usePathname();
-  const { pendingCount } = useAdminNotesBadge();
+  const { pendingCount, pendingHazardCount } = useAdminNotesBadge();
+  //what's waiting on an admin in each section (Events never has anything waiting)
+  const badgeFor: Record<string, number> = {
+    '/(admin)/hazards': pendingHazardCount,
+    '/(admin)/commuter-notes': pendingCount,
+  };
 
   return (
     <View style={[styles.sidebar, collapsed && styles.sidebarCollapsed]}>
@@ -40,7 +45,7 @@ export default function AdminSidebar({
         //highlighted while on them too.
         const matchPath = item.route.replace('/(admin)', '');
         const isActive = pathname === matchPath || pathname.startsWith(`${matchPath}/`);
-        const badgeCount = item.route === '/(admin)/commuter-notes' ? pendingCount : 0;
+        const badgeCount = badgeFor[item.route] ?? 0;
         return (
           <TouchableOpacity
             key={item.route}

@@ -14,12 +14,16 @@ import { getAlerts, BASE_URL } from '../../api/alerts';
 import { formatLotNames } from '../../utils/lotStatus';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { getAlertVisual, getCategoryLabel } from '../../utils/alertVisuals';
 import AlertIcon from '../../components/AlertIcon';
 import { useAlertsBadge } from '../../context/AlertsBadgeContext';
+import { getMyNotes, getMyUpdates, markMyUpdateRead, markAllMyUpdatesRead } from '../../api/myUpdates';
+import NoteStatusCard, { MyNote, NoteAcknowledgment } from '../../components/NoteStatusCard';
 
-type FilterType = 'All' | 'Hazard' | 'Event';
+//'Note Status' lists the commuter's own Notes to Admin (pending/acknowledged),
+//not a filter over the public feed - it renders its own list (see AlertsScreen)
+type FilterType = 'All' | 'Hazard' | 'Event' | 'Note Status';
 
 interface AlertItem {
   id: string;
@@ -105,31 +109,47 @@ function AlertsHeader({ onBack }: { onBack: () => void }) {
 function FilterTabs({
   selected,
   onSelect,
+  updatesUnread,
 }: {
   selected: FilterType;
   onSelect: (value: FilterType) => void;
+  updatesUnread: number;
 }) {
-  const tabs: FilterType[] = ['All', 'Hazard', 'Event'];
+  const tabs: FilterType[] = ['All', 'Hazard', 'Event', 'Note Status'];
 
   return (
     <View style={styles.filterHeader}>
       <View style={styles.filterRow}>
         {tabs.map((tab) => {
           const active = selected === tab;
+          const isUpdates = tab === 'Note Status';
+          const showCount = isUpdates && updatesUnread > 0;
 
           return (
             <TouchableOpacity
               key={tab}
-              style={[styles.filterBtn, active && styles.filterBtnActive]}
+              style={[styles.filterBtn, isUpdates && styles.filterBtnWide, active && styles.filterBtnActive]}
               onPress={() => onSelect(tab)}
               activeOpacity={0.7}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={showCount ? `${tab}, ${updatesUnread} unread` : tab}
             >
-              <Text
-                style={[styles.filterBtnText, active && styles.filterBtnTextActive]}
-                numberOfLines={1}
-              >
-                {tab}
-              </Text>
+              <View style={styles.filterBtnInner}>
+                <Text
+                  style={[styles.filterBtnText, active && styles.filterBtnTextActive]}
+                  numberOfLines={1}
+                >
+                  {tab}
+                </Text>
+                {showCount && (
+                  <View style={[styles.filterCount, active && styles.filterCountActive]}>
+                    <Text style={[styles.filterCountText, active && styles.filterCountTextActive]}>
+                      {updatesUnread > 9 ? '9+' : updatesUnread}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -314,7 +334,12 @@ function AlertDetail({ alert, onBack }: { alert: AlertItem; onBack: () => void }
 
 export default function AlertsScreen() {
   const router = useRouter();
-  const { refreshBadge, markAlertsSeen, unreadIds, markAlertRead } = useAlertsBadge();
+  const {
+    refreshBadge, markAlertsSeen, unreadIds, markAlertRead,
+    myUpdatesUnread, refreshMyUpdatesUnread, markMyUpdateReadLocally, markAllMyUpdatesReadLocally,
+  } = useAlertsBadge();
+  //the bell sends ?view=updates when the only unread items are personal updates
+  const { view } = useLocalSearchParams<{ view?: string }>();
 
   //entering this tab counts as "seen": refresh the latest max id, then clear the bell badge
   useFocusEffect(
@@ -348,19 +373,70 @@ export default function AlertsScreen() {
     }
   }, []);
 
+  const [myNotes, setMyNotes] = useState<MyNote[]>([]);
+  //acknowledgment entries, only used for the unread dot on each note
+  const [myUpdates, setMyUpdates] = useState<NoteAcknowledgment[]>([]);
+  const [myUpdatesError, setMyUpdatesError] = useState(false);
+
+  const loadMyUpdates = useCallback(async () => {
+    try {
+      const [notes, acks] = await Promise.all([getMyNotes(), getMyUpdates()]);
+      setMyNotes(notes);
+      setMyUpdates(acks);
+      setMyUpdatesError(false);
+    } catch {
+      setMyUpdatesError(true);
+    }
+  }, []);
+
   //tabs stay mounted, so reload on every focus — otherwise tapping the bell for a
   //new alert lands on the list as it was when the tab was first opened
   useFocusEffect(
     useCallback(() => {
       loadAlerts();
-    }, [loadAlerts])
+      loadMyUpdates();
+    }, [loadAlerts, loadMyUpdates])
   );
+
+  useEffect(() => {
+    if (view === 'updates') {
+      setFilter('Note Status');
+      //clear it so the next bell tap with the same param still switches tabs
+      router.setParams({ view: undefined });
+    }
+  }, [view, router]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadAlerts();
+    await Promise.all([loadAlerts(), loadMyUpdates(), refreshMyUpdatesUnread()]);
     setRefreshing(false);
-  }, [loadAlerts]);
+  }, [loadAlerts, loadMyUpdates, refreshMyUpdatesUnread]);
+
+  //tapping a newly acknowledged note clears its unread dot
+  const handleUpdatePress = useCallback(async (notificationId: number) => {
+    const now = new Date().toISOString();
+    setMyUpdates((prev) => prev.map((u) => (u.id === notificationId ? { ...u, read_at: now } : u)));
+    markMyUpdateReadLocally();
+    try {
+      await markMyUpdateRead(notificationId);
+    } catch {
+      //put the real state back rather than showing it read when it isn't
+      loadMyUpdates();
+    }
+    refreshMyUpdatesUnread();
+  }, [loadMyUpdates, refreshMyUpdatesUnread, markMyUpdateReadLocally]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    const now = new Date().toISOString();
+    setMyUpdates((prev) => prev.map((u) => (u.read_at ? u : { ...u, read_at: now })));
+    markAllMyUpdatesReadLocally();
+    try {
+      await markAllMyUpdatesRead();
+    } catch {
+      loadMyUpdates();
+    }
+    refreshMyUpdatesUnread();
+  }, [loadMyUpdates, refreshMyUpdatesUnread, markAllMyUpdatesReadLocally]);
 
   const filteredAlerts = useMemo(() => {
     switch (filter) {
@@ -410,15 +486,73 @@ export default function AlertsScreen() {
     }
   }
 
+  //Note Status: every note the commuter sent, still-pending ones first, each
+  //newest first. A note acknowledged since they last looked gets an unread dot.
+  const showingUpdates = filter === 'Note Status';
+  const unreadAckByNoteId = new Map<number, number>();
+  myUpdates.forEach((u) => {
+    if (u.source_type === 'note' && !u.read_at) unreadAckByNoteId.set(u.source_id, u.id);
+  });
+  const localUpdatesUnread = unreadAckByNoteId.size;
+  const updatesListData: any[] = [];
+  if (myNotes.length) {
+    updatesListData.push({ id: 'updates-actions', kind: 'updatesActions' });
+    const groups = [
+      { label: 'PENDING', items: myNotes.filter((n) => !n.acknowledged_at) },
+      { label: 'ACKNOWLEDGED', items: myNotes.filter((n) => !!n.acknowledged_at) },
+    ];
+    groups.forEach(({ label, items }) => {
+      if (!items.length) return;
+      updatesListData.push({ id: `notes-${label}-header`, kind: 'header', label });
+      items.forEach((n) => updatesListData.push({ id: `note-${n.id}`, kind: 'update', note: n }));
+    });
+  }
+
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'right', 'left']}>
       <AlertsHeader onBack={() => router.back()} />
-      <FilterTabs selected={filter} onSelect={setFilter} />
+      <FilterTabs selected={filter} onSelect={setFilter} updatesUnread={myUpdatesUnread} />
 
       <FlatList
-        data={listData}
+        data={showingUpdates ? updatesListData : listData}
         keyExtractor={(item: any) => item.id}
         renderItem={({ item }: { item: any }) => {
+          if (item.kind === 'updatesActions') {
+            return (
+              <View style={styles.updatesActions}>
+                <Text style={styles.updatesSummary}>
+                  {localUpdatesUnread > 0
+                    ? `${localUpdatesUnread} newly acknowledged`
+                    : `${myNotes.length} note${myNotes.length === 1 ? '' : 's'} sent`}
+                </Text>
+                {localUpdatesUnread > 0 && (
+                  <TouchableOpacity
+                    onPress={handleMarkAllRead}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Mark all acknowledgments as read"
+                  >
+                    <Text style={styles.markAllText}>Mark all read</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          }
+          if (item.kind === 'update') {
+            const note: MyNote = item.note;
+            const ackId = unreadAckByNoteId.get(note.id);
+            return (
+              <NoteStatusCard
+                note={note}
+                unread={ackId !== undefined}
+                sentLabel={timeAgo(note.created_at)}
+                acknowledgedLabel={note.acknowledged_at ? timeAgo(note.acknowledged_at) : undefined}
+                onPress={() => {
+                  if (ackId !== undefined) handleUpdatePress(ackId);
+                }}
+              />
+            );
+          }
           if (item.kind === 'header') {
             return <SectionHeader title={item.label} />;
           }
@@ -445,11 +579,29 @@ export default function AlertsScreen() {
           );
         }}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="notifications-off-outline" size={32} color="#C4CBD2" />
-            <Text style={styles.emptyText}>No alerts right now</Text>
-            <Text style={styles.emptySubtext}>Pull down to refresh</Text>
-          </View>
+          showingUpdates ? (
+            <View style={styles.emptyState}>
+              <Ionicons
+                name={myUpdatesError ? 'cloud-offline-outline' : 'mail-open-outline'}
+                size={32}
+                color="#C4CBD2"
+              />
+              <Text style={styles.emptyText}>
+                {myUpdatesError ? "Couldn't load your notes" : 'No notes yet'}
+              </Text>
+              <Text style={[styles.emptySubtext, styles.emptySubtextWide]}>
+                {myUpdatesError
+                  ? 'Pull down to try again'
+                  : "Notes you send to the parking team show up here, so you can see when they've been acknowledged."}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Ionicons name="notifications-off-outline" size={32} color="#C4CBD2" />
+              <Text style={styles.emptyText}>No alerts right now</Text>
+              <Text style={styles.emptySubtext}>Pull down to refresh</Text>
+            </View>
+          )
         }
         refreshControl={
           <RefreshControl
@@ -575,7 +727,20 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
+  //"Note Status" is longer than the other labels and carries a count, so it
+  //gets a bit more of the row instead of truncating on narrow phones
+  filterBtnWide: {
+    flex: 1.55,
+  },
+  filterBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 2,
+  },
   filterBtnText: {
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: '600',
     color: '#666',
@@ -583,11 +748,50 @@ const styles = StyleSheet.create({
   filterBtnTextActive: {
     color: '#fff',
   },
+  filterCount: {
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: '#E02D2D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterCountActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  filterCountText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  filterCountTextActive: {
+    color: '#00853E',
+  },
+  updatesActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    marginHorizontal: 2,
+  },
+  updatesSummary: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  markAllText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#00853E',
+  },
 
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 20,
+    //clears the floating report button (56 tall + 16 from the bottom) so it
+    //never sits on top of the last card
+    paddingBottom: 88,
   },
 
   sectionTitle: {
@@ -834,5 +1038,11 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 13,
     color: '#C4CBD2',
+  },
+  emptySubtextWide: {
+    color: '#94A3B8',
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 19,
   },
 });

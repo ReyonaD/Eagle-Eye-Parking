@@ -16,11 +16,13 @@ from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
-from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest
+from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken, PushToken, UserNotification
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest, PushTokenRegister, UserNotificationResponse, UnreadCountResponse, MyNoteResponse
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
+from app.core.push import send_alert_published, send_note_acknowledged, is_expo_push_token
+from app.core.notifications import notify_note_acknowledged
 from typing import List, Optional
 Base.metadata.create_all(bind=engine)
 #create_all does not add new columns to existing tables, so patch them in here.
@@ -41,6 +43,8 @@ with engine.connect() as _conn:
     #it, but plate_state/plate_number were added after that first run
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_state VARCHAR"))
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
+    _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS reporter_name VARCHAR"))
+    _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS contact_email VARCHAR"))
     #hazards now stay on the map until an admin deactivates them; before that
     #they simply lapsed 24h after being reported. When the column is first
     #added, close out those older hazards at their old expiry so they don't
@@ -373,6 +377,119 @@ def update_current_user_plate(
     db.commit()
     db.refresh(current_user)
     return {"plate_state": current_user.plate_state, "plate_number": current_user.plate_number}
+
+@app.post("/users/me/push-token")
+def register_push_token(
+    payload: PushTokenRegister,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Called by the app after the user allows notifications, so this device
+    gets a push whenever an alert is published. Re-registering is harmless."""
+    if not is_expo_push_token(payload.token):
+        raise HTTPException(status_code=400, detail="Not a valid Expo push token.")
+
+    row = db.query(PushToken).filter(PushToken.token == payload.token).first()
+    if row:
+        #same phone, possibly a different account now: the latest login owns it
+        row.user_id = current_user.id
+        row.platform = payload.platform
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        db.add(PushToken(user_id=current_user.id, token=payload.token, platform=payload.platform))
+    db.commit()
+    return {"message": "Push token registered."}
+
+@app.delete("/users/me/push-token")
+def remove_push_token(
+    token: str = Query(..., description="The Expo push token to stop sending to"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Called on logout or when the user turns notifications off in Profile."""
+    db.query(PushToken).filter(PushToken.token == token, PushToken.user_id == current_user.id)\
+        .delete(synchronize_session=False)
+    db.commit()
+    return {"message": "Push token removed."}
+
+#─── Note Status (a commuter's own Notes to Admin and whether each has been
+#acknowledged). Every query here is scoped to current_user, so nobody can
+#read or mark another user's ──────────────────────────────────────────────
+
+@app.get("/users/me/notes", response_model=List[MyNoteResponse])
+def list_my_notes(
+    limit: int = Query(100, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """The logged-in user's own notes, newest first, pending and acknowledged."""
+    return db.query(Note)\
+            .filter(Note.reporter_email == current_user.email)\
+            .order_by(desc(Note.created_at), desc(Note.id))\
+            .limit(limit)\
+            .all()
+
+#hazard report approve/decline entries were dropped (an approved hazard
+#already shows up in Alerts); older rows may still exist, so filter them out
+def _my_note_notifications(db: Session, user: User):
+    return db.query(UserNotification).filter(
+        UserNotification.user_id == user.id,
+        UserNotification.source_type == "note",
+    )
+
+@app.get("/users/me/notifications", response_model=List[UserNotificationResponse])
+def list_my_notifications(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """The logged-in user's note acknowledgments, newest first."""
+    return _my_note_notifications(db, current_user)\
+            .order_by(desc(UserNotification.created_at), desc(UserNotification.id))\
+            .limit(limit)\
+            .all()
+
+@app.get("/users/me/notifications/unread-count", response_model=UnreadCountResponse)
+def count_my_unread_notifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Cheap call for the bell/tab badge, which polls it."""
+    count = _my_note_notifications(db, current_user)\
+            .filter(UserNotification.read_at.is_(None))\
+            .count()
+    return {"count": count}
+
+@app.put("/users/me/notifications/read-all", response_model=UnreadCountResponse)
+def mark_all_my_notifications_read(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    _my_note_notifications(db, current_user)\
+        .filter(UserNotification.read_at.is_(None))\
+        .update({UserNotification.read_at: datetime.now(timezone.utc)}, synchronize_session=False)
+    db.commit()
+    return {"count": 0}
+
+@app.put("/users/me/notifications/{notification_id}/read", response_model=UserNotificationResponse)
+def mark_my_notification_read(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    #someone else's update id gets the same 404 as a missing one, so ids can't be probed
+    notification = db.query(UserNotification).filter(
+        UserNotification.id == notification_id,
+        UserNotification.user_id == current_user.id,
+    ).first()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Update not found.")
+
+    if notification.read_at is None:
+        notification.read_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(notification)
+    return notification
 
 async def get_parkzen_token(username: str, password: str, force_refresh: bool = False) -> str:
     """Return a valid ParkZen token, logging in only when the cached one is
@@ -736,13 +853,14 @@ async def upload_alert_image(
 
     return {"image_url": f"/uploads/{filename}"}
 
-#reports for the same lot+hazard type stay "live" for this long; a report older
-#than this is treated as resolved/stale and no longer absorbs new duplicates
+#pending reports for the same lot+hazard type absorb duplicates for this long;
+#a report older than this is treated as stale and no longer absorbs them
 DUPLICATE_REPORT_WINDOW = timedelta(hours=48)
 
 @app.post("/alerts", response_model=AlertResponse)
 def create_alert(
     alert_data: AlertCreate,
+    background_tasks: BackgroundTasks,
     db: Session= Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -755,14 +873,17 @@ def create_alert(
     #the same hazard" - it never applies to admin posts (there's no multi-
     #reporter confirmation signal when it's the same admin posting twice),
     #and a lot-less report can't be confirmed as "the same incident" as
-    #another lot-less report, so only dedupe for commuters with a lot picked
+    #another lot-less report, so only dedupe for commuters with a lot picked.
+    #Only pending reports absorb duplicates: once one is published, a new
+    #report goes to the admin queue on its own (it may be a new incident, and
+    #folding it into a live alert would skip review and send no notification)
     existing = None
     if current_user.role != "admin" and alert_data.lot_name:
         existing = db.query(Alert).filter(
             Alert.alert_type == alert_type,
             Alert.category == alert_data.category,
             Alert.lot_name == alert_data.lot_name,
-            Alert.status.in_(["pending", "published"]),
+            Alert.status == "pending",
             Alert.created_at >= datetime.now(timezone.utc) - DUPLICATE_REPORT_WINDOW,
         ).order_by(desc(Alert.created_at)).first()
 
@@ -809,6 +930,9 @@ def create_alert(
     db.add(new_alert)
     db.commit()
     db.refresh(new_alert)
+    #commuter reports are pushed later, when an admin approves them
+    if new_alert.status == "published":
+        background_tasks.add_task(send_alert_published, new_alert.id, current_user.id)
     return new_alert
 
 @app.put("/alerts/{alert_id}/upvote", response_model=AlertResponse)
@@ -842,13 +966,17 @@ def create_note(
         title=note_data.title.strip(),
         description=note_data.description,
         lot_name=note_data.lot_name,
+        reporter_name=(note_data.reporter_name or current_user.name or "").strip() or None,
         phone_number=note_data.phone_number,
         plate_state=note_data.plate_state,
         plate_number=note_data.plate_number,
         image_urls=note_data.image_urls or [],
         event_start=note_data.event_start,
         event_end=note_data.event_end,
+        #always the logged-in account: Note Status and the acknowledgment push
+        #look notes up by this, so a typed-in email must never replace it
         reporter_email=current_user.email,
+        contact_email=str(note_data.contact_email) if note_data.contact_email else None,
     )
     db.add(new_note)
     db.commit()
@@ -868,6 +996,7 @@ def get_notes(
 @app.put("/notes/{note_id}/acknowledge", response_model=NoteResponse)
 def acknowledge_note(
     note_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_role: str = Depends(require_admin)
 ):
@@ -875,9 +1004,18 @@ def acknowledge_note(
     if not note:
         raise HTTPException(status_code=404, detail="Note not found.")
 
+    #acknowledging again is a no-op: keeps the original time and doesn't
+    #send the commuter a second update
+    if note.acknowledged_at is not None:
+        return note
+
     note.acknowledged_at = datetime.now(timezone.utc)
+    notify_note_acknowledged(db, note)
     db.commit()
     db.refresh(note)
+    #push only to the note's author, after the commit so the in-app entry
+    #already exists when they tap it
+    background_tasks.add_task(send_note_acknowledged, note.id)
     return note
 
 #─── Diagnostic logs (app console output a commuter sends from Help & Support
@@ -931,6 +1069,7 @@ def get_diagnostic_log(
 def approve_alert(
     alert_id: int,
     edits: AlertApprove,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_role: str = Depends(require_admin)
 ):
@@ -948,9 +1087,12 @@ def approve_alert(
     if edits.image_urls is not None:
         alert.image_urls = edits.image_urls
 
+    was_published = alert.status == "published"
     alert.status = "published"
     db.commit()
     db.refresh(alert)
+    if not was_published:
+        background_tasks.add_task(send_alert_published, alert.id)
     return alert
 
 @app.put("/alerts/{alert_id}", response_model=AlertResponse)
@@ -1026,4 +1168,3 @@ def remove_alert(
     db.delete(alert)
     db.commit()
     return {"message": "Alert successfully resolved and removed from the feed."}
-

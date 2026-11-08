@@ -53,6 +53,9 @@ class NoteCreate(BaseModel):
     title: str
     description: Optional[str] = None
     lot_name: Optional[str] = None
+    reporter_name: Optional[str] = Field(default=None, max_length=100)
+    #contact email typed on the form; the note's author is always the logged-in user
+    contact_email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
     plate_state: Optional[str] = None
     plate_number: Optional[str] = None
@@ -66,6 +69,7 @@ class NoteResponse(BaseModel):
     title: str
     description: Optional[str] = None
     lot_name: Optional[str] = None
+    reporter_name: Optional[str] = None
     phone_number: Optional[str] = None
     plate_state: Optional[str] = None
     plate_number: Optional[str] = None
@@ -73,6 +77,7 @@ class NoteResponse(BaseModel):
     event_start: Optional[datetime] = None
     event_end: Optional[datetime] = None
     reporter_email: str
+    contact_email: Optional[str] = None
     acknowledged_at: Optional[datetime] = None
     created_at: datetime
 
@@ -136,3 +141,33 @@ class DiagnosticLogSummary(BaseModel):
 
 class DiagnosticLogResponse(DiagnosticLogSummary):
     logs: str
+
+class PushTokenRegister(BaseModel):
+    #Expo push token from expo-notifications' getExpoPushTokenAsync()
+    token: str = Field(min_length=1, max_length=255)
+    platform: Optional[str] = Field(default=None, max_length=20)
+
+class UserNotificationResponse(BaseModel):
+    """One "My Updates" entry. Never includes the note's phone number, plate,
+    or description - only the snapshot fields the commuter already wrote."""
+    id: int
+    kind: str
+    source_type: str
+    source_id: int
+    title: str
+    body: Optional[str] = None
+    lot_name: Optional[str] = None
+    created_at: datetime
+    read_at: Optional[datetime] = None
+
+class UnreadCountResponse(BaseModel):
+    count: int
+
+class MyNoteResponse(BaseModel):
+    """A commuter's own note as shown in Note Status: just enough to recognise
+    it and see whether it's been acknowledged (no phone number or plate)."""
+    id: int
+    title: str
+    lot_name: Optional[str] = None
+    created_at: datetime
+    acknowledged_at: Optional[datetime] = None

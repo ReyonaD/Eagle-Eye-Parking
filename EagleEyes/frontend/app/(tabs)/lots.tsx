@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Pressable,
@@ -17,12 +17,13 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
 import { useUser } from '../../context/UserContext';
 import { openDirections } from '../../utils/navigation';
+import { nearestLotDistance, distanceMeters, centroid, formatDistance, NEARBY_LOT_THRESHOLD_METERS, LatLng } from '../../utils/geo';
 import { GROUP_EMBLEMS, lotMatchesPermitType, getPremiumParkingLink, dedupePermitLabels, isPerLotPermitCode, normalizePermitPreservingCode, consolidatePermits } from '../../utils/permits';
 import { getPermitCardStyle } from '../../utils/permitColors';
 import { NAME_TO_CODE, DAY_HOURS_LABEL, NIGHT_HOURS_LABEL } from '../../utils/nightPermitRules';
@@ -189,12 +190,15 @@ function LotCard({
   layout = 'row',
   onPress,
   onTogglePin,
+  distanceLabel,
 }: {
   lot: any;
   isPinned: boolean;
   layout?: 'row' | 'grid';
   onPress: (lot: any) => void;
   onTogglePin: (lot: any) => void;
+  //e.g. "0.3 mi" - only when the user is on campus (see LotsScreen's lotDistances)
+  distanceLabel?: string;
 }) {
   // A closure or event in progress takes over the card: the event's icon,
   // label, and end time replace the permit badge, status, and occupancy.
@@ -240,6 +244,7 @@ function LotCard({
 
   const cardAccessibilityLabel = [
     lot.name,
+    distanceLabel ? `${distanceLabel} away` : null,
     statusLabel,
     ...statusItems.map((item) => item.title),
     isPinned ? 'pinned' : null,
@@ -296,6 +301,7 @@ function LotCard({
             )}
           </View>
           <LotStatusIcons lot={lot} />
+          {!!distanceLabel && <Text style={styles.distanceText}>{distanceLabel}</Text>}
           <View style={styles.gridBottomRow}>
             <Text style={[styles.statusText, { color: dotColor }]} numberOfLines={1}>
               {statusLabel}
@@ -317,6 +323,7 @@ function LotCard({
             )}
             <View style={styles.percentRow}>
               <Text style={[styles.percentText, { color: dotColor }]}>{displayPercent}</Text>
+              {!!distanceLabel && <Text style={styles.distanceText}>{distanceLabel}</Text>}
               <LotStatusIcons lot={lot} />
             </View>
           </View>
@@ -383,8 +390,15 @@ function FilterHeader({
         )}
       </View>
 
-      {/* Filter Buttons */}
-      <View style={styles.filterRow}>
+      {/* Filter Buttons - scroll sideways so a long permit name or
+          "DAY (PREVIEW)" never squeezes or clips the other pills */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterRow}
+        keyboardShouldPersistTaps="handled"
+      >
         <TouchableOpacity
           style={[styles.filterBtn, allActive && styles.filterBtnActive]}
           onPress={onAllPermits}
@@ -439,10 +453,14 @@ function FilterHeader({
             {previewingNight ? 'NIGHT' : 'DAY'}{isLivePreview ? '' : ' (PREVIEW)'}
           </Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </View>
   );
 }
+
+//the closest-first list only re-sorts after the user has moved this far (or
+//when the Lots tab is opened), so it doesn't reshuffle while they scroll
+const RESORT_MIN_MOVE_METERS = 100;
 
 export default function LotsScreen() {
   const [query, setQuery] = useState('');
@@ -462,7 +480,7 @@ export default function LotsScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const listRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
-  const { lots, isLoading, lastRefreshAt, filterByPermit, previewMode, setPreviewMode, actuallyNight } = useLots();
+  const { lots, isLoading, lastRefreshAt, filterByPermit, previewMode, setPreviewMode, actuallyNight, userLocation } = useLots();
   // null previewMode = follow the real clock.
   const previewingNight = previewMode === null ? actuallyNight : previewMode === 'night';
   const isLivePreview = previewingNight === actuallyNight;
@@ -555,6 +573,42 @@ export default function LotsScreen() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [lots]);
 
+  // Closest-first ordering. The list is sorted from a snapshot of the user's
+  // location (sortOrigin), not the live GPS fix, so it doesn't reshuffle under
+  // their finger as they walk: the snapshot only moves when the Lots tab is
+  // opened or once they've moved RESORT_MIN_MOVE_METERS from it.
+  const [sortOrigin, setSortOrigin] = useState<LatLng | null>(null);
+  const userLocationRef = useRef(userLocation);
+  userLocationRef.current = userLocation;
+  useFocusEffect(
+    useCallback(() => {
+      if (userLocationRef.current) setSortOrigin(userLocationRef.current);
+    }, [])
+  );
+  useEffect(() => {
+    if (!userLocation) return;
+    setSortOrigin((prev) =>
+      !prev || distanceMeters(prev, userLocation) >= RESORT_MIN_MOVE_METERS ? userLocation : prev
+    );
+  }, [userLocation]);
+
+  // Distance from sortOrigin to each lot's center, or null when the user is
+  // off campus / hasn't shared location - then the list keeps its usual order.
+  const lotDistances = useMemo(() => {
+    if (!sortOrigin || nearestLotDistance(sortOrigin, lots) > NEARBY_LOT_THRESHOLD_METERS) return null;
+    const byId = new Map<any, number>();
+    lots.forEach((lot) => {
+      if (Array.isArray(lot.coordinates) && lot.coordinates.length >= 3) {
+        byId.set(lot.id, distanceMeters(sortOrigin, centroid(lot.coordinates)));
+      }
+    });
+    return byId;
+  }, [lots, sortOrigin]);
+  const distanceLabelFor = (lot: any) => {
+    const meters = lotDistances?.get(lot.id);
+    return meters === undefined ? undefined : formatDistance(meters);
+  };
+
   const filtered = useMemo(() => {
     // Split into words so "resident 16" or "16 resident" both find "Lot 16
     // Resident Reserve" — every word has to appear somewhere across name,
@@ -562,7 +616,7 @@ export default function LotsScreen() {
     // phrase typed out.
     const queryTokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
 
-    return permitTypeLots.filter((lot) => {
+    const matches = permitTypeLots.filter((lot) => {
       if (queryTokens.length > 0) {
         const haystack = [
           lot.name,
@@ -583,7 +637,12 @@ export default function LotsScreen() {
       if (availabilityFilter !== 'all' && lot.status !== availabilityFilter) return false;
       return true;
     });
-  }, [permitTypeLots, query, permitFilter, availabilityFilter]);
+    if (!lotDistances) return matches;
+    //closest first, whatever filters are applied; lots without a shape keep
+    //their usual relative order at the end (sort is stable)
+    const dist = (lot: any) => lotDistances.get(lot.id) ?? Infinity;
+    return [...matches].sort((a, b) => dist(a) - dist(b));
+  }, [permitTypeLots, query, permitFilter, availabilityFilter, lotDistances]);
 
   // Pinned lots render in their own fixed section above the scrollable list,
   // so they're always visible regardless of scroll position.
@@ -726,6 +785,7 @@ export default function LotsScreen() {
                   layout={cardLayout}
                   onPress={handleLotPress}
                   onTogglePin={togglePin}
+                  distanceLabel={distanceLabelFor(lot)}
                 />
               </View>
             ))}
@@ -746,6 +806,7 @@ export default function LotsScreen() {
             layout={cardLayout}
             onPress={handleLotPress}
             onTogglePin={togglePin}
+            distanceLabel={distanceLabelFor(item)}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -1146,8 +1207,13 @@ const styles = StyleSheet.create({
   clearButton: {
     padding: 2,
   },
+  //keeps the horizontal ScrollView only as tall as the pills
+  filterScroll: {
+    flexGrow: 0,
+  },
   filterRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     gap: 8,
   },
@@ -1447,6 +1513,12 @@ pageIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  //straight-line distance to the lot, shown only when the user is on campus
+  distanceText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#888',
   },
   statusIconRow: {
     flexDirection: 'row',

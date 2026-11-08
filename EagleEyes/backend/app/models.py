@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON, UniqueConstraint
 from app.database import Base
 from datetime import datetime, timezone
 from app.database import Base
@@ -85,6 +85,7 @@ class Note(Base):
     title = Column(String, index=True)
     description = Column(String, nullable=True)
     lot_name = Column(String, nullable=True)
+    reporter_name = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
     #the vehicle this note is about - may differ from the commuter's saved
     #profile plate, so it's its own field here rather than read off User
@@ -95,7 +96,12 @@ class Note(Base):
     #until Friday 5pm")
     event_start = Column(DateTime, nullable=True)
     event_end = Column(DateTime, nullable=True)
+    #the logged-in account that sent the note - never taken from the form, since
+    #Note Status and the acknowledgment push use it to find the note's author
     reporter_email = Column(String, nullable=False)
+    #the email the commuter typed as their contact on the form (defaults to
+    #their account email); only shown to admins, never used for identity
+    contact_email = Column(String, nullable=True)
     #set when an admin reviews/acknowledges the note; null until then. Admin
     #UI buckets notes into Pending/Active/Expired from this + event_end.
     acknowledged_at = Column(DateTime, nullable=True)
@@ -133,3 +139,47 @@ class PasswordResetToken(Base):
     used_at = Column(DateTime(timezone=True), nullable=True)
     #how many wrong codes were tried against this token (max 5, then it dies)
     attempts = Column(Integer, default=0, nullable=False)
+
+class PushToken(Base):
+    """
+    One row per device that has turned on alert notifications. A token is an
+    Expo push token (ExponentPushToken[...]) and belongs to whoever last signed
+    in on that device, so switching accounts moves it instead of duplicating it.
+    """
+    __tablename__ = "push_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    #"ios" / "android", only kept for debugging which devices are registered
+    platform = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class UserNotification(Base):
+    """
+    One commuter's personal "Note Status" entry: an admin acknowledged their
+    note. Unlike Alert, it's only ever visible to the one user it belongs to.
+    - source_id is deliberately not a ForeignKey: admins can hard-delete
+      alerts, and the commuter's history should still make sense afterwards,
+      so title/body/lot_name are a snapshot taken when the update was created
+    - the unique constraint is what guarantees one update per review event,
+      even if an admin double-taps or two admins act at the same time
+    """
+    __tablename__ = "user_notifications"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_type", "source_id", "kind", name="uq_user_notification_event"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    #'note_acknowledged' (older rows may be 'report_approved' / 'report_declined')
+    kind = Column(String, nullable=False)
+    #'alert' or 'note' - which table source_id points into
+    source_type = Column(String, nullable=False)
+    source_id = Column(Integer, nullable=False)
+    title = Column(String, nullable=False)
+    body = Column(String, nullable=True)
+    lot_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    #null = unread
+    read_at = Column(DateTime, nullable=True)

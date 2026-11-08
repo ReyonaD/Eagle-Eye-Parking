@@ -13,6 +13,7 @@ import { Alert } from '../../utils/webCompat';
 import { getHazardVisual } from '../../utils/alertVisuals';
 import { isHazardActive } from '../../utils/lotStatus';
 import { useFocusPolling } from '../../hooks/use-focus-polling';
+import { useAdminNotesBadge } from '../../context/AdminNotesBadgeContext';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -372,6 +373,8 @@ function HazardDetail({
 
 export default function HazardsScreen() {
   const { viewId } = useLocalSearchParams<{ viewId?: string }>();
+  //so the sidebar's pending count drops as soon as a report is reviewed
+  const { refreshBadge } = useAdminNotesBadge();
   const [pendingHazards, setPendingHazards] = useState<any[]>([]);
   const [declinedHazards, setDeclinedHazards] = useState<any[]>([]);
   const [publishedHazards, setPublishedHazards] = useState<any[]>([]);
@@ -448,6 +451,7 @@ export default function HazardsScreen() {
             await deleteAlert(hazard.id);
             setSelectedHazard(null);
             fetchHazards();
+            refreshBadge();
           } catch {
             Alert.alert('Error', 'Could not update this report. Check your connection.');
           }
@@ -485,6 +489,7 @@ export default function HazardsScreen() {
       await approveAlert(hazard.id, edits);
       setSelectedHazard(null);
       fetchHazards();
+      refreshBadge();
       Alert.alert('Published', 'The report is now live for commuters.');
     } catch {
       Alert.alert('Error', 'Could not publish this report. Check your connection.');

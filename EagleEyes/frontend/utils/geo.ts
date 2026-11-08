@@ -98,3 +98,10 @@ export function getStripeSegments(
   }
   return segments;
 }
+
+/** Short walking-distance label: "250 ft" under 0.1 mi, otherwise "0.4 mi". */
+export function formatDistance(meters: number): string {
+  const miles = meters / 1609.344;
+  if (miles < 0.1) return `${Math.max(50, Math.round((meters * 3.28084) / 50) * 50)} ft`;
+  return `${miles.toFixed(1)} mi`;
+}

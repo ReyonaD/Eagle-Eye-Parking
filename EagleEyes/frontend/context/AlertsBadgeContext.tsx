@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import { useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAlerts } from '../api/alerts';
+import { getMyUpdatesUnreadCount } from '../api/myUpdates';
 
 //device-local "last seen" marker: alerts with an id above this count as new.
 //Stored per device so each user's badge reflects what *they* haven't viewed yet.
@@ -19,6 +22,14 @@ interface AlertsBadgeContextType {
   refreshBadge: () => Promise<void>;
   markAlertsSeen: () => Promise<void>;
   markAlertRead: (id: string) => Promise<void>;
+  //unread "Note Status" entries (an admin acknowledged your
+  //note). Server-side read state, unlike the device-local alert ids above.
+  myUpdatesUnread: number;
+  refreshMyUpdatesUnread: () => Promise<void>;
+  //optimistic badge changes while the matching PUT is in flight, so the bell
+  //and the Note Status tab drop at the same moment the card does
+  markMyUpdateReadLocally: () => void;
+  markAllMyUpdatesReadLocally: () => void;
 }
 
 const AlertsBadgeContext = createContext<AlertsBadgeContextType | undefined>(undefined);
@@ -28,8 +39,53 @@ export function AlertsBadgeProvider({ children }: { children: ReactNode }) {
   const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set());
   const latestMaxId = useRef(0);
   const readIds = useRef<Set<number> | null>(null);
+  const [myUpdatesUnread, setMyUpdatesUnread] = useState(0);
+  //which login the current count belongs to, so it never carries over to the next account
+  const myUpdatesTokenRef = useRef<string | null>(null);
+  //bumped on every refresh and local change; a response that comes back after a
+  //newer refresh/change (or after a logout) is stale and gets dropped
+  const myUpdatesSeqRef = useRef(0);
+
+  const refreshMyUpdatesUnread = useCallback(async () => {
+    const seq = ++myUpdatesSeqRef.current;
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (token !== myUpdatesTokenRef.current) {
+        //logged out or switched accounts: drop the previous user's count right away
+        myUpdatesTokenRef.current = token;
+        setMyUpdatesUnread(0);
+      }
+      if (!token) return;
+      //returns 0 without a request when logged in as an admin
+      const count = await getMyUpdatesUnreadCount();
+      if (seq === myUpdatesSeqRef.current && myUpdatesTokenRef.current === token) {
+        setMyUpdatesUnread(count);
+      }
+    } catch {
+      //network hiccup: keep the current count rather than flashing it away
+    }
+  }, []);
+
+  const markMyUpdateReadLocally = useCallback(() => {
+    myUpdatesSeqRef.current++;
+    setMyUpdatesUnread((count) => Math.max(0, count - 1));
+  }, []);
+
+  const markAllMyUpdatesReadLocally = useCallback(() => {
+    myUpdatesSeqRef.current++;
+    setMyUpdatesUnread(0);
+  }, []);
+
+  //login, logout and account switches all move between route groups (login ->
+  //(tabs), (tabs) -> login), so refresh right then instead of waiting for the poll
+  const firstSegment = useSegments()[0];
+  useEffect(() => {
+    refreshMyUpdatesUnread();
+  }, [firstSegment, refreshMyUpdatesUnread]);
 
   const refreshBadge = useCallback(async () => {
+    //rides along with every existing refresh trigger (poll, foreground, tab focus)
+    refreshMyUpdatesUnread();
     try {
       let fetchFailed = false;
       const [hazards, events] = await Promise.all([
@@ -73,7 +129,7 @@ export function AlertsBadgeProvider({ children }: { children: ReactNode }) {
     } catch {
       //network hiccup: keep the current badge rather than flashing it away
     }
-  }, []);
+  }, [refreshMyUpdatesUnread]);
 
   const markAlertsSeen = useCallback(async () => {
     await AsyncStorage.setItem(LAST_SEEN_KEY, String(latestMaxId.current));
@@ -100,14 +156,19 @@ export function AlertsBadgeProvider({ children }: { children: ReactNode }) {
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') refreshBadge();
     });
+    //an alert push arriving while the app is open means the feed just changed
+    const pushSub = Platform.OS !== 'web'
+      ? Notifications.addNotificationReceivedListener(() => refreshBadge())
+      : null;
     return () => {
       clearInterval(id);
       sub.remove();
+      pushSub?.remove();
     };
   }, [refreshBadge]);
 
   return (
-    <AlertsBadgeContext.Provider value={{ unseenCount, unreadIds, refreshBadge, markAlertsSeen, markAlertRead }}>
+    <AlertsBadgeContext.Provider value={{ unseenCount, unreadIds, refreshBadge, markAlertsSeen, markAlertRead, myUpdatesUnread, refreshMyUpdatesUnread, markMyUpdateReadLocally, markAllMyUpdatesReadLocally }}>
       {children}
     </AlertsBadgeContext.Provider>
   );

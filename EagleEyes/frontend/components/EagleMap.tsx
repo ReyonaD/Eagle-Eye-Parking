@@ -8,6 +8,7 @@ import { getLotStatusIcons, isLotClosed, getActiveEvent, CLOSURE_CATEGORY, CLOSE
 import { getEventVisual } from '../utils/alertVisuals';
 import AlertIcon from './AlertIcon';
 import { LIGHT_MAP_STYLE, DARK_MAP_STYLE, getClosedLotColors, getLotStrokeColor, getLotFillOpacity } from '../utils/mapStyles';
+import { useLots } from '../context/LotsContext';
 
 interface EagleMapProps {
   liveLots: any[];
@@ -286,6 +287,9 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
 
   const handleMapReady = () => {
     console.log('[EagleMap] onMapReady | size:', mapSize.width, 'x', mapSize.height);
+    mapReadyRef.current = true;
+    // initialRegion is Main campus; move if another campus was already selected
+    if (selectedCampus !== 'Main campus') animateToCampus(selectedCampus);
     if (mapLoadTimeoutRef.current) clearTimeout(mapLoadTimeoutRef.current);
     mapLoadTimeoutRef.current = setTimeout(() => {
       if (!mapLoadedRef.current) {
@@ -299,11 +303,18 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     console.log('[EagleMap] onMapLoaded (tiles rendered)');
   };
 
-  useEffect(() => {
-    const region = CAMPUS_REGIONS[selectedCampus];
+  // Animating before onMapReady throws natively on Android ("Map size can't be
+  // 0"), so campus changes wait for the map; handleMapReady catches up.
+  const mapReadyRef = useRef(false);
+  const animateToCampus = (campus: string) => {
+    const region = CAMPUS_REGIONS[campus];
     if (region) {
       mapRef.current?.animateToRegion(region, 800);
     }
+  };
+
+  useEffect(() => {
+    if (mapReadyRef.current) animateToCampus(selectedCampus);
   }, [selectedCampus]);
 
   // On app entry, if the user is near a lot, zoom in on them instead of the
@@ -313,14 +324,18 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
   const hasAutoZoomedRef = useRef(false);
   const liveLotsRef = useRef(liveLots);
   liveLotsRef.current = liveLots;
+  const { updateUserLocation } = useLots();
 
   const handleUserLocationChange = (event: any) => {
-    if (hasAutoZoomedRef.current) return;
     const coordinate = event?.nativeEvent?.coordinate;
     if (!coordinate) return;
+    const userLoc = { latitude: coordinate.latitude, longitude: coordinate.longitude };
+    // Shared with the Lots tab so its permit picker can list nearby permits first.
+    updateUserLocation(userLoc);
+
+    if (hasAutoZoomedRef.current) return;
     hasAutoZoomedRef.current = true;
 
-    const userLoc = { latitude: coordinate.latitude, longitude: coordinate.longitude };
     const distance = nearestLotDistance(userLoc, liveLotsRef.current || []);
     if (distance <= NEARBY_LOT_THRESHOLD_METERS) {
       mapRef.current?.animateToRegion({

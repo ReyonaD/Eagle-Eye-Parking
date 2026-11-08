@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,13 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isPushEnabled, setPushEnabled, unregisterAlertPush, getWebNotificationBlocker } from '../../utils/pushNotifications';
 import { Alert } from '../../utils/webCompat';
 import { useUser } from '../../context/UserContext';
 import { PINNED_LOTS_STORAGE_KEY } from '../(tabs)/lots';
@@ -53,6 +55,30 @@ export default function AdminProfileScreen() {
   const router = useRouter();
   const { user, refreshUser } = useUser();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  useFocusEffect(useCallback(() => { isPushEnabled().then(setNotificationsEnabled); }, []));
+
+  const handleNotificationsToggle = async (enabled: boolean) => {
+    setNotificationsEnabled(enabled);
+    const nowEnabled = await setPushEnabled(enabled);
+    setNotificationsEnabled(nowEnabled);
+    if (enabled && !nowEnabled) {
+      if (Platform.OS !== 'web') {
+        Alert.alert('Notifications are off', 'Allow notifications for EagleEyes in your device settings, then turn this on again.');
+        return;
+      }
+      const blocker = getWebNotificationBlocker();
+      Alert.alert(
+        'Notifications are off',
+        blocker === 'insecure'
+          ? 'Browsers only allow notifications on https:// or localhost. Open the dashboard at http://localhost:8081 (not an IP address), then turn this on again.'
+          : blocker === 'unsupported'
+            ? "This browser doesn't support notifications. Try Chrome, Edge, Firefox or Safari."
+            : blocker === 'denied'
+              ? 'Notifications are blocked for this site. Click the icon left of the address bar → Site settings → Notifications → Allow, reload the page, then turn this on again.'
+              : 'The browser prompt was dismissed. Turn this on again and choose Allow.'
+      );
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -61,6 +87,8 @@ export default function AdminProfileScreen() {
         text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
+          //needs the auth token, so it has to run before it's removed
+          await unregisterAlertPush();
           await AsyncStorage.removeItem('token');
           await AsyncStorage.removeItem('role');
           await AsyncStorage.removeItem('isOwner');
@@ -135,7 +163,7 @@ export default function AdminProfileScreen() {
             </View>
             <Switch
               value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
+              onValueChange={handleNotificationsToggle}
               trackColor={{ false: '#ddd', true: '#00853E' }}
               thumbColor="#fff"
             />

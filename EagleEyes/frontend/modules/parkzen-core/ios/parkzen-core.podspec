@@ -6,19 +6,18 @@ Pod::Spec.new do |s|
   s.author         = ''
   s.homepage       = 'https://docs.expo.dev/modules/'
   s.platforms      = {
-    :ios => '15.1',
-    :tvos => '15.1'
+    :ios => '15.1'
   }
   s.source         = { git: '' }
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
+  # ParkZen notification taps arrive through expo-notifications' delegate
+  s.dependency 'EXNotifications'
 
-  # Add this line so the bridge is allowed to talk to the SDK!
-  #s.dependency 'ParkZenCore-Dist/Parking'
-  s.vendored_frameworks = 'ParkZenCoreV2.xcframework'
-  # Add this line to FORCE Xcode to look in the pod target root folder
-  #s.xcconfig = { 'FRAMEWORK_SEARCH_PATHS' => '"${PODS_TARGET_SRCROOT}"' }
+  # ParkZenCoreV2 comes from ParkZen's CocoaPod; app.config.js adds its git
+  # source and tag to the Podfile
+  s.dependency 'ParkZenCore-Dist/Parking'
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
