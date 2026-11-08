@@ -85,6 +85,7 @@ class Note(Base):
     title = Column(String, index=True)
     description = Column(String, nullable=True)
     lot_name = Column(String, nullable=True)
+    reporter_name = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
     #the vehicle this note is about - may differ from the commuter's saved
     #profile plate, so it's its own field here rather than read off User

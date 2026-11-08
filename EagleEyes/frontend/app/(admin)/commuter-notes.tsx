@@ -132,6 +132,16 @@ function NoteDetail({
           <Text style={styles.locationLabel}>
             LOT: <Text style={styles.locationValue}>{note.lot_name ?? 'Not specified'}</Text>
           </Text>
+          {!IS_WEB && (
+            <>
+              <Text style={styles.locationLabel}>
+                CONTACT NAME: <Text style={styles.locationValue}>{note.reporter_name || 'Not provided'}</Text>
+              </Text>
+              <Text style={styles.locationLabel}>
+                CONTACT EMAIL: <Text style={styles.locationValue}>{note.reporter_email || 'Not provided'}</Text>
+              </Text>
+            </>
+          )}
           <Text style={styles.locationLabel}>
             PHONE: <Text style={styles.locationValue}>{note.phone_number || 'Not provided'}</Text>
           </Text>
@@ -161,7 +171,7 @@ function NoteDetail({
           </View>
         )}
 
-        {!!note.reporter_email && (
+        {IS_WEB && !!note.reporter_email && (
           <Text style={styles.reporterEmails} numberOfLines={2}>
             REPORTED BY: {note.reporter_email}
           </Text>
