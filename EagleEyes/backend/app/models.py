@@ -96,7 +96,12 @@ class Note(Base):
     #until Friday 5pm")
     event_start = Column(DateTime, nullable=True)
     event_end = Column(DateTime, nullable=True)
+    #the logged-in account that sent the note - never taken from the form, since
+    #Note Status and the acknowledgment push use it to find the note's author
     reporter_email = Column(String, nullable=False)
+    #the email the commuter typed as their contact on the form (defaults to
+    #their account email); only shown to admins, never used for identity
+    contact_email = Column(String, nullable=True)
     #set when an admin reviews/acknowledges the note; null until then. Admin
     #UI buckets notes into Pending/Active/Expired from this + event_end.
     acknowledged_at = Column(DateTime, nullable=True)

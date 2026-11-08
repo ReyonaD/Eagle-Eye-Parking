@@ -7,6 +7,7 @@ import {
   ScrollView,
   Switch,
   Image,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -229,19 +230,24 @@ export function ProfileScreen() {
 
         {/* Preferences */}
         <Section title="Preferences">
-          <View style={styles.row}>
-            <View style={styles.rowIcon}>
-              <Ionicons name="notifications-outline" size={27} color="#00853E" />
-            </View>
-            <Text style={styles.rowLabel}>Notifications</Text>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={handleNotificationsToggle}
-              trackColor={{ false: '#ddd', true: '#00853E' }}
-              thumbColor="#fff"
-            />
-          </View>
-          <Divider />
+          {/* phone pushes only - commuters get no notifications on web, so the switch would do nothing there */}
+          {Platform.OS !== 'web' && (
+            <>
+              <View style={styles.row}>
+                <View style={styles.rowIcon}>
+                  <Ionicons name="notifications-outline" size={27} color="#00853E" />
+                </View>
+                <Text style={styles.rowLabel}>Notifications</Text>
+                <Switch
+                  value={notificationsEnabled}
+                  onValueChange={handleNotificationsToggle}
+                  trackColor={{ false: '#ddd', true: '#00853E' }}
+                  thumbColor="#fff"
+                />
+              </View>
+              <Divider />
+            </>
+          )}
           <MenuRow
             icon="car-sport-outline"
             label="Profile Setting"

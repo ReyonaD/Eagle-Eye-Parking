@@ -6,12 +6,13 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isPushEnabled, setPushEnabled, unregisterAlertPush } from '../../utils/pushNotifications';
+import { isPushEnabled, setPushEnabled, unregisterAlertPush, getWebNotificationBlocker } from '../../utils/pushNotifications';
 import { Alert } from '../../utils/webCompat';
 import { useUser } from '../../context/UserContext';
 import { PINNED_LOTS_STORAGE_KEY } from '../(tabs)/lots';
@@ -61,7 +62,21 @@ export default function AdminProfileScreen() {
     const nowEnabled = await setPushEnabled(enabled);
     setNotificationsEnabled(nowEnabled);
     if (enabled && !nowEnabled) {
-      Alert.alert('Notifications are off', 'Allow notifications for EagleEyes in your device settings, then turn this on again.');
+      if (Platform.OS !== 'web') {
+        Alert.alert('Notifications are off', 'Allow notifications for EagleEyes in your device settings, then turn this on again.');
+        return;
+      }
+      const blocker = getWebNotificationBlocker();
+      Alert.alert(
+        'Notifications are off',
+        blocker === 'insecure'
+          ? 'Browsers only allow notifications on https:// or localhost. Open the dashboard at http://localhost:8081 (not an IP address), then turn this on again.'
+          : blocker === 'unsupported'
+            ? "This browser doesn't support notifications. Try Chrome, Edge, Firefox or Safari."
+            : blocker === 'denied'
+              ? 'Notifications are blocked for this site. Click the icon left of the address bar → Site settings → Notifications → Allow, reload the page, then turn this on again.'
+              : 'The browser prompt was dismissed. Turn this on again and choose Allow.'
+      );
     }
   };
 

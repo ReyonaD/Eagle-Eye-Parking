@@ -82,8 +82,41 @@ export async function unregisterAlertPush(): Promise<void> {
   await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
 }
 
+/**
+ * Web only: why browser notifications can't be turned on right now, or null if
+ * they can. Lets the Profile switch explain the actual fix instead of a
+ * generic "check your settings".
+ */
+export function getWebNotificationBlocker(): 'unsupported' | 'insecure' | 'denied' | null {
+  if (pushSupported || typeof window === 'undefined') return null;
+  if (!('Notification' in window)) return 'unsupported';
+  //browsers only allow notifications on https:// or localhost - opening the
+  //dashboard by LAN IP (http://192.168.x.x:8081) is always refused
+  if (!window.isSecureContext) return 'insecure';
+  //once blocked (or the prompt was dismissed a few times) the browser won't
+  //prompt again; only the site settings can undo it
+  if (Notification.permission === 'denied') return 'denied';
+  return null;
+}
+
 /** Backs the Profile "Notifications" switch. Returns the resulting on/off state. */
 export async function setPushEnabled(enabled: boolean): Promise<boolean> {
+  if (!pushSupported) {
+    //web has no Expo push; the switch instead controls the admin dashboard's
+    //browser notifications (hooks/use-admin-web-alerts.ts). Ask for permission
+    //FIRST, before any await: Safari/Firefox only show the prompt while still
+    //inside the tap that triggered it.
+    let granted = false;
+    if (enabled && getWebNotificationBlocker() === null) {
+      const permission =
+        Notification.permission === 'granted'
+          ? 'granted'
+          : await Notification.requestPermission().catch(() => 'denied');
+      granted = permission === 'granted';
+    }
+    await AsyncStorage.setItem(PUSH_ENABLED_KEY, granted ? 'true' : 'false');
+    return granted;
+  }
   await AsyncStorage.setItem(PUSH_ENABLED_KEY, enabled ? 'true' : 'false');
   if (!enabled) {
     await unregisterAlertPush();

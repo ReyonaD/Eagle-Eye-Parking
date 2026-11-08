@@ -9,6 +9,7 @@ import { Alert } from '../../utils/webCompat';
 import { BASE_URL } from '../../api/alerts';
 import { getNotes, acknowledgeNote } from '../../api/notes';
 import { useFocusPolling } from '../../hooks/use-focus-polling';
+import { useAdminNotesBadge } from '../../context/AdminNotesBadgeContext';
 import {
   parseUTC, toLocalDateString, getTodayDateString, formatDate, getEventRange,
   classifyNote, NoteBucket,
@@ -138,7 +139,7 @@ function NoteDetail({
                 CONTACT NAME: <Text style={styles.locationValue}>{note.reporter_name || 'Not provided'}</Text>
               </Text>
               <Text style={styles.locationLabel}>
-                CONTACT EMAIL: <Text style={styles.locationValue}>{note.reporter_email || 'Not provided'}</Text>
+                CONTACT EMAIL: <Text style={styles.locationValue}>{note.contact_email || note.reporter_email || 'Not provided'}</Text>
               </Text>
             </>
           )}
@@ -197,6 +198,8 @@ const byEndDesc = (a: any, b: any) => getEventRange(b).end.getTime() - getEventR
 
 export default function CommuterNotesScreen() {
   const router = useRouter();
+  //so the notes badge drops as soon as a note is acknowledged
+  const { refreshBadge } = useAdminNotesBadge();
   const { viewId } = useLocalSearchParams<{ viewId?: string }>();
   const [notes, setNotes] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -246,6 +249,7 @@ export default function CommuterNotesScreen() {
       await acknowledgeNote(note.id);
       setSelectedNote(null);
       fetchNotes();
+      refreshBadge();
     } catch {
       Alert.alert('Error', 'Could not acknowledge this note. Check your connection.');
     }

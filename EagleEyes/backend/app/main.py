@@ -44,6 +44,7 @@ with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_state VARCHAR"))
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS reporter_name VARCHAR"))
+    _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS contact_email VARCHAR"))
     #hazards now stay on the map until an admin deactivates them; before that
     #they simply lapsed 24h after being reported. When the column is first
     #added, close out those older hazards at their old expiry so they don't
@@ -972,7 +973,10 @@ def create_note(
         image_urls=note_data.image_urls or [],
         event_start=note_data.event_start,
         event_end=note_data.event_end,
-        reporter_email=str(note_data.reporter_email or current_user.email),
+        #always the logged-in account: Note Status and the acknowledgment push
+        #look notes up by this, so a typed-in email must never replace it
+        reporter_email=current_user.email,
+        contact_email=str(note_data.contact_email) if note_data.contact_email else None,
     )
     db.add(new_note)
     db.commit()

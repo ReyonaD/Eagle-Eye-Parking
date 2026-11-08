@@ -229,7 +229,7 @@ export default function ReportNoteScreen() {
       await createNote({
         title: reason.trim(),
         reporter_name: Platform.OS !== 'web' ? contactName.trim() : undefined,
-        reporter_email: Platform.OS !== 'web' ? contactEmail.trim() : undefined,
+        contact_email: Platform.OS !== 'web' ? contactEmail.trim() : undefined,
         description: detail.trim() || undefined,
         lot_name: selectedLot || undefined,
         event_start: window.eventStart.toISOString(),
