@@ -9,6 +9,7 @@ import { buildPermitHoursIndex, PermitHours } from '../utils/permitHours';
 import { MapTheme } from '../utils/mapStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { buildLotStatuses, applyLotStatus, LotStatus } from '../utils/lotStatus';
+import { distanceMeters, LatLng } from '../utils/geo';
 //define the exact shape of data
 interface LotsContextType {
     lots: any[];
@@ -43,7 +44,16 @@ interface LotsContextType {
     setMapTheme: (value: MapTheme) => void;
     // mapTheme resolved against the phone's setting.
     isDarkMap: boolean;
+    // Last known device location, reported by the Map tab's own location fix
+    // (so the Lots tab can rank nearby permits without a second permission
+    // prompt). null until a fix arrives or if permission was denied.
+    userLocation: LatLng | null;
+    updateUserLocation: (value: LatLng) => void;
 }
+
+// Ignore location updates smaller than this so GPS jitter doesn't re-render
+// every screen that reads the context.
+const USER_LOCATION_MIN_MOVE_METERS = 25;
 
 // Exported so other screens (e.g. profile settings) can read/write it directly if needed.
 export const FILTER_BY_PERMIT_STORAGE_KEY = 'filterLotsByPermit';
@@ -124,13 +134,14 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
     const [filterByPermit, setFilterByPermitState] = useState(false);
-    const [previewMode, setPreviewMode] = useState<'day' | 'night' | null>(null);
+    const [previewMode, setPreviewModeState] = useState<'day' | 'night' | null>(null);
     const [mapType, setMapTypeState] = useState<'standard' | 'satellite'>('standard');
     const [mapTheme, setMapThemeState] = useState<MapTheme>('auto');
     const colorScheme = useColorScheme();
     const isDarkMap = mapTheme === 'dark' || (mapTheme === 'auto' && colorScheme === 'dark');
     const [lotStatuses, setLotStatuses] = useState<Record<string, LotStatus>>({});
     const [permitHours, setPermitHours] = useState<Record<string, PermitHours>>({});
+    const [userLocation, setUserLocation] = useState<LatLng | null>(null);
     const hasLoadedOnce = React.useRef(false);
 
     useEffect(() => {
@@ -320,6 +331,19 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     return () => clearInterval(intervalId);
   }, []);
 
+  // Picking the time of day it actually is goes back to following the clock
+  // (null), so switching to Night and back to Day doesn't leave the app pinned
+  // to "Day" — which would silently turn into a stale preview at 5:30pm.
+  const setPreviewMode = (value: 'day' | 'night' | null) => {
+    setPreviewModeState(value !== null && (value === 'night') === isNightWindow() ? null : value);
+  };
+
+  const updateUserLocation = (value: LatLng) => {
+    setUserLocation((prev) =>
+      prev && distanceMeters(prev, value) < USER_LOCATION_MIN_MOVE_METERS ? prev : value
+    );
+  };
+
   const actuallyNight = isNightWindow();
   // null previewMode = follow the real clock.
   const previewingNight = previewMode === null ? actuallyNight : previewMode === 'night';
@@ -354,6 +378,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
         <LotsContext.Provider value={{
           lots, isLoading, lastRefreshAt, fetchLots, fetchLotStatuses, permitHours, filterByPermit, setFilterByPermit,
           previewMode, setPreviewMode, actuallyNight, mapType, setMapType, mapTheme, setMapTheme, isDarkMap,
+          userLocation, updateUserLocation,
         }}>
             {children}
         </LotsContext.Provider>

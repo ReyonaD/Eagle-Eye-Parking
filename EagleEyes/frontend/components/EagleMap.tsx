@@ -8,6 +8,7 @@ import { getLotStatusIcons, isLotClosed, getActiveEvent, CLOSURE_CATEGORY, CLOSE
 import { getEventVisual } from '../utils/alertVisuals';
 import AlertIcon from './AlertIcon';
 import { LIGHT_MAP_STYLE, DARK_MAP_STYLE, getClosedLotColors, getLotStrokeColor, getLotFillOpacity } from '../utils/mapStyles';
+import { useLots } from '../context/LotsContext';
 
 interface EagleMapProps {
   liveLots: any[];
@@ -323,14 +324,18 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
   const hasAutoZoomedRef = useRef(false);
   const liveLotsRef = useRef(liveLots);
   liveLotsRef.current = liveLots;
+  const { updateUserLocation } = useLots();
 
   const handleUserLocationChange = (event: any) => {
-    if (hasAutoZoomedRef.current) return;
     const coordinate = event?.nativeEvent?.coordinate;
     if (!coordinate) return;
+    const userLoc = { latitude: coordinate.latitude, longitude: coordinate.longitude };
+    // Shared with the Lots tab so its permit picker can list nearby permits first.
+    updateUserLocation(userLoc);
+
+    if (hasAutoZoomedRef.current) return;
     hasAutoZoomedRef.current = true;
 
-    const userLoc = { latitude: coordinate.latitude, longitude: coordinate.longitude };
     const distance = nearestLotDistance(userLoc, liveLotsRef.current || []);
     if (distance <= NEARBY_LOT_THRESHOLD_METERS) {
       mapRef.current?.animateToRegion({
