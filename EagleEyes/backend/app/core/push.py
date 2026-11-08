@@ -4,7 +4,7 @@ from typing import Optional
 import httpx
 
 from app.database import session_local
-from app.models import Alert, PushToken
+from app.models import Alert, Note, PushToken, User
 
 #Expo's push service forwards each message to FCM (Android) or APNs (iOS), so
 #the backend only ever deals with Expo push tokens, never Firebase/Apple keys
@@ -34,6 +34,48 @@ def _alert_message(alert: Alert) -> tuple[str, str]:
     return title, body
 
 
+def _send(db, tokens: list[str], title: str, body: str, data: dict, log_ref: str) -> None:
+    """Sends one message to each Expo token in batches and forgets tokens Expo
+    says are gone (app uninstalled / notifications revoked)."""
+    dead_tokens = []
+
+    with httpx.Client(timeout=15) as client:
+        for start in range(0, len(tokens), EXPO_BATCH_SIZE):
+            batch = tokens[start:start + EXPO_BATCH_SIZE]
+            messages = [
+                {
+                    "to": token,
+                    "title": title,
+                    "body": body,
+                    "sound": "default",
+                    "channelId": ANDROID_CHANNEL_ID,
+                    "data": data,
+                }
+                for token in batch
+            ]
+            try:
+                response = client.post(EXPO_PUSH_URL, json=messages, headers={"Accept": "application/json"})
+                response.raise_for_status()
+                tickets = response.json().get("data", [])
+            except (httpx.HTTPError, ValueError) as e:
+                print(f"[PUSH] Expo push request failed for {log_ref}: {e}")
+                continue
+
+            #tickets come back in the same order as the messages
+            for token, ticket in zip(batch, tickets):
+                if ticket.get("status") != "error":
+                    continue
+                error = (ticket.get("details") or {}).get("error")
+                if error == "DeviceNotRegistered":
+                    dead_tokens.append(token)
+                else:
+                    print(f"[PUSH] Expo rejected a message for {log_ref}: {error or ticket.get('message')}")
+
+    if dead_tokens:
+        db.query(PushToken).filter(PushToken.token.in_(dead_tokens)).delete(synchronize_session=False)
+        db.commit()
+
+
 def send_alert_published(alert_id: int, exclude_user_id: Optional[int] = None) -> None:
     """Notifies every registered device that an alert just went live.
     Runs as a background task, after the request's own DB session is closed,
@@ -53,44 +95,30 @@ def send_alert_published(alert_id: int, exclude_user_id: Optional[int] = None) -
             return
 
         title, body = _alert_message(alert)
-        data = {"alert_id": alert.id, "alert_type": alert.alert_type}
-        dead_tokens = []
+        _send(db, tokens, title, body, {"alert_id": alert.id, "alert_type": alert.alert_type}, f"alert {alert_id}")
+    finally:
+        db.close()
 
-        with httpx.Client(timeout=15) as client:
-            for start in range(0, len(tokens), EXPO_BATCH_SIZE):
-                batch = tokens[start:start + EXPO_BATCH_SIZE]
-                messages = [
-                    {
-                        "to": token,
-                        "title": title,
-                        "body": body,
-                        "sound": "default",
-                        "channelId": ANDROID_CHANNEL_ID,
-                        "data": data,
-                    }
-                    for token in batch
-                ]
-                try:
-                    response = client.post(EXPO_PUSH_URL, json=messages, headers={"Accept": "application/json"})
-                    response.raise_for_status()
-                    tickets = response.json().get("data", [])
-                except (httpx.HTTPError, ValueError) as e:
-                    print(f"[PUSH] Expo push request failed for alert {alert_id}: {e}")
-                    continue
 
-                #tickets come back in the same order as the messages
-                for token, ticket in zip(batch, tickets):
-                    if ticket.get("status") != "error":
-                        continue
-                    error = (ticket.get("details") or {}).get("error")
-                    if error == "DeviceNotRegistered":
-                        #app uninstalled or notifications revoked: stop sending to it
-                        dead_tokens.append(token)
-                    else:
-                        print(f"[PUSH] Expo rejected a message for alert {alert_id}: {error or ticket.get('message')}")
+def send_note_acknowledged(note_id: int) -> None:
+    """Tells only the commuter who wrote the note (every device they're signed
+    in on) that the parking team acknowledged it. Background task, own session.
+    The message carries the note's title only - never phone, plate or description."""
+    db = session_local()
+    try:
+        note = db.query(Note).filter(Note.id == note_id).first()
+        if not note or note.acknowledged_at is None:
+            return
+        user = db.query(User).filter(User.email == note.reporter_email).first()
+        if not user:
+            return
+        tokens = [row.token for row in db.query(PushToken).filter(PushToken.user_id == user.id).all()]
+        if not tokens:
+            return
 
-        if dead_tokens:
-            db.query(PushToken).filter(PushToken.token.in_(dead_tokens)).delete(synchronize_session=False)
-            db.commit()
+        body = f'The parking team has seen "{note.title}".'
+        if len(body) > MAX_BODY_LENGTH:
+            body = body[:MAX_BODY_LENGTH - 1].rstrip() + "…"
+        _send(db, tokens, "Your note was acknowledged", body, {"note_id": note.id}, f"note {note_id}")
     finally:
         db.close()

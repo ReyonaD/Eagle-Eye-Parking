@@ -1,9 +1,9 @@
-// My Updates — frontend API boundary.
+// Note Status — frontend API boundary.
 //
-// A commuter's personal history of admin reviews: hazard reports approved or
-// declined, and Notes to Admin acknowledged. Unlike the public alerts feed in
-// api/alerts.js, every call here is for the logged-in user only — the backend
-// scopes all of /users/me/notifications to the token's owner.
+// A commuter's own Notes to Admin and whether each has been acknowledged,
+// plus the unread "your note was acknowledged" entries behind the badges.
+// Unlike the public alerts feed in api/alerts.js, every call here is for the
+// logged-in user only — the backend scopes all of /users/me/* to the token's owner.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../utils/webCompat';
@@ -17,20 +17,54 @@ const authHeaders = async () => {
 const throwIfNotOk = async (response) => {
     if (!response.ok) {
         const body = await response.text();
-        throw new Error(`HTTP ${response.status}: ${body}`);
+        const error = new Error(`HTTP ${response.status}: ${body}`);
+        error.status = response.status;
+        throw error;
     }
 };
 
-// GET: The logged-in user's updates, newest first (read and unread).
-export const getMyUpdates = async (limit = 50) => {
+// GET: The logged-in user's own notes, newest first, with acknowledged_at
+// (null = still pending). Skips the request when nobody (or an admin) is logged in.
+export const getMyNotes = async () => {
+    const [token, role] = await Promise.all([
+        AsyncStorage.getItem('token'),
+        AsyncStorage.getItem('role'),
+    ]);
+    if (!token || role === 'admin') return [];
     try {
-        const response = await apiFetch(`${BASE_URL}/users/me/notifications?limit=${limit}`, {
-            headers: await authHeaders(),
+        const response = await apiFetch(`${BASE_URL}/users/me/notes`, {
+            headers: { 'Authorization': `Bearer ${token}` },
         });
         await throwIfNotOk(response);
         return await response.json();
     } catch (error) {
-        console.error("API Error (getMyUpdates):", error);
+        if (error.status !== 401) {
+            console.error("API Error (getMyNotes):", error);
+        }
+        throw error;
+    }
+};
+
+// GET: The logged-in user's updates, newest first (read and unread).
+// Like the unread count, skips the request when nobody (or an admin) is logged in.
+export const getMyUpdates = async (limit = 50) => {
+    const [token, role] = await Promise.all([
+        AsyncStorage.getItem('token'),
+        AsyncStorage.getItem('role'),
+    ]);
+    if (!token || role === 'admin') return [];
+    try {
+        const response = await apiFetch(`${BASE_URL}/users/me/notifications?limit=${limit}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        await throwIfNotOk(response);
+        return await response.json();
+    } catch (error) {
+        //an expired/foreign token is expected after switching backends; the
+        //screen still shows its error state, it just doesn't spam the console
+        if (error.status !== 401) {
+            console.error("API Error (getMyUpdates):", error);
+        }
         throw error;
     }
 };

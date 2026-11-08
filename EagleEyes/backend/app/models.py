@@ -151,9 +151,8 @@ class PushToken(Base):
 
 class UserNotification(Base):
     """
-    One commuter's personal "My Updates" entry: an admin approved/declined
-    their hazard report or acknowledged their note. Unlike Alert, it's only
-    ever visible to the one user it belongs to.
+    One commuter's personal "Note Status" entry: an admin acknowledged their
+    note. Unlike Alert, it's only ever visible to the one user it belongs to.
     - source_id is deliberately not a ForeignKey: admins can hard-delete
       alerts, and the commuter's history should still make sense afterwards,
       so title/body/lot_name are a snapshot taken when the update was created
@@ -167,7 +166,7 @@ class UserNotification(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    #'report_approved' / 'report_declined' / 'note_acknowledged'
+    #'note_acknowledged' (older rows may be 'report_approved' / 'report_declined')
     kind = Column(String, nullable=False)
     #'alert' or 'note' - which table source_id points into
     source_type = Column(String, nullable=False)

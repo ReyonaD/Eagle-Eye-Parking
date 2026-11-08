@@ -18,12 +18,12 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { getAlertVisual, getCategoryLabel } from '../../utils/alertVisuals';
 import AlertIcon from '../../components/AlertIcon';
 import { useAlertsBadge } from '../../context/AlertsBadgeContext';
-import { getMyUpdates, markMyUpdateRead, markAllMyUpdatesRead } from '../../api/myUpdates';
-import MyUpdateCard, { MyUpdate } from '../../components/MyUpdateCard';
+import { getMyNotes, getMyUpdates, markMyUpdateRead, markAllMyUpdatesRead } from '../../api/myUpdates';
+import NoteStatusCard, { MyNote, NoteAcknowledgment } from '../../components/NoteStatusCard';
 
-//'My Updates' is the commuter's personal review history, not a filter over the
-//public feed - it renders its own list (see AlertsScreen)
-type FilterType = 'All' | 'Hazard' | 'Event' | 'My Updates';
+//'Note Status' lists the commuter's own Notes to Admin (pending/acknowledged),
+//not a filter over the public feed - it renders its own list (see AlertsScreen)
+type FilterType = 'All' | 'Hazard' | 'Event' | 'Note Status';
 
 interface AlertItem {
   id: string;
@@ -115,14 +115,14 @@ function FilterTabs({
   onSelect: (value: FilterType) => void;
   updatesUnread: number;
 }) {
-  const tabs: FilterType[] = ['All', 'Hazard', 'Event', 'My Updates'];
+  const tabs: FilterType[] = ['All', 'Hazard', 'Event', 'Note Status'];
 
   return (
     <View style={styles.filterHeader}>
       <View style={styles.filterRow}>
         {tabs.map((tab) => {
           const active = selected === tab;
-          const isUpdates = tab === 'My Updates';
+          const isUpdates = tab === 'Note Status';
           const showCount = isUpdates && updatesUnread > 0;
 
           return (
@@ -373,12 +373,16 @@ export default function AlertsScreen() {
     }
   }, []);
 
-  const [myUpdates, setMyUpdates] = useState<MyUpdate[]>([]);
+  const [myNotes, setMyNotes] = useState<MyNote[]>([]);
+  //acknowledgment entries, only used for the unread dot on each note
+  const [myUpdates, setMyUpdates] = useState<NoteAcknowledgment[]>([]);
   const [myUpdatesError, setMyUpdatesError] = useState(false);
 
   const loadMyUpdates = useCallback(async () => {
     try {
-      setMyUpdates(await getMyUpdates());
+      const [notes, acks] = await Promise.all([getMyNotes(), getMyUpdates()]);
+      setMyNotes(notes);
+      setMyUpdates(acks);
       setMyUpdatesError(false);
     } catch {
       setMyUpdatesError(true);
@@ -396,7 +400,7 @@ export default function AlertsScreen() {
 
   useEffect(() => {
     if (view === 'updates') {
-      setFilter('My Updates');
+      setFilter('Note Status');
       //clear it so the next bell tap with the same param still switches tabs
       router.setParams({ view: undefined });
     }
@@ -408,14 +412,13 @@ export default function AlertsScreen() {
     setRefreshing(false);
   }, [loadAlerts, loadMyUpdates, refreshMyUpdatesUnread]);
 
-  //opening an update marks it read; it stays in the history either way
-  const handleUpdatePress = useCallback(async (update: MyUpdate) => {
-    if (update.read_at) return;
+  //tapping a newly acknowledged note clears its unread dot
+  const handleUpdatePress = useCallback(async (notificationId: number) => {
     const now = new Date().toISOString();
-    setMyUpdates((prev) => prev.map((u) => (u.id === update.id ? { ...u, read_at: now } : u)));
+    setMyUpdates((prev) => prev.map((u) => (u.id === notificationId ? { ...u, read_at: now } : u)));
     markMyUpdateReadLocally();
     try {
-      await markMyUpdateRead(update.id);
+      await markMyUpdateRead(notificationId);
     } catch {
       //put the real state back rather than showing it read when it isn't
       loadMyUpdates();
@@ -483,18 +486,25 @@ export default function AlertsScreen() {
     }
   }
 
-  //My Updates is a history, so it stays in time order (read and unread mixed,
-  //unread ones highlighted) instead of pinning unread items to the top
-  const showingUpdates = filter === 'My Updates';
-  const localUpdatesUnread = myUpdates.filter((u) => !u.read_at).length;
+  //Note Status: every note the commuter sent, still-pending ones first, each
+  //newest first. A note acknowledged since they last looked gets an unread dot.
+  const showingUpdates = filter === 'Note Status';
+  const unreadAckByNoteId = new Map<number, number>();
+  myUpdates.forEach((u) => {
+    if (u.source_type === 'note' && !u.read_at) unreadAckByNoteId.set(u.source_id, u.id);
+  });
+  const localUpdatesUnread = unreadAckByNoteId.size;
   const updatesListData: any[] = [];
-  if (myUpdates.length) {
+  if (myNotes.length) {
     updatesListData.push({ id: 'updates-actions', kind: 'updatesActions' });
-    (['Today', 'Yesterday', 'Earlier'] as const).forEach((section) => {
-      const items = myUpdates.filter((u) => sectionFor(u.created_at) === section);
+    const groups = [
+      { label: 'PENDING', items: myNotes.filter((n) => !n.acknowledged_at) },
+      { label: 'ACKNOWLEDGED', items: myNotes.filter((n) => !!n.acknowledged_at) },
+    ];
+    groups.forEach(({ label, items }) => {
       if (!items.length) return;
-      updatesListData.push({ id: `updates-${section}-header`, kind: 'header', label: section.toUpperCase() });
-      items.forEach((u) => updatesListData.push({ id: `update-${u.id}`, kind: 'update', update: u }));
+      updatesListData.push({ id: `notes-${label}-header`, kind: 'header', label });
+      items.forEach((n) => updatesListData.push({ id: `note-${n.id}`, kind: 'update', note: n }));
     });
   }
 
@@ -511,14 +521,16 @@ export default function AlertsScreen() {
             return (
               <View style={styles.updatesActions}>
                 <Text style={styles.updatesSummary}>
-                  {localUpdatesUnread > 0 ? `${localUpdatesUnread} unread` : 'All caught up'}
+                  {localUpdatesUnread > 0
+                    ? `${localUpdatesUnread} newly acknowledged`
+                    : `${myNotes.length} note${myNotes.length === 1 ? '' : 's'} sent`}
                 </Text>
                 {localUpdatesUnread > 0 && (
                   <TouchableOpacity
                     onPress={handleMarkAllRead}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     accessibilityRole="button"
-                    accessibilityLabel="Mark all updates as read"
+                    accessibilityLabel="Mark all acknowledgments as read"
                   >
                     <Text style={styles.markAllText}>Mark all read</Text>
                   </TouchableOpacity>
@@ -527,11 +539,17 @@ export default function AlertsScreen() {
             );
           }
           if (item.kind === 'update') {
+            const note: MyNote = item.note;
+            const ackId = unreadAckByNoteId.get(note.id);
             return (
-              <MyUpdateCard
-                update={item.update}
-                timeLabel={timeAgo(item.update.created_at)}
-                onPress={() => handleUpdatePress(item.update)}
+              <NoteStatusCard
+                note={note}
+                unread={ackId !== undefined}
+                sentLabel={timeAgo(note.created_at)}
+                acknowledgedLabel={note.acknowledged_at ? timeAgo(note.acknowledged_at) : undefined}
+                onPress={() => {
+                  if (ackId !== undefined) handleUpdatePress(ackId);
+                }}
               />
             );
           }
@@ -569,12 +587,12 @@ export default function AlertsScreen() {
                 color="#C4CBD2"
               />
               <Text style={styles.emptyText}>
-                {myUpdatesError ? "Couldn't load your updates" : 'No updates yet'}
+                {myUpdatesError ? "Couldn't load your notes" : 'No notes yet'}
               </Text>
               <Text style={[styles.emptySubtext, styles.emptySubtextWide]}>
                 {myUpdatesError
                   ? 'Pull down to try again'
-                  : "When the parking team reviews your hazard report or note, you'll see it here."}
+                  : "Notes you send to the parking team show up here, so you can see when they've been acknowledged."}
               </Text>
             </View>
           ) : (
@@ -709,7 +727,7 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  //"My Updates" is longer than the other labels and carries a count, so it
+  //"Note Status" is longer than the other labels and carries a count, so it
   //gets a bit more of the row instead of truncating on narrow phones
   filterBtnWide: {
     flex: 1.55,

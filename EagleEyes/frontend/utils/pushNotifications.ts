@@ -117,11 +117,22 @@ export function useAlertPushNotifications(ready: boolean) {
     }
 
     const openAlert = async (response: Notifications.NotificationResponse) => {
-      const data = response.notification.request.content.data as { alert_id?: number; alert_type?: string };
-      //ignore anything that isn't one of our alert pushes
-      if (data?.alert_id == null) return;
+      const data = response.notification.request.content.data as {
+        alert_id?: number;
+        alert_type?: string;
+        note_id?: number;
+      };
+      //ignore anything that isn't one of our alert or note pushes
+      if (data?.alert_id == null && data?.note_id == null) return;
       if (!(await AsyncStorage.getItem('token'))) return;
       const role = await AsyncStorage.getItem('role');
+      //"your note was acknowledged" (sent only to the note's author) opens Note Status
+      if (data.note_id != null) {
+        if (role !== 'admin') {
+          router.push({ pathname: '/(tabs)/alerts', params: { view: 'updates' } });
+        }
+        return;
+      }
       if (role === 'admin') {
         router.push(data.alert_type === 'event' ? '/(admin)/events' : '/(admin)/hazards');
       } else {

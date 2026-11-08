@@ -16,7 +16,7 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { unseenCount, myUpdatesUnread } = useAlertsBadge();
-  //the commuter bell covers new public alerts plus unread personal My Updates
+  //the commuter bell covers new public alerts plus newly acknowledged notes
   const bellCount = unseenCount + myUpdatesUnread;
   //safe to call even on the commuter side, where no provider is mounted -
   //see useAdminNotesBadge's own comment for why
@@ -59,7 +59,7 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
       ) : (
         <TouchableOpacity
           style={styles.bellWrapper}
-          //if everything new is personal, open straight to My Updates
+          //if everything new is a note acknowledgment, open straight to Note Status
           onPress={() =>
             router.push(
               myUpdatesUnread > 0 && unseenCount === 0

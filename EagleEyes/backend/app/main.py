@@ -17,12 +17,12 @@ from . import models
 #imports custom files
 from app.database import get_db
 from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken, PushToken, UserNotification
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest, PushTokenRegister, UserNotificationResponse, UnreadCountResponse
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest, PushTokenRegister, UserNotificationResponse, UnreadCountResponse, MyNoteResponse
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
 from app.core.email import send_password_reset_email
-from app.core.push import send_alert_published, is_expo_push_token
-from app.core.notifications import notify_report_reviewed, notify_note_acknowledged
+from app.core.push import send_alert_published, send_note_acknowledged, is_expo_push_token
+from app.core.notifications import notify_note_acknowledged
 from typing import List, Optional
 Base.metadata.create_all(bind=engine)
 #create_all does not add new columns to existing tables, so patch them in here.
@@ -410,8 +410,30 @@ def remove_push_token(
     db.commit()
     return {"message": "Push token removed."}
 
-#─── My Updates (a commuter's own review/acknowledgment history). Every query
-#here is scoped to current_user, so nobody can read or mark another user's ──
+#─── Note Status (a commuter's own Notes to Admin and whether each has been
+#acknowledged). Every query here is scoped to current_user, so nobody can
+#read or mark another user's ──────────────────────────────────────────────
+
+@app.get("/users/me/notes", response_model=List[MyNoteResponse])
+def list_my_notes(
+    limit: int = Query(100, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """The logged-in user's own notes, newest first, pending and acknowledged."""
+    return db.query(Note)\
+            .filter(Note.reporter_email == current_user.email)\
+            .order_by(desc(Note.created_at), desc(Note.id))\
+            .limit(limit)\
+            .all()
+
+#hazard report approve/decline entries were dropped (an approved hazard
+#already shows up in Alerts); older rows may still exist, so filter them out
+def _my_note_notifications(db: Session, user: User):
+    return db.query(UserNotification).filter(
+        UserNotification.user_id == user.id,
+        UserNotification.source_type == "note",
+    )
 
 @app.get("/users/me/notifications", response_model=List[UserNotificationResponse])
 def list_my_notifications(
@@ -419,9 +441,8 @@ def list_my_notifications(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """The logged-in user's updates, newest first."""
-    return db.query(UserNotification)\
-            .filter(UserNotification.user_id == current_user.id)\
+    """The logged-in user's note acknowledgments, newest first."""
+    return _my_note_notifications(db, current_user)\
             .order_by(desc(UserNotification.created_at), desc(UserNotification.id))\
             .limit(limit)\
             .all()
@@ -432,8 +453,8 @@ def count_my_unread_notifications(
     current_user: User = Depends(get_current_user)
 ):
     """Cheap call for the bell/tab badge, which polls it."""
-    count = db.query(UserNotification)\
-            .filter(UserNotification.user_id == current_user.id, UserNotification.read_at.is_(None))\
+    count = _my_note_notifications(db, current_user)\
+            .filter(UserNotification.read_at.is_(None))\
             .count()
     return {"count": count}
 
@@ -442,8 +463,8 @@ def mark_all_my_notifications_read(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    db.query(UserNotification)\
-        .filter(UserNotification.user_id == current_user.id, UserNotification.read_at.is_(None))\
+    _my_note_notifications(db, current_user)\
+        .filter(UserNotification.read_at.is_(None))\
         .update({UserNotification.read_at: datetime.now(timezone.utc)}, synchronize_session=False)
     db.commit()
     return {"count": 0}
@@ -969,6 +990,7 @@ def get_notes(
 @app.put("/notes/{note_id}/acknowledge", response_model=NoteResponse)
 def acknowledge_note(
     note_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_role: str = Depends(require_admin)
 ):
@@ -985,6 +1007,9 @@ def acknowledge_note(
     notify_note_acknowledged(db, note)
     db.commit()
     db.refresh(note)
+    #push only to the note's author, after the commit so the in-app entry
+    #already exists when they tap it
+    background_tasks.add_task(send_note_acknowledged, note.id)
     return note
 
 #─── Diagnostic logs (app console output a commuter sends from Help & Support
@@ -1047,10 +1072,6 @@ def approve_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found or already resolved.")
 
-    #only a real review (pending -> published) tells the submitters; re-saving
-    #an already-published alert through here doesn't
-    was_pending = alert.status == "pending"
-
     if edits.title is not None and edits.title.strip():
         alert.title = edits.title.strip().upper()
     if edits.category is not None and edits.category.strip():
@@ -1062,8 +1083,6 @@ def approve_alert(
 
     was_published = alert.status == "published"
     alert.status = "published"
-    if was_pending:
-        notify_report_reviewed(db, alert, approved=True)
     db.commit()
     db.refresh(alert)
     if not was_published:
@@ -1137,7 +1156,6 @@ def remove_alert(
 
     if alert.status == "pending":
         alert.status = "declined"
-        notify_report_reviewed(db, alert, approved=False)
         db.commit()
         return {"message": "Report declined."}
 

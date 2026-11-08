@@ -2,83 +2,85 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-//one entry from GET /users/me/notifications
-export interface MyUpdate {
+//one entry from GET /users/me/notes
+export interface MyNote {
   id: number;
-  kind: 'report_approved' | 'report_declined' | 'note_acknowledged' | string;
-  source_type: string;
-  source_id: number;
   title: string;
-  body?: string | null;
   lot_name?: string | null;
   created_at: string;
+  //null = the parking team hasn't acknowledged it yet
+  acknowledged_at?: string | null;
+}
+
+//one entry from GET /users/me/notifications - only used to know which
+//acknowledgments the commuter hasn't seen yet (the unread dot)
+export interface NoteAcknowledgment {
+  id: number;
+  source_type: string;
+  source_id: number;
   read_at?: string | null;
 }
 
-type KindVisual = {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  color: string;
-  bg: string;
-  label: string;
-};
-
-//approved reads as good news, declined stays neutral grey (not alarming red),
-//and a note acknowledgment is informational blue
-const KIND_VISUALS: Record<string, KindVisual> = {
-  report_approved: { icon: 'checkmark-circle', color: '#00853E', bg: '#E6F4EC', label: 'Report approved' },
-  report_declined: { icon: 'close-circle', color: '#64748B', bg: '#F1F5F9', label: 'Report reviewed' },
-  note_acknowledged: { icon: 'eye', color: '#2563EB', bg: '#EAF1FE', label: 'Note acknowledged' },
-};
-const FALLBACK_VISUAL: KindVisual = { icon: 'notifications', color: '#64748B', bg: '#F1F5F9', label: 'Update' };
-
-export function getMyUpdateVisual(kind: string): KindVisual {
-  return KIND_VISUALS[kind] ?? FALLBACK_VISUAL;
-}
-
-export default function MyUpdateCard({
-  update,
-  timeLabel,
+export default function NoteStatusCard({
+  note,
+  unread,
+  sentLabel,
+  acknowledgedLabel,
   onPress,
 }: {
-  update: MyUpdate;
+  note: MyNote;
+  //acknowledged since the commuter last looked
+  unread: boolean;
   //e.g. "2h" - formatted by the screen so it matches the alert cards
-  timeLabel: string;
+  sentLabel: string;
+  acknowledgedLabel?: string;
   onPress: () => void;
 }) {
-  const visual = getMyUpdateVisual(update.kind);
-  const unread = !update.read_at;
+  const acknowledged = !!note.acknowledged_at;
+  const statusText = acknowledged ? 'Acknowledged' : 'Pending';
 
   return (
     <TouchableOpacity
       style={[styles.card, unread && styles.cardUnread]}
       onPress={onPress}
+      disabled={!unread}
       activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`${unread ? 'Unread. ' : ''}${update.title}. ${update.body ?? ''}`}
-      accessibilityHint={unread ? 'Marks this update as read' : undefined}
+      accessibilityRole={unread ? 'button' : undefined}
+      accessibilityLabel={`${unread ? 'Unread. ' : ''}${note.title}. ${statusText}.`}
+      accessibilityHint={unread ? 'Marks this as read' : undefined}
     >
-      <View style={[styles.iconWrap, { backgroundColor: visual.bg }]}>
-        <Ionicons name={visual.icon} size={26} color={visual.color} />
+      <View style={[styles.iconWrap, acknowledged ? styles.iconAck : styles.iconPending]}>
+        <Ionicons
+          name={acknowledged ? 'eye' : 'time-outline'}
+          size={24}
+          color={acknowledged ? '#2563EB' : '#B45309'}
+        />
       </View>
 
       <View style={styles.body}>
         <View style={styles.titleRow}>
           {unread && <View style={styles.unreadDot} />}
-          <Text style={[styles.title, unread && styles.titleUnread]}>{update.title}</Text>
+          <Text style={[styles.title, unread && styles.titleUnread]} numberOfLines={2}>
+            {note.title}
+          </Text>
         </View>
 
-        {!!update.body && <Text style={styles.text}>{update.body}</Text>}
+        <View style={[styles.statusPill, acknowledged ? styles.pillAck : styles.pillPending]}>
+          <Text style={[styles.statusText, acknowledged ? styles.statusTextAck : styles.statusTextPending]}>
+            {acknowledged && acknowledgedLabel ? `${statusText} ${acknowledgedLabel} ago` : statusText}
+          </Text>
+        </View>
 
         <View style={styles.metaRow}>
-          {!!update.lot_name && (
+          {!!note.lot_name && (
             <View style={styles.metaItem}>
               <Ionicons name="location" size={13} color="#00853E" />
-              <Text style={styles.lotText}>{update.lot_name}</Text>
+              <Text style={styles.lotText}>{note.lot_name}</Text>
             </View>
           )}
           <View style={styles.metaItem}>
-            <Ionicons name="time-outline" size={13} color="#94A3B8" />
-            <Text style={styles.timeText}>{timeLabel} ago</Text>
+            <Ionicons name="paper-plane-outline" size={13} color="#94A3B8" />
+            <Text style={styles.timeText}>Sent {sentLabel} ago</Text>
           </View>
         </View>
       </View>
@@ -116,6 +118,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
     marginTop: 2,
   },
+  iconPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  iconAck: {
+    backgroundColor: '#EAF1FE',
+  },
   body: {
     flex: 1,
   },
@@ -123,7 +131,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   unreadDot: {
     width: 8,
@@ -142,11 +150,28 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#1E293B',
   },
-  text: {
-    fontSize: 13.5,
-    lineHeight: 19,
-    color: '#64748B',
+  statusPill: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     marginBottom: 6,
+  },
+  pillPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  pillAck: {
+    backgroundColor: '#EAF1FE',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  statusTextPending: {
+    color: '#B45309',
+  },
+  statusTextAck: {
+    color: '#2563EB',
   },
   metaRow: {
     flexDirection: 'row',

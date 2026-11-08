@@ -22,12 +22,12 @@ interface AlertsBadgeContextType {
   refreshBadge: () => Promise<void>;
   markAlertsSeen: () => Promise<void>;
   markAlertRead: (id: string) => Promise<void>;
-  //unread personal "My Updates" (admin reviewed your report / acknowledged your
+  //unread "Note Status" entries (an admin acknowledged your
   //note). Server-side read state, unlike the device-local alert ids above.
   myUpdatesUnread: number;
   refreshMyUpdatesUnread: () => Promise<void>;
   //optimistic badge changes while the matching PUT is in flight, so the bell
-  //and the My Updates tab drop at the same moment the card does
+  //and the Note Status tab drop at the same moment the card does
   markMyUpdateReadLocally: () => void;
   markAllMyUpdatesReadLocally: () => void;
 }

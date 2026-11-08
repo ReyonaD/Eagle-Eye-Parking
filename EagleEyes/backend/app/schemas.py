@@ -157,3 +157,12 @@ class UserNotificationResponse(BaseModel):
 
 class UnreadCountResponse(BaseModel):
     count: int
+
+class MyNoteResponse(BaseModel):
+    """A commuter's own note as shown in Note Status: just enough to recognise
+    it and see whether it's been acknowledged (no phone number or plate)."""
+    id: int
+    title: str
+    lot_name: Optional[str] = None
+    created_at: datetime
+    acknowledged_at: Optional[datetime] = None
