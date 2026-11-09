@@ -1,4 +1,5 @@
-from pydantic import BaseModel, EmailStr, Field
+import re
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from datetime import datetime
 from typing import List, Optional
 
@@ -14,10 +15,34 @@ class UserPermitUpdate(BaseModel):
 class UserNameUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
+US_STATE_CODES = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA",
+    "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM",
+    "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA",
+    "WV", "WI", "WY",
+}
+
+def normalize_plate(state: Optional[str], number: Optional[str]) -> tuple[str, str]:
+    """Uppercase, drop spaces/dashes, then check: 2-8 letters/digits and a real US state.
+    An empty number is allowed (no plate). Mirrors frontend/utils/plates.ts."""
+    state = re.sub(r"[^A-Z]", "", (state or "").upper())
+    number = re.sub(r"[^A-Z0-9]", "", (number or "").upper())
+    if number:
+        if not re.fullmatch(r"[A-Z0-9]{2,8}", number):
+            raise ValueError("Plate number must be 2-8 letters or numbers (e.g. ABC1234).")
+        if state not in US_STATE_CODES:
+            raise ValueError("Plate state must be a 2-letter US state code (e.g. TX).")
+    return state, number
+
 class UserPlateUpdate(BaseModel):
-    #empty string allowed — a user can clear a previously-saved plate
+    #empty plate_number clears a previously-saved plate
     plate_state: str = Field(default="", max_length=10)
     plate_number: str = Field(default="", max_length=20)
+
+    @model_validator(mode="after")
+    def _normalize(self):
+        self.plate_state, self.plate_number = normalize_plate(self.plate_state, self.plate_number)
+        return self
 
 class AlertCreate(BaseModel):
     title: str
@@ -75,6 +100,12 @@ class NoteCreate(BaseModel):
     image_urls: Optional[List[str]] = None
     event_start: Optional[datetime] = None
     event_end: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def _normalize_plate(self):
+        state, number = normalize_plate(self.plate_state, self.plate_number)
+        self.plate_state, self.plate_number = state or None, number or None
+        return self
 
 class NoteResponse(BaseModel):
     id: int

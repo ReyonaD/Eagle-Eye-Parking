@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { useUser } from '../../context/UserContext';
 import { useLots } from '../../context/LotsContext';
 import { getPermitTypes, updatePermit, updatePlate } from '../../api/auth';
+import { formatPlateInput, formatStateInput, isValidPlateNumber, isValidPlateState, looksUnusualForTexas, TEXAS_PLATE_HINT } from '../../utils/plates';
 import { Alert } from '../../utils/webCompat';
 import { buildPermitOptions, getPermitDisplayLabel, PermitOption, PREMIUM_PARKING } from '../../utils/permits';
 import { lookupPermitHours, summarizePermitHours } from '../../utils/permitHours';
@@ -66,12 +67,21 @@ export default function ParkingProfileScreen() {
   }, []);
 
   const handleSave = async () => {
+    //an empty plate clears it; otherwise both fields must be valid
+    if (plateNumber && !isValidPlateNumber(plateNumber)) {
+      Alert.alert('Invalid plate', 'Enter 2-8 letters or numbers, with no spaces (e.g. ABC1234).');
+      return;
+    }
+    if (plateNumber && !isValidPlateState(plateState)) {
+      Alert.alert('Invalid state', 'Enter the 2-letter state on the plate (e.g. TX).');
+      return;
+    }
     setSaving(true);
     try {
       if (permitType) {
         await updatePermit(permitType);
       }
-      const plate = await updatePlate(plateState.trim().toUpperCase(), plateNumber.trim());
+      const plate = await updatePlate(plateState, plateNumber);
       updateUser({
         parkingProfile: {
           plateState: plate.plate_state,
@@ -113,19 +123,24 @@ export default function ParkingProfileScreen() {
               <TextInput
                 style={[styles.input, styles.plateStateInput]}
                 value={plateState}
-                onChangeText={setPlateState}
+                onChangeText={(text) => setPlateState(formatStateInput(text))}
                 placeholder="TX"
                 autoCapitalize="characters"
+                autoCorrect={false}
                 maxLength={2}
               />
               <TextInput
                 style={[styles.input, styles.plateNumberInput]}
                 value={plateNumber}
-                onChangeText={setPlateNumber}
-                placeholder="00000"
+                onChangeText={(text) => setPlateNumber(formatPlateInput(text))}
+                placeholder="ABC1234"
                 autoCapitalize="characters"
+                autoCorrect={false}
               />
             </View>
+            {looksUnusualForTexas(plateState, plateNumber) && (
+              <Text style={styles.plateHint}>{TEXAS_PLATE_HINT}</Text>
+            )}
 
             <Text style={styles.label}>Parking Permit</Text>
             <TouchableOpacity
@@ -362,6 +377,12 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 32,
+  },
+  plateHint: {
+    fontSize: 12,
+    color: '#B54708',
+    marginTop: -4,
+    marginBottom: 12,
   },
   helperText: {
     fontSize: 13,

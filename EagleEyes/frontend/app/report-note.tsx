@@ -19,6 +19,7 @@ import ToggleChip from '../components/ToggleChip';
 import TimePickerField from '../components/TimePickerField';
 import { useUser } from '../context/UserContext';
 import { useLots } from '../context/LotsContext';
+import { formatPlateInput, formatStateInput, isValidPlateNumber, isValidPlateState, looksUnusualForTexas, TEXAS_PLATE_HINT } from '../utils/plates';
 import { isLotNameClosed } from '../utils/lotStatus';
 import { Alert } from '../utils/webCompat';
 
@@ -75,8 +76,9 @@ export default function ReportNoteScreen() {
   //"All day" skips the start time - the note starts at midnight
   const [startAllDay, setStartAllDay] = useState(false);
   const [endTime, setEndTime] = useState<EndTimeValue>(DEFAULT_END_TIME);
-  const [plateState, setPlateState] = useState(user.parkingProfile.plateState);
-  const [plateNumber, setPlateNumber] = useState(user.parkingProfile.plateNumber);
+  //prefilled from the profile, cleaned up in case it was saved before plates were validated
+  const [plateState, setPlateState] = useState(formatStateInput(user.parkingProfile.plateState || ''));
+  const [plateNumber, setPlateNumber] = useState(formatPlateInput(user.parkingProfile.plateNumber || ''));
   const [phoneNumber, setPhoneNumber] = useState('');
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -137,6 +139,14 @@ export default function ReportNoteScreen() {
         'Missing information',
         `${Platform.OS !== 'web' ? 'Name, contact email, ' : ''}Reason, Lot/Location, Start time, License Plate, and Phone Number are required before continuing.`
       );
+      return;
+    }
+    if (!isValidPlateState(plateState)) {
+      Alert.alert('Invalid state', 'Enter the 2-letter state on the plate (e.g. TX).');
+      return;
+    }
+    if (!isValidPlateNumber(plateNumber)) {
+      Alert.alert('Invalid plate', 'Enter 2-8 letters or numbers, with no spaces (e.g. ABC1234).');
       return;
     }
     if (Platform.OS !== 'web' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.trim())) {
@@ -446,19 +456,24 @@ export default function ReportNoteScreen() {
             placeholder="TX"
             placeholderTextColor="#888"
             value={plateState}
-            onChangeText={setPlateState}
+            onChangeText={(text) => setPlateState(formatStateInput(text))}
             autoCapitalize="characters"
+            autoCorrect={false}
             maxLength={2}
           />
           <TextInput
             style={[styles.input, styles.plateNumberInput]}
-            placeholder="00000"
+            placeholder="ABC1234"
             placeholderTextColor="#888"
             value={plateNumber}
-            onChangeText={setPlateNumber}
+            onChangeText={(text) => setPlateNumber(formatPlateInput(text))}
             autoCapitalize="characters"
+            autoCorrect={false}
           />
         </View>
+        {looksUnusualForTexas(plateState, plateNumber) && (
+          <Text style={styles.plateHint}>{TEXAS_PLATE_HINT}</Text>
+        )}
 
         <TextInput
           style={styles.input}
@@ -667,6 +682,12 @@ const styles = StyleSheet.create({
   plateRow: {
     flexDirection: 'row',
     gap: 10,
+  },
+  plateHint: {
+    fontSize: 12,
+    color: '#B54708',
+    marginTop: -4,
+    marginBottom: 12,
   },
   plateStateInput: {
     width: 72,

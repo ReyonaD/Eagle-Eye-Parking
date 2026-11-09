@@ -141,4 +141,20 @@ u1 = c.put(f"/alerts/{pending_id}/upvote", headers=adm).json()["upvotes"]
 u2 = c.put(f"/alerts/{pending_id}/upvote", headers=adm).json()["upvotes"]
 check("same user upvoting twice counts once", u1 == u2 == 2, f"{u1},{u2}")
 
+# ── license plates ──
+r = c.put("/users/me/plate", headers=owner2, json={"plate_state": "tx", "plate_number": "abc-1234"})
+check("plate normalized (uppercase, no dash)", r.status_code == 200 and r.json() == {"plate_state": "TX", "plate_number": "ABC1234"}, r.text)
+r = c.put("/users/me/plate", headers=owner2, json={"plate_state": "TX", "plate_number": "EAGLE1"})
+check("vanity plate allowed", r.status_code == 200, r.text)
+r = c.put("/users/me/plate", headers=owner2, json={"plate_state": "TX", "plate_number": "ABCDE12345"})
+check("plate longer than 8 rejected", r.status_code == 422, r.text)
+r = c.put("/users/me/plate", headers=owner2, json={"plate_state": "ZZ", "plate_number": "ABC1234"})
+check("unknown state rejected", r.status_code == 422, r.text)
+r = c.put("/users/me/plate", headers=owner2, json={"plate_state": "TX", "plate_number": ""})
+check("empty plate clears it", r.status_code == 200 and r.json()["plate_number"] == "", r.text)
+r = c.post("/notes", headers=stu, json={"title": "Stuck", "lot_name": "Lot 20", "plate_state": "tx", "plate_number": "abc 1234"})
+check("note plate normalized", r.status_code == 200 and r.json()["plate_number"] == "ABC1234", r.text)
+r = c.post("/notes", headers=stu, json={"title": "Stuck", "lot_name": "Lot 20", "plate_state": "TX", "plate_number": "A!"})
+check("note with invalid plate rejected", r.status_code == 422, r.text)
+
 print("\n%d failure(s)" % len(fails)); sys.exit(1 if fails else 0)
