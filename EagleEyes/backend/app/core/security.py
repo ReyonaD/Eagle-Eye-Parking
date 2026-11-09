@@ -1,8 +1,9 @@
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import jwt, JWTError
-from passlib.context import CryptContext 
+import jwt
+from jwt import InvalidTokenError
+from passlib.context import CryptContext
 from dotenv import load_dotenv
 
 from fastapi import Depends, HTTPException, status
@@ -61,7 +62,7 @@ def _user_from_token(token: Optional[str], db: Session):
         return None
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
+    except InvalidTokenError:
         return None
     email = payload.get("sub")
     if not email:

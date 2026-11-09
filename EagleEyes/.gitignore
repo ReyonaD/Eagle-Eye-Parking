@@ -63,3 +63,6 @@ out/
 /android
 /ios
 /local.properties
+# Backend test coverage
+.coverage
+coverage.xml

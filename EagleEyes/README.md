@@ -94,9 +94,26 @@ This requires Xcode and CocoaPods (`sudo gem install cocoapods`) for iOS.
 
 ## Testing
 
-There is not yet an automated test suite in the repository — `backend/tests/` and the top-level `Testing/` folder are reserved for that as it's added (backend tests are expected to use `pytest`).
+Automated tests run on every pull request and every push to `main` via GitHub Actions (`.github/workflows/ci.yml`). A PR should be green before merging.
 
-In the meantime, the team tests manually before merging:
+| | Command (run from the folder) | What it checks |
+|---|---|---|
+| **Backend** (`backend/`) | `pip install -r requirements-dev.txt` then `pytest --cov` | API tests: auth and password reset, admin/owner access, hazard review and duplicate merging, lot closures, notes, push notifications, ParkZen data. Fails below 80% coverage. |
+| **Frontend** (`frontend/`) | `npm test` (or `npm run test:ci` for coverage) | Unit tests for the app's logic in `utils/`: permits and night rules, lot closures, search, plates, dates. Fails below 90% line coverage. |
+| **Frontend** (`frontend/`) | `npx tsc --noEmit` and `npm run lint` | Type errors and lint errors |
+
+Backend tests never touch the database in `.env`. They use in-memory SQLite by default; set `TEST_DATABASE_URL` to an empty Postgres database to also run the Postgres-only tests (CI does this with a Postgres service container):
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg2://postgres@localhost:5432/eagleeyes_test pytest --cov
+```
+
+**Security checks** also run automatically:
+- **CodeQL** (`.github/workflows/codeql.yml`) scans the Python and TypeScript code on every PR and weekly; findings appear in the repo's Security tab.
+- **Dependency audits** in CI: `pip-audit` fails the build on any known backend vulnerability; `npm audit` fails on critical frontend ones (the remaining high/moderate findings are in Expo SDK 54's build tooling and need an SDK upgrade).
+- **Dependabot** (`.github/dependabot.yml`) opens weekly update PRs for Python packages, npm packages (Expo-managed packages excluded; use `npx expo install --fix`), and GitHub Actions.
+
+The team also tests manually before merging:
 - **Manual QA**: exercising each changed screen/flow in the Expo dev client (iOS simulator, Android emulator, and web) and against a running local backend
 - **API checks**: hitting backend endpoints directly (e.g., via FastAPI's `/docs` Swagger UI at `http://localhost:8000/docs`) to verify request/response shapes
 - **Cross-platform pass**: features that touch the map or native modules are checked on both iOS and Android, since `EagleMap.tsx` and the ParkZen bridge behave differently per platform

@@ -1,0 +1,47 @@
+# GitHub CodeQL: static security analysis of the backend (Python) and the app (TypeScript).
+# Findings appear under the repo's Security tab -> Code scanning.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC, so new query packs are applied to unchanged code too
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - "**/node_modules/**"
+              - "**/dist/**"
+              - "**/ios/**"
+              - "**/android/**"
+              - "**/__tests__/**"
+              - "EagleEyes/backend/tests/**"
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -1,0 +1,41 @@
+# Weekly dependency update PRs. Security fixes also arrive as Dependabot alerts
+# once "Dependabot alerts" and "security updates" are enabled in the repo settings.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /EagleEyes/backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /EagleEyes/frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Expo pins these to versions that match the SDK; upgrade them together
+      # with `npx expo install --fix` (or an SDK upgrade), not one by one.
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native/*"
+      - dependency-name: "@react-native-async-storage/*"
+      - dependency-name: "jest-expo"
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

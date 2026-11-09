@@ -20,7 +20,10 @@ engine = create_engine(
     pool_recycle=3600,           # Recycles connections every hour
     connect_args={
         "connect_timeout": 15,    # Increase timeout to 15 seconds to allow for wake-up
-        "sslmode": "require"      # Neon requires SSL
+        "sslmode": "require",     # Neon requires SSL
+        # Timestamps are stored as UTC without a zone; Postgres converts incoming
+        # times to the session zone, so pin it to UTC on every connection
+        "options": "-c timezone=UTC",
     }
 )
 

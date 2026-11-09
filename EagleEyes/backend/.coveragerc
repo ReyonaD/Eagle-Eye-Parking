@@ -1,0 +1,9 @@
+[run]
+source = app
+branch = True
+# swapped out by tests/conftest.py (connection settings only)
+omit = app/database.py
+
+[report]
+show_missing = True
+fail_under = 80

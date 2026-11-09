@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLots } from '../context/LotsContext';
 import { isLotClosed } from '../utils/lotStatus';
 import { centroid, distanceMeters, LatLng } from '../utils/geo';
+import { rankLotMatches } from '../utils/lotSearch';
 
 export const UNT_CENTER: LatLng = { latitude: 33.2110, longitude: -97.1475 };
 
@@ -19,26 +20,6 @@ export type PickerLot = {
   // middle of all its polygons - where the map pans to when it's picked
   center: LatLng;
 };
-
-// "Lot 20" -> "lot20"; punctuation/spacing never decides a match
-const normalize = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, '');
-// "Lot 20" -> "20", "Garage 3" -> "3": people usually type just the number
-const stripKind = (text: string) => normalize(text).replace(/^(lot|garage|parking)/, '');
-
-/** Match rank (lower is better, null = no match): 0 exact, 1 prefix, 2 word prefix, 3 contains. */
-export function matchScore(lot: { name: string; tag: string }, query: string): number | null {
-  const q = normalize(query);
-  if (!q) return null;
-  const name = normalize(lot.name);
-  const bare = stripKind(lot.name);
-  const tag = normalize(lot.tag || '');
-  if (name === q || bare === q || tag === q) return 0;
-  if (name.startsWith(q) || bare.startsWith(q) || tag.startsWith(q)) return 1;
-  const words = lot.name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  if (words.some((word) => word.startsWith(q))) return 2;
-  if (name.includes(q)) return 3;
-  return null;
-}
 
 /**
  * Picker lots, nearest first from the app's known location (else the picker's own fix,
@@ -97,11 +78,7 @@ export function useLotPickerList(visible: boolean, query: string, ownFix: LatLng
 
   const matches = useMemo<PickerLot[]>(() => {
     if (!query.trim()) return [];
-    return nearest
-      .map((lot) => ({ lot, score: matchScore(lot, query) }))
-      .filter((entry): entry is { lot: PickerLot; score: number } => entry.score !== null)
-      .sort((a, b) => a.score - b.score || a.lot.distance - b.lot.distance)
-      .map((entry) => entry.lot);
+    return rankLotMatches(nearest, query);
   }, [nearest, query]);
 
   return {
