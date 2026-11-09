@@ -48,6 +48,18 @@ class AlertResponse(BaseModel):
     reporter_emails: Optional[List[str]] = []
     #hazards only: when an admin marked it as over; null = still on the map/lots
     deactivated_at: Optional[datetime] = None
+    # create/update/approve only: overlapping events or active closures, for admin warnings
+    conflicts: Optional[List["EventConflict"]] = None
+
+class EventConflict(BaseModel):
+    id: int
+    title: str
+    category: str
+    is_closure: bool
+    #the lots this event shares with the one being saved
+    lot_names: List[str]
+    event_start: Optional[datetime] = None
+    event_end: Optional[datetime] = None
 
 class NoteCreate(BaseModel):
     title: str
@@ -171,3 +183,5 @@ class MyNoteResponse(BaseModel):
     lot_name: Optional[str] = None
     created_at: datetime
     acknowledged_at: Optional[datetime] = None
+
+AlertResponse.model_rebuild()

@@ -7,6 +7,10 @@ from dotenv import load_dotenv
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import User
 #this tell python to go find the .env file and load the variables into memory
 load_dotenv()
 
@@ -43,55 +47,59 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-#ROLE-BASED ACCESS CONTROL
-def get_current_user_role(token: str = Depends(oauth2_scheme)):
-    """Extract the role from the JWT token"""
-    
-    try: 
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        role: str = payload.get("role")
-        if role is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token does not contain a role",
-                headers={"WWW-Authenticate": "Bearer"}
-            )
-        return role
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-def require_admin(role: str = Depends(get_current_user_role)):
-    """Block access to endpoints that require admin role"""
-    if role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Admin privileges required."
-        )
-    return role
+# ROLE-BASED ACCESS CONTROL
+# Checks read the user from the database, not the JWT claims, so role changes apply immediately.
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
-def get_current_user_is_owner(token: str = Depends(oauth2_scheme)) -> bool:
-    """Extract the owner flag from the JWT token"""
+#detail string the app keys off to tell "you were demoted" apart from any
+#other 403, so it can log the user out instead of showing a generic error
+ADMIN_REVOKED_DETAIL = "admin_revoked"
+
+def _user_from_token(token: Optional[str], db: Session):
+    """The active User a token belongs to, or None if it's missing/invalid."""
+    if not token:
+        return None
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return bool(payload.get("is_owner", False))
     except JWTError:
+        return None
+    email = payload.get("sub")
+    if not email:
+        return None
+    user = db.query(User).filter(User.email == email).first()
+    if user is None or user.is_active is False:
+        return None
+    return user
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    """Check the JWT token and return the current (active) user"""
+    user = _user_from_token(token, db)
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
+    return user
 
-def require_owner(role: str = Depends(get_current_user_role), is_owner: bool = Depends(get_current_user_is_owner)):
-    """Block access to endpoints that manage other admins' access. Owners are
-    the subset of admins who can see the full admin roster and grant/revoke
-    other accounts' admin access — a regular admin can't manage other admins."""
-    if role != "admin" or not is_owner:
+def get_optional_user(token: Optional[str] = Depends(optional_oauth2_scheme), db: Session = Depends(get_db)) -> Optional[User]:
+    """Like get_current_user, but for public endpoints: None when logged out."""
+    return _user_from_token(token, db)
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Block access to endpoints that require admin role (checked live)"""
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ADMIN_REVOKED_DETAIL,
+        )
+    return user
+
+def require_owner(user: User = Depends(require_admin)) -> User:
+    """Owner-only endpoints (managing other admins)."""
+    if not user.is_owner:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Owner privileges required."
         )
-    return is_owner
+    return user

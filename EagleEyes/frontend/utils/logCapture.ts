@@ -1,10 +1,5 @@
-//In-memory copy of the app's recent console output, so a user can send it to us
-//from Help & Support (api/logs.js) when something breaks on their device that we
-//can't reproduce (e.g. the Android map not showing).
-//
-//Imported for its side effect as the FIRST import in app/_layout.tsx, so it wraps
-//console.* before any other module logs anything. Only JS-side output is captured:
-//native-only messages (like Google Maps SDK auth failures) go to logcat, not here.
+// Keeps recent console output in memory so users can send it from Help & Support.
+// Must be the first import in app/_layout.tsx.
 
 type Level = 'log' | 'info' | 'warn' | 'error' | 'debug';
 

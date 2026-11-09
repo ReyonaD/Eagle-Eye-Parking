@@ -1,10 +1,4 @@
-// Single source of truth for how a hazard/event category renders — the icon,
-// icon color, and icon-box background. Shared by every screen that lets
-// someone pick a category (report-hazard, admin post-alert, admin events) and
-// every screen that displays one (commuter alerts feed, admin hazards/events
-// review), so a category always looks the same everywhere and a newly added
-// category can't silently fall out of sync between "what you can pick" and
-// "what icon it shows".
+// Icon, color and background for each hazard/event category, shared by every screen.
 
 export type AlertVisual = {
   icon: string;
@@ -86,11 +80,8 @@ export function getAlertVisual(alertType: string, category?: string | null): Ale
   return alertType === 'event' ? getEventVisual(category) : getHazardVisual(category);
 }
 
-// Human-readable category label. Hazard categories are stored lowercase
-// ("traffic jam") so this looks up the matching HAZARD_CATEGORIES label;
-// event categories are already stored capitalized ("Gameday") so they pass
-// through as-is. A hazard type typed in under Other ("pothole") is capitalized.
-// Its icon is the default warning sign, since getHazardVisual doesn't know it.
+// Display label: hazard categories are stored lowercase, events as-is; custom hazard
+// types are capitalized.
 export function getCategoryLabel(alertType: string, category?: string | null): string {
   if (!category) return alertType === 'event' ? 'Event' : 'Hazard';
   if (alertType === 'event') return category;

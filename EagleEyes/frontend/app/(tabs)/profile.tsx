@@ -12,35 +12,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isPushEnabled, setPushEnabled, unregisterAlertPush } from '../../utils/pushNotifications';
+import { isPushEnabled, setPushEnabled } from '../../utils/pushNotifications';
+import { clearSession } from '../../utils/session';
 import { useUser } from '../../context/UserContext';
 import { Alert } from '../../utils/webCompat';
-import { PINNED_LOTS_STORAGE_KEY } from './lots';
 import InitialsAvatar from '../../components/InitialsAvatar';
 import { getPermitCardStyle } from '../../utils/permitColors';
 import { useLots } from '../../context/LotsContext';
 import { lookupPermitHours, summarizePermitHours } from '../../utils/permitHours';
-// function TopBar() {
-//   const router = useRouter();
-//   return (
-//     <View style={styles.topBar}>
-//       {/* LEFT: Logo + App Name */}
-//       <View style={styles.leftGroup}>
-//         <Image
-//           source={require('../../assets/images/Logo_EagleEye.png')}
-//           style={styles.logo}
-//         />
-//         <Text style={styles.appNameLeft}>EagleEyes</Text>
-//       </View>
 
-//       {/* RIGHT: Bell */}
-//       <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-//         <Ionicons name="notifications-outline" size={27} color="#333" />
-//       </TouchableOpacity>
-//     </View>
-//   );
-// }
 // Menu row component
 interface MenuRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -98,9 +78,7 @@ export function ProfileScreen() {
     }
   };
 
-  // Re-sync with the backend whenever this tab is shown, so a profile fetch
-  // that failed on app start (offline / cold server) recovers on its own.
-  // refreshUser isn't memoized, so listing it would refetch on every render.
+  // Re-sync on focus so a failed startup fetch recovers (refreshUser isn't memoized).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useFocusEffect(useCallback(() => { refreshUser(); }, []));
   const hasPermit = !!user.parkingProfile.permitType;
@@ -116,13 +94,9 @@ export function ProfileScreen() {
         text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
-          //needs the auth token, so it has to run before it's removed
-          await unregisterAlertPush();
-          await AsyncStorage.removeItem('token');
-          await AsyncStorage.removeItem('role');
-          await AsyncStorage.removeItem('isOwner');
-          //clears the cached profile and pinned lots too, so neither bleeds into the next login
-          await AsyncStorage.removeItem(PINNED_LOTS_STORAGE_KEY);
+          //clears the token, role, push registration and pinned lots, then the
+          //cached profile, so nothing bleeds into the next login
+          await clearSession();
           await refreshUser();
           router.replace('/login');
         },

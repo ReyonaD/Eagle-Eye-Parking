@@ -1,17 +1,6 @@
-// Single source of truth for the color each permit type renders with —
-// originally defined only inside the Profile screen's big permit card, now
-// shared so any other screen that lists permits (the map's lot-details sheet,
-// the Lots tab's lot-details modal, etc.) can color-code them the same way.
-//
-// The first block below (Eagle..Motorcycle) was already the app's own color
-// design — untouched. The second block was added by sampling badge colors
-// directly from UNT Transportation Services' official permit chart:
+// Color for each permit type, shared by every screen that shows permits.
+// Official colors sampled from UNT's permit chart:
 // https://transportation.unt.edu/images/unt_parking_permits_2024_2025_updated.pdf
-// Only permit types that actually appear in this app's live permit data (see
-// utils/permits.ts's PERMIT_ALIASES) got an entry — the chart also has badges
-// for RM, R, RR, TF, HF and SV, which either aren't distinct permits in our
-// data (RM/R fold into "Resident", RR into "Resident Reserved") or don't
-// appear in it at all (TF, HF, SV), so they're skipped.
 
 import { normalizePermit, STREET_PARKING, PREMIUM_PARKING } from './permits';
 
@@ -44,16 +33,12 @@ export const PERMIT_CARD_STYLES: Record<string, PermitCardStyle> = {
   // magenta close to "Visitor"'s color, but kept distinct as its own entry.
   'Remote': { bg: '#E166A7', text: '#fff', label: 'rgba(255,255,255,0.7)' },
 
-  // Not on the official chart (faculty/staff-only, separate from the
-  // all-audiences "Evening" permit) — given its own dark navy so it doesn't
-  // fall through to the default gray and look identical to an unstyled permit.
+  // Not on the chart; dark navy so it doesn't look unstyled.
   'Night': { bg: '#1B2A4A', text: '#fff', label: 'rgba(255,255,255,0.7)' },
 
   [STREET_PARKING]: { bg: '#1B998B', text: '#fff', label: 'rgba(255,255,255,0.7)' },
 
-  // Metered/paid spots, not a permit tier — matches premiumparking.com's own
-  // brand red (eyeballed from their logo, not pixel-sampled, so nudge this
-  // if it's slightly off) so it reads as "pay here" rather than a permit.
+  // Paid parking, not a permit tier: premiumparking.com's brand red.
   [PREMIUM_PARKING]: { bg: '#D6332A', text: '#fff', label: 'rgba(255,255,255,0.7)' },
 };
 
@@ -65,12 +50,7 @@ export const DEFAULT_PERMIT_CARD_STYLE: PermitCardStyle = {
 
 export function getPermitCardStyle(permitType: string): PermitCardStyle {
   const trimmed = (permitType || '').trim();
-  // normalizePermit already collapses any numbered "A01".."A95" code (or an
-  // "A-Reserved"-ish variant) into "A-Reserved", anything mentioning
-  // "Resident Reserve(d)" — e.g. "Lot 16 Resident Reserve" — into
-  // "Resident Reserved", and short codes like "F/S" into their full name, so
-  // a lot's raw permit string still resolves to the right shared color
-  // instead of falling through to gray.
+  // Normalize raw codes ("A01", "Lot 16 Resident Reserve", "F/S") to their shared color.
   const canonical = normalizePermit(trimmed) || trimmed;
   return PERMIT_CARD_STYLES[canonical] || DEFAULT_PERMIT_CARD_STYLE;
 }

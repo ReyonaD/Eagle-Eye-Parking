@@ -4,9 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLots } from '../context/LotsContext';
 import { formatPermitHours, isAnyTimePermit, lookupPermitHours } from '../utils/permitHours';
 
-// Under a lot's permits: the hours for any permit that can't park here around
-// the clock (e.g. Evening, 3:30 PM – 7:00 AM), straight from ParkZen. Permits
-// allowed any time aren't listed one by one - the footer line covers them.
+// Hours for permits that can't park here around the clock; the footer covers the rest.
 export default function PermitHoursList({ permits }: { permits: string[] }) {
   const { permitHours } = useLots();
 

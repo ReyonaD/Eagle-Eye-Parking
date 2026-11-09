@@ -16,17 +16,12 @@ interface LotsContextType {
     isLoading: boolean;
     lastRefreshAt: string | null;
     fetchLots: () => Promise<void>;
-    // Re-reads the published hazards/events that restyle closed, event, and
-    // hazard lots. Polled alongside fetchLots; screens also call it on focus
-    // so a closure an admin just posted shows up without waiting for the poll.
+    // Re-reads published hazards/events that restyle lots (also called on screen focus).
     fetchLotStatuses: () => Promise<void>;
     // When each permit may park, from ParkZen, keyed by every label the app
     // shows for a permit (see utils/permitHours.ts). Empty until loaded.
     permitHours: Record<string, PermitHours>;
-    // Whether the Map and Lots tabs should be limited to lots matching the
-    // signed-in user's own permit type. Lives here (not on the account profile)
-    // so it persists across logins/logouts on this device without needing
-    // refreshUser's account-rebuild to know about it.
+    // Limit Map/Lots tabs to the user's permit type; stored per device.
     filterByPermit: boolean;
     setFilterByPermit: (value: boolean) => void;
     // Lets a commuter preview the other time-of-day's permit rules ahead of
@@ -44,9 +39,7 @@ interface LotsContextType {
     setMapTheme: (value: MapTheme) => void;
     // mapTheme resolved against the phone's setting.
     isDarkMap: boolean;
-    // Last known device location, reported by the Map tab's own location fix
-    // (so the Lots tab can rank nearby permits without a second permission
-    // prompt). null until a fix arrives or if permission was denied.
+    // Last device location from the Map tab; null until a fix or if permission is denied.
     userLocation: LatLng | null;
     updateUserLocation: (value: LatLng) => void;
 }
@@ -200,8 +193,6 @@ export function LotsProvider({ children }: { children : ReactNode }) {
       if (!response.ok) throw new Error(`Backend returned ${response.status}`);
 
       const data = await response.json();
-      //console.log("RAW LOT DATA:", JSON.stringify(data[0].occupancy, null, 2));
-      //console.log("DEBUG - FIRST LOT DATA:", JSON.stringify(data[0], null, 2));
       if (!Array.isArray(data)) {
         setRawLots([]);
         return;
@@ -215,9 +206,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
 
         if (mappedCoords.length < 3) return null;
 
-        // Read the backend occupancy estimate from either the source-specific field
-        // or the direct ParkZen estimate, and tolerate older payloads without
-        // lastUpdatedVia set.
+        // Occupancy estimate from the source-specific field or ParkZen's direct estimate.
         let emptyPercentage = null;
         const occupancy = lot.occupancy || {};
         const method = occupancy.lastUpdatedVia || 'python-fusion';
@@ -247,10 +236,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
         const lotName = lot.lot_name || lot.name;
         const category = getLotCategory(lotName);
         const rawPermits = Array.isArray(lot.permits) ? lot.permits : [];
-        // Listed lots: consolidated permit groups, category first (for the emblem).
-        // All other lots: raw ParkZen permits, unchanged. Daytime list — the
-        // Day/Night preview (below, in the derived `lots` memo) decides whether
-        // this or the chart's night-time list is actually shown.
+        // Daytime permit list: category lots get consolidated groups, others raw ParkZen permits.
         const dayPermitList = category ? getLotPermitGroups(lotName, lot.permits) : rawPermits;
 
         return {
@@ -261,10 +247,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
           tag: getLotTag(lot, index),
           markerLabel: `${getPermitTag(lot)}, ${getLotTag(lot, index)}`,
           coordinates: mappedCoords,
-          // "day" prefix = live ParkZen data for right now. The derived `lots`
-          // memo below either passes these through as-is or, when previewing
-          // the *other* time-of-day, replaces them with neutral placeholders
-          // (occupancy can't be known for a time that hasn't happened yet).
+          // "day" = live data; the `lots` memo swaps in placeholders when previewing the other time of day.
           dayFillColor: lot.fillColor || 'rgba(53, 53, 53, 0.4)',
           dayStrokeColor: lot.fillColor === '#2ECC71' ? '#27AE60' :
                        lot.fillColor === '#F39C12' ? '#D68910' :
@@ -294,10 +277,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     }
   };
 
-  // ParkZen has no closure/event/hazard data of its own (its lot payload only
-  // carries occupancy), so a lot's situation comes from our own published
-  // alerts: admin-scheduled events (category 'Closure' closes the lot) and
-  // hazards. Shared here so the Map and Lots tabs always agree on it.
+  // Lot status (closures, events, hazards) comes from our own published alerts, not ParkZen.
   const fetchLotStatuses = React.useCallback(async () => {
     try {
       const [hazards, events] = await Promise.all([getAlerts('hazard'), getAlerts('event')]);
@@ -331,9 +311,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
     return () => clearInterval(intervalId);
   }, []);
 
-  // Picking the time of day it actually is goes back to following the clock
-  // (null), so switching to Night and back to Day doesn't leave the app pinned
-  // to "Day" — which would silently turn into a stale preview at 5:30pm.
+  // Picking the current time of day returns to following the clock (null).
   const setPreviewMode = (value: 'day' | 'night' | null) => {
     setPreviewModeState(value !== null && (value === 'night') === isNightWindow() ? null : value);
   };
@@ -347,9 +325,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
   const actuallyNight = isNightWindow();
   // null previewMode = follow the real clock.
   const previewingNight = previewMode === null ? actuallyNight : previewMode === 'night';
-  // Occupancy only means something for the time it was measured at — once the
-  // preview diverges from the real clock, gray it out instead of showing
-  // right-now data next to rules for a time that hasn't happened yet.
+  // Gray out occupancy while previewing a different time of day.
   const showLiveOccupancy = previewingNight === actuallyNight;
 
   const lots = useMemo(() => rawLots.map((lot) => {

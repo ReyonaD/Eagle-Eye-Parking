@@ -3,14 +3,8 @@ import { Platform } from 'react-native';
 import { router } from 'expo-router';
 import { isPushEnabled } from '../utils/pushNotifications';
 
-//Web-only extras for the admin dashboard, driven by the same poll as the
-//sidebar badges (AdminNotesBadgeContext) so they cost no extra requests:
-// - a browser notification when a new hazard report or note to admin arrives
-//   while the admin is looking at another tab/window
-// - the waiting count in the browser tab title, e.g. "(3) Hazards"
-//Only works while the dashboard is open in a tab; there's no background web
-//push. Notifications respect the admin's Profile "Notifications" switch (the
-//same one that controls phone pushes). On iOS/Android every function here is a no-op.
+// Web-only admin extras, using the sidebar badge poll: a browser notification for new
+// hazard reports/notes, and the waiting count in the tab title. No-ops on iOS/Android.
 
 const IS_WEB = Platform.OS === 'web' && typeof window !== 'undefined';
 const HAS_NOTIFICATIONS = IS_WEB && 'Notification' in window;
@@ -29,9 +23,7 @@ function describe(item: PendingItem): string {
   return item.lot_name ? `${title || 'Report'} · ${item.lot_name}` : title || 'Open the dashboard to review it.';
 }
 
-//ask once, on the admin's first click anywhere: browsers ignore or quietly
-//block a permission prompt that isn't triggered by a user action. Skipped if
-//the admin has turned Notifications off in Profile.
+// Ask on the first click: browsers block permission prompts not triggered by the user.
 function useAskPermissionOnFirstClick() {
   useEffect(() => {
     if (!HAS_NOTIFICATIONS || Notification.permission !== 'default') return;
@@ -44,9 +36,7 @@ function useAskPermissionOnFirstClick() {
   }, []);
 }
 
-//Returns report(kind, pendingItems): call it with each kind's full pending
-//list after every poll. The first list seen for a kind only records what's
-//already there, so opening the dashboard doesn't announce the whole backlog.
+// report(kind, pendingItems) after each poll; the first list is the baseline, not announced.
 export function useAdminNewItemNotifier() {
   useAskPermissionOnFirstClick();
   const seenRef = useRef<Record<Kind, Set<string> | null>>({ hazards: null, notes: null });
@@ -90,9 +80,7 @@ function showNotification(kind: Kind, fresh: PendingItem[]) {
   }
 }
 
-//Keeps "(N) " at the front of the tab title while anything is waiting.
-//The router rewrites document.title on every navigation, so watch for that
-//and put the count back.
+// Keeps "(N) " in the tab title, restoring it after the router rewrites the title.
 export function useAdminTabTitleCount(count: number) {
   useEffect(() => {
     if (!IS_WEB) return;

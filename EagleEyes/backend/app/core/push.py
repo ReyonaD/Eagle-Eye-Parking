@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Optional
 
@@ -5,6 +6,8 @@ import httpx
 
 from app.database import session_local
 from app.models import Alert, Note, PushToken, User
+
+logger = logging.getLogger(__name__)
 
 #Expo's push service forwards each message to FCM (Android) or APNs (iOS), so
 #the backend only ever deals with Expo push tokens, never Firebase/Apple keys
@@ -58,7 +61,7 @@ def _send(db, tokens: list[str], title: str, body: str, data: dict, log_ref: str
                 response.raise_for_status()
                 tickets = response.json().get("data", [])
             except (httpx.HTTPError, ValueError) as e:
-                print(f"[PUSH] Expo push request failed for {log_ref}: {e}")
+                logger.warning("Expo push request failed for %s: %s", log_ref, e)
                 continue
 
             #tickets come back in the same order as the messages
@@ -69,7 +72,7 @@ def _send(db, tokens: list[str], title: str, body: str, data: dict, log_ref: str
                 if error == "DeviceNotRegistered":
                     dead_tokens.append(token)
                 else:
-                    print(f"[PUSH] Expo rejected a message for {log_ref}: {error or ticket.get('message')}")
+                    logger.warning("Expo rejected a message for %s: %s", log_ref, error or ticket.get("message"))
 
     if dead_tokens:
         db.query(PushToken).filter(PushToken.token.in_(dead_tokens)).delete(synchronize_session=False)
@@ -77,9 +80,7 @@ def _send(db, tokens: list[str], title: str, body: str, data: dict, log_ref: str
 
 
 def send_alert_published(alert_id: int, exclude_user_id: Optional[int] = None) -> None:
-    """Notifies every registered device that an alert just went live.
-    Runs as a background task, after the request's own DB session is closed,
-    so it opens its own."""
+    """Background task: pushes a newly published alert to every registered device."""
     db = session_local()
     try:
         alert = db.query(Alert).filter(Alert.id == alert_id).first()
@@ -101,9 +102,7 @@ def send_alert_published(alert_id: int, exclude_user_id: Optional[int] = None) -
 
 
 def send_note_acknowledged(note_id: int) -> None:
-    """Tells only the commuter who wrote the note (every device they're signed
-    in on) that the parking team acknowledged it. Background task, own session.
-    The message carries the note's title only - never phone, plate or description."""
+    """Background task: tells the note's author it was acknowledged (title only, no personal details)."""
     db = session_local()
     try:
         note = db.query(Note).filter(Note.id == note_id).first()

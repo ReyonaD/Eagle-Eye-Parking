@@ -1,13 +1,9 @@
-// What's currently happening on each lot - closures, campus events, and
-// reported hazards - derived from the published alerts feed, so the map can
-// restyle a lot and pin the matching category icon on it.
+// Per-lot closures, events and hazards, derived from the published alerts feed.
 
 import { AlertVisual, getEventVisual, getHazardVisual, getCategoryLabel } from './alertVisuals';
 import { getEventRange, parseUTC } from './eventDates';
 
-// Alert.lot_name is a single column; an event can affect several lots (e.g. a
-// gameday), so those are stored joined with this separator. A hazard's single
-// lot name parses back as a one-item list, so every reader can treat it the same.
+// Multiple lots are stored in one lot_name column, joined with this separator.
 const LOT_NAME_SEPARATOR = '; ';
 
 export function parseLotNames(lotName?: string | null): string[] {
@@ -35,9 +31,7 @@ export function isClosureCategory(category?: string | null): boolean {
   return value === CLOSURE_CATEGORY.toLowerCase() || value === LEGACY_CLOSURE_CATEGORY.toLowerCase();
 }
 
-// A closed lot is drawn neutral gray (no blue tint) with diagonal stripes
-// over it, in the same gray as its border (see getStripeSegments in
-// utils/geo.ts), instead of a badge.
+// Closed lots: neutral gray with diagonal stripes instead of a badge.
 export const CLOSED_FILL_COLOR = '#A3A3A3';
 export const CLOSED_STROKE_COLOR = '#737373';
 export const CLOSED_STRIPE_COLOR = CLOSED_STROKE_COLOR;
@@ -112,9 +106,7 @@ export function getActiveEvent(status?: LotStatus | null): LotStatusEvent | unde
   return status?.events.find((e) => e.active);
 }
 
-// Icons to pin on the lot, most important first: closure, events, then
-// hazards. One icon per category so three snow reports don't show three
-// snowflakes; capped so the badge stays readable on a small lot.
+// Badge icons, most important first: closure, events, hazards; one per category, capped.
 export function getLotStatusIcons(status?: LotStatus | null, max = 3): AlertVisual[] {
   if (!status) return [];
   const visuals: AlertVisual[] = [];
@@ -140,10 +132,7 @@ export type LotStatusItem = {
 
 const formatTime = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-// One row per closure/event/hazard on the lot, most important first - what the
-// map's lot sheet and the Lots tab's detail screen list under the lot name.
-// Closures/events are named by their kind ("Closure", "Gameday"), not the
-// alert's title; hazards keep their reported title.
+// Rows listed under a lot's name: closures/events by kind, hazards by their title.
 export function getLotStatusItems(status?: LotStatus | null): LotStatusItem[] {
   if (!status) return [];
   const items: LotStatusItem[] = [];
@@ -195,9 +184,7 @@ export function getLotTakeover(status?: LotStatus | null): LotTakeover | null {
   };
 }
 
-// Restyles a map lot for its current situation. A closed lot goes dark gray
-// (its occupancy no longer matters); a lot with an event in progress keeps its
-// occupancy fill but is outlined in that event's color.
+// Closed lots go gray; a lot with an event in progress is outlined in the event's color.
 export function applyLotStatus(lot: any, status?: LotStatus | null): any {
   if (!status) return lot;
 
@@ -217,4 +204,68 @@ export function applyLotStatus(lot: any, status?: LotStatus | null): any {
     lotStatus: status,
     strokeColor: activeEvent ? getEventVisual(activeEvent.alert.category).iconColor : lot.strokeColor,
   };
+}
+
+// True when the lot with this name (as LotPickerModal hands it back) is closed
+// right now. `lots` is LotsContext's list, already carrying each lot's status.
+export function isLotNameClosed(lots: any[], lotName?: string | null): boolean {
+  if (!lotName) return false;
+  const wanted = lotName.trim().toLowerCase();
+  return lots.some((lot) => String(lot.name || '').trim().toLowerCase() === wanted && isLotClosed(lot.lotStatus));
+}
+
+export type EventConflict = {
+  alert: any;
+  // the lots it shares with the event being saved
+  lotNames: string[];
+  start: Date;
+  end: Date;
+  openEnded: boolean;
+  isClosure: boolean;
+};
+
+// Events that clash with one being saved: closures overlapping a regular event, or any
+// event overlapping a closure. end = null means no end date. Mirrors the backend check.
+export function findEventConflicts(
+  events: any[],
+  draft: { category: string; lotNames: string[]; start: Date; end: Date | null; excludeId?: number | null },
+): EventConflict[] {
+  const wanted = new Set(draft.lotNames.map((name) => name.toLowerCase()));
+  if (wanted.size === 0) return [];
+  const draftIsClosure = isClosureCategory(draft.category);
+  const draftEnd = draft.end ?? null;
+
+  const conflicts: EventConflict[] = [];
+  (events || []).forEach((eventItem) => {
+    if (draft.excludeId != null && eventItem.id === draft.excludeId) return;
+    if (!eventItem.event_start) return;
+    const isClosure = isClosureCategory(eventItem.category);
+    if (!draftIsClosure && !isClosure) return;
+    const shared = parseLotNames(eventItem.lot_name).filter((name) => wanted.has(name.toLowerCase()));
+    if (shared.length === 0) return;
+    const { start, end, openEnded } = getEventRange(eventItem);
+    const overlaps = draft.start < end && (draftEnd === null || start < draftEnd);
+    if (overlaps) conflicts.push({ alert: eventItem, lotNames: shared, start, end, openEnded, isClosure });
+  });
+  return conflicts;
+}
+
+// "Lot 20 – Gameday Closure (Oct 24, 9:00 AM – 5:00 PM)", one line per conflict.
+export function describeEventConflicts(conflicts: EventConflict[]): string {
+  const when = (d: Date) => `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${formatTime(d)}`;
+  return conflicts
+    .map((c) => `• ${c.lotNames.join(', ')} – ${c.alert.title} (${when(c.start)} – ${c.openEnded ? 'no end date' : when(c.end)})`)
+    .join('\n');
+}
+
+// Closures in effect now on `lotName`, from a fresh events list (LotsContext can be stale).
+export function findActiveClosures(events: any[], lotName?: string | null, now: Date = new Date()): any[] {
+  const wanted = new Set(parseLotNames(lotName).map((name) => name.toLowerCase()));
+  if (wanted.size === 0) return [];
+  return (events || []).filter((eventItem) => {
+    if (!eventItem.event_start || !isClosureCategory(eventItem.category)) return false;
+    if (!parseLotNames(eventItem.lot_name).some((name) => wanted.has(name.toLowerCase()))) return false;
+    const { start, end } = getEventRange(eventItem);
+    return start <= now && now < end;
+  });
 }

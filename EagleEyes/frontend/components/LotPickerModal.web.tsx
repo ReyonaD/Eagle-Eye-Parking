@@ -1,11 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, FlatList,
+  View, Text, StyleSheet, Modal, TouchableOpacity, FlatList, TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
-import { useLots } from '../context/LotsContext';
+import { isLotClosed } from '../utils/lotStatus';
+import { formatDistance, LatLng } from '../utils/geo';
+import { useLotPickerList, PickerLot, UNT_CENTER } from './lotPickerShared';
+
+//selectedName while the "Not in a lot" row is picked (no real lot is named this)
+const NO_LOT = '__no_lot__';
 
 //same tappable-polygon pattern as EagleMap.web.tsx's WebPolygon
 function TappablePolygon({ paths, options, onClick }: { paths: any; options: any; onClick?: () => void }) {
@@ -33,105 +38,170 @@ function TappablePolygon({ paths, options, onClick }: { paths: any; options: any
   return null;
 }
 
-const UNT_REGION = {
-  latitude: 33.2110,
-  longitude: -97.1475,
-  latitudeDelta: 0.018,
-  longitudeDelta: 0.018,
-};
-
-//straight-line distance in meters between two coordinates (haversine)
-function distanceMeters(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) {
-  const R = 6371000;
-  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
-  const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
-  const la1 = (a.latitude * Math.PI) / 180;
-  const la2 = (b.latitude * Math.PI) / 180;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
+//pans/zooms the map to a lot picked from the list or search; `focus.at`
+//changes on every pick, so picking the same lot again still re-centers
+function MapFocus({ focus }: { focus: { center: LatLng; at: number } | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || !focus) return;
+    map.panTo({ lat: focus.center.latitude, lng: focus.center.longitude });
+    map.setZoom(17);
+  }, [map, focus]);
+  return null;
 }
 
-function centroid(coords: { latitude: number; longitude: number }[]) {
-  const lat = coords.reduce((s, c) => s + c.latitude, 0) / coords.length;
-  const lon = coords.reduce((s, c) => s + c.longitude, 0) / coords.length;
-  return { latitude: lat, longitude: lon };
-}
-
-function formatDistance(m: number) {
-  return m < 950 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
-}
-
-//react-native-maps is native-only and can't be bundled for web (Metro/Expo Router
-//picks this file over LotPickerModal.tsx automatically on web), so this variant
-//swaps it for @vis.gl/react-google-maps, same as EagleMap.web.tsx.
+// Web version (react-native-maps is native-only); list, sorting and search come from lotPickerShared.
 export default function LotPickerModal({
   visible,
   onClose,
   onSelect,
+  disableClosed = false,
+  onSelectNoLot,
 }: {
   visible: boolean;
   onClose: () => void;
   onSelect: (lotName: string) => void;
+  //when given, a "Not in a lot" choice is offered (e.g. a hazard on the road
+  //between lots) and picking it calls this instead of onSelect
+  onSelectNoLot?: () => void;
+  //true = lots closed right now can't be picked (e.g. hazard reports). Closed
+  //lots are always tagged "CLOSED" either way.
+  disableClosed?: boolean;
 }) {
-  const { lots } = useLots();
   const insets = useSafeAreaInsets();
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
   const [selectedName, setSelectedName] = useState<string | null>(null);
-  //falls back to campus center until (if) the browser reports the user's position
-  const [userLoc, setUserLoc] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [query, setQuery] = useState('');
+  const [ownFix, setOwnFix] = useState<LatLng | null>(null);
+  const [focus, setFocus] = useState<{ center: LatLng; at: number } | null>(null);
+  const searchRef = useRef<TextInput>(null);
+  const { polygons, nearest, matches, hasLocation } = useLotPickerList(visible, query, ownFix);
+  const searching = query.trim().length > 0;
 
   useEffect(() => {
-    if (!visible || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    if (!visible || ownFix || typeof navigator === 'undefined' || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      (pos) => setUserLoc({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      () => {}, // permission denied or unavailable — just keep the campus-center fallback
+      (pos) => setOwnFix({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      () => {}, // permission denied or unavailable — the list stays sorted from campus center
       { timeout: 5000 },
     );
-  }, [visible]);
+  }, [visible, ownFix]);
 
-  const origin = userLoc ?? { latitude: UNT_REGION.latitude, longitude: UNT_REGION.longitude };
+  //pick a lot from the list or search: select it and show where it is
+  const pickFromList = (lot: PickerLot) => {
+    setSelectedName(lot.name);
+    setQuery('');
+    searchRef.current?.blur();
+    setFocus({ center: lot.center, at: Date.now() });
+  };
 
-  //nearest lot first; distance is measured to the lot polygon's center
-  const sortedLots = useMemo(() => {
-    return lots
-      .filter((l: any) => Array.isArray(l.coordinates) && l.coordinates.length >= 3)
-      .map((l: any) => ({ ...l, __distance: distanceMeters(origin, centroid(l.coordinates)) }))
-      .sort((a: any, b: any) => a.__distance - b.__distance);
-  }, [lots, origin.latitude, origin.longitude]);
+  const close = () => {
+    setQuery('');
+    onClose();
+  };
 
   const confirm = () => {
-    if (selectedName) {
+    if (selectedName === NO_LOT) {
+      onSelectNoLot?.();
+      close();
+    } else if (selectedName) {
       onSelect(selectedName);
-      onClose();
+      close();
     }
   };
 
+  const pickNoLot = () => {
+    setSelectedName(NO_LOT);
+    setQuery('');
+  };
+
+  //the "Not in a lot" row: atop the nearest list, and offered again when a
+  //search finds nothing
+  const noLotRow = onSelectNoLot ? (
+    <TouchableOpacity
+      style={[styles.row, styles.noLotRow, selectedName === NO_LOT && styles.rowSelected]}
+      onPress={pickNoLot}
+    >
+      <Ionicons name="navigate-circle-outline" size={20} color="#3976B9" />
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowName, selectedName === NO_LOT && styles.rowNameSelected]}>Not in a lot</Text>
+        <Text style={styles.noLotHint}>Road, sidewalk, garage entrance - then describe where</Text>
+      </View>
+      {selectedName === NO_LOT && <Ionicons name="checkmark-circle" size={20} color="#00853E" />}
+    </TouchableOpacity>
+  ) : null;
+
+  const renderRow = ({ item }: { item: PickerLot }) => {
+    const isSelected = item.name === selectedName;
+    const blocked = disableClosed && item.closed;
+    return (
+      <TouchableOpacity
+        style={[styles.row, isSelected && styles.rowSelected, blocked && styles.rowDisabled]}
+        onPress={() => pickFromList(item)}
+        disabled={blocked}
+      >
+        <View style={[styles.dot, { backgroundColor: item.fillColor }]} />
+        <Text style={[styles.rowName, isSelected && styles.rowNameSelected]} numberOfLines={1}>
+          {item.name}
+        </Text>
+        {item.closed && <Text style={styles.closedTag}>CLOSED</Text>}
+        <Text style={styles.rowDistance}>{formatDistance(item.distance)}</Text>
+        {isSelected && <Ionicons name="checkmark-circle" size={20} color="#00853E" />}
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={close}>
       <View style={[styles.container, { paddingTop: insets.top + 4, paddingBottom: insets.bottom }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
+          <TouchableOpacity onPress={close} style={styles.headerBtn}>
             <Ionicons name="close" size={26} color="#333" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Select a Lot</Text>
           <View style={styles.headerBtn} />
         </View>
-        <Text style={styles.headerHint}>
-          Tap a lot on the map, or pick from the list below (nearest first)
-        </Text>
 
+        <View style={styles.searchBar}>
+          <Ionicons name="search-outline" size={18} color="#888" />
+          <TextInput
+            ref={searchRef}
+            style={styles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Type a lot (e.g. 20, Union Circle)"
+            placeholderTextColor="#999"
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            onSubmitEditing={() => {
+              //Enter picks the best match, unless it's a closed lot this form can't use
+              const best = matches[0];
+              if (best && !(disableClosed && best.closed)) pickFromList(best);
+            }}
+          />
+          {searching && (
+            <TouchableOpacity onPress={() => setQuery('')} hitSlop={10}>
+              <Ionicons name="close-circle" size={18} color="#aaa" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* kept mounted while searching (just hidden) so the map isn't rebuilt */}
         {apiKey ? (
-          <View style={styles.map}>
+          <View style={searching ? styles.hidden : styles.map}>
             <APIProvider apiKey={apiKey}>
               <Map
-                defaultCenter={{ lat: UNT_REGION.latitude, lng: UNT_REGION.longitude }}
+                defaultCenter={{ lat: UNT_CENTER.latitude, lng: UNT_CENTER.longitude }}
                 defaultZoom={15}
                 gestureHandling="greedy"
                 disableDefaultUI
                 style={{ width: '100%', height: '100%' }}
               >
-                {sortedLots.map((lot: any) => {
+                <MapFocus focus={focus} />
+                {polygons.map((lot: any) => {
                   const isSelected = lot.name === selectedName;
+                  const blocked = disableClosed && isLotClosed(lot.lotStatus);
                   return (
                     <TappablePolygon
                       key={lot.id}
@@ -140,9 +210,9 @@ export default function LotPickerModal({
                         fillColor: isSelected ? 'rgba(0,133,62,0.55)' : lot.fillColor,
                         strokeColor: isSelected ? '#00853E' : lot.strokeColor,
                         strokeWeight: isSelected ? 3 : 2,
-                        clickable: true,
+                        clickable: !blocked,
                       }}
-                      onClick={() => setSelectedName(lot.name)}
+                      onClick={() => { if (!blocked) setSelectedName(lot.name); }}
                     />
                   );
                 })}
@@ -150,42 +220,42 @@ export default function LotPickerModal({
             </APIProvider>
           </View>
         ) : (
-          <View style={[styles.map, styles.mapPlaceholder]}>
-            <Text style={styles.mapPlaceholderText}>Google Maps API key is missing</Text>
-          </View>
+          !searching && (
+            <View style={[styles.map, styles.mapPlaceholder]}>
+              <Text style={styles.mapPlaceholderText}>Google Maps API key is missing</Text>
+            </View>
+          )
         )}
+
+        <Text style={styles.sectionLabel}>
+          {searching
+            ? (matches.length ? `${matches.length} MATCHING LOT${matches.length === 1 ? '' : 'S'}` : `NO LOTS MATCH "${query.trim().toUpperCase()}"`)
+            : hasLocation ? 'NEAREST TO YOU' : 'NEAREST TO CAMPUS CENTER'}
+        </Text>
 
         <FlatList
           style={styles.list}
-          data={sortedLots}
-          keyExtractor={(item: any) => item.id}
-          renderItem={({ item }: { item: any }) => {
-            const isSelected = item.name === selectedName;
-            return (
-              <TouchableOpacity
-                style={[styles.row, isSelected && styles.rowSelected]}
-                onPress={() => setSelectedName(item.name)}
-              >
-                <View style={[styles.dot, { backgroundColor: item.fillColor || '#999' }]} />
-                <Text style={[styles.rowName, isSelected && styles.rowNameSelected]} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Text style={styles.rowDistance}>{formatDistance(item.__distance)}</Text>
-                {isSelected && <Ionicons name="checkmark-circle" size={20} color="#00853E" />}
-              </TouchableOpacity>
-            );
-          }}
+          data={searching ? matches : nearest}
+          keyExtractor={(item) => item.name}
+          renderItem={renderRow}
+          ListHeaderComponent={searching ? null : noLotRow}
+          ListEmptyComponent={searching ? noLotRow : null}
+          keyboardShouldPersistTaps="handled"
         />
 
-        <TouchableOpacity
-          style={[styles.confirmBtn, !selectedName && styles.confirmBtnDisabled]}
-          onPress={confirm}
-          disabled={!selectedName}
-        >
-          <Text style={styles.confirmText}>
-            {selectedName ? `SELECT ${selectedName.toUpperCase()}` : 'SELECT A LOT'}
-          </Text>
-        </TouchableOpacity>
+        {!searching && (
+          <TouchableOpacity
+            style={[styles.confirmBtn, !selectedName && styles.confirmBtnDisabled]}
+            onPress={confirm}
+            disabled={!selectedName}
+          >
+            <Text style={styles.confirmText}>
+              {selectedName === NO_LOT
+                ? 'CONTINUE WITHOUT A LOT'
+                : selectedName ? `SELECT ${selectedName.toUpperCase()}` : 'SELECT A LOT'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </Modal>
   );
@@ -199,9 +269,21 @@ const styles = StyleSheet.create({
   },
   headerBtn: { width: 40, alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: '#00853E' },
-  headerHint: { fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 6, paddingHorizontal: 20 },
 
-  map: { height: '45%' },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 12, marginTop: 8, marginBottom: 10,
+    paddingHorizontal: 12, height: 44,
+    backgroundColor: '#f2f2f2', borderRadius: 10,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: '#1a1a1a', paddingVertical: 0, outlineStyle: 'none' } as any,
+
+  map: { height: '40%' },
+  hidden: { height: 0, overflow: 'hidden' },
+  sectionLabel: {
+    fontSize: 11, fontWeight: '900', color: '#888', letterSpacing: 1.2,
+    paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4,
+  },
   mapPlaceholder: { backgroundColor: '#eaeaea', justifyContent: 'center', alignItems: 'center' },
   mapPlaceholderText: { fontSize: 13, color: '#d32f2f', fontWeight: '600' },
 
@@ -212,6 +294,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },
   rowSelected: { backgroundColor: '#E8F5EE' },
+  rowDisabled: { opacity: 0.45 },
+  noLotRow: { backgroundColor: '#F5F9FD' },
+  noLotHint: { fontSize: 12, color: '#888', marginTop: 2 },
+  closedTag: {
+    fontSize: 10, fontWeight: '800', color: '#fff', backgroundColor: '#374151',
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, overflow: 'hidden',
+  },
   dot: { width: 12, height: 12, borderRadius: 6 },
   rowName: { flex: 1, fontSize: 15, fontWeight: '600', color: '#333' },
   rowNameSelected: { color: '#00853E' },

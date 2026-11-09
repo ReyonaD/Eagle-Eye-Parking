@@ -1,3 +1,4 @@
+import logging
 import os
 import smtplib
 from email.mime.text import MIMEText
@@ -6,6 +7,8 @@ from dotenv import load_dotenv
 
 #load the .env file so we can pull the SMTP credentials
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
@@ -18,7 +21,7 @@ def send_password_reset_email(to_email: str, code: str) -> None:
     """Sends the 6-digit password-reset code to the user. Runs in a background task so it never blocks the API response."""
     if not SMTP_USER or not SMTP_PASSWORD:
         #credentials missing -> fall back to console so local dev still works
-        print(f"[PASSWORD RESET] SMTP not configured, code for {to_email}: {code}")
+        logger.warning("SMTP not configured; password reset code for %s: %s", to_email, code)
         return
 
     message = MIMEMultipart("alternative")
@@ -55,7 +58,7 @@ def send_password_reset_email(to_email: str, code: str) -> None:
             server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_USER, to_email, message.as_string())
-        print(f"[PASSWORD RESET] email sent to {to_email}")
+        logger.info("Password reset email sent to %s", to_email)
     except Exception as exc:
         #never crash the request because of a mail failure, just log it
-        print(f"[PASSWORD RESET] FAILED to send email to {to_email}: {exc}")
+        logger.error("Failed to send password reset email to %s: %s", to_email, exc)

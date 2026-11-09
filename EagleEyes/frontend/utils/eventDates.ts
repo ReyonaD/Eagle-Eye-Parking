@@ -31,15 +31,10 @@ export const formatDate = (dateString: string) => {
   return `${m} ${Number(day)}, ${year}`;
 };
 
-//stand-in end for an event/note saved with no end date (TBD / permanent /
-//until further notice). Far enough out that every "has it ended yet?" check
-//treats it as ongoing, but still a 4-digit year so "YYYY-MM-DD" string
-//comparisons keep working.
+// Stand-in end for events/notes with no end date (still a 4-digit year for string compares).
 export const OPEN_ENDED_END = new Date(9999, 11, 31, 23, 59, 59);
 
-//events created before event_start/event_end existed only have created_at;
-//treat those as a single-day event on their submission date. A row with a
-//start but no end was saved with "No end date", so it's open-ended.
+// Old events without event_start count as one day on created_at; start without end = open-ended.
 export const getEventRange = (eventItem: any): { start: Date; end: Date; openEnded: boolean } => {
   if (eventItem.event_start) {
     const start = parseUTC(eventItem.event_start);
@@ -73,9 +68,7 @@ export const formatEventTimes = (eventItem: any): string => {
   return `${fmtTime(start)} – ${fmtTime(end)}`;
 };
 
-//handleSaveEvent folds a "When: ..." schedule line onto the front of the
-//description; strip it back off before reusing the text for a new event,
-//since that schedule describes the OLD occurrence, not the new one
+// Removes the old "When: ..." line before reusing an event's description.
 export const stripScheduleFromDescription = (description: string): string => {
   if (!description.startsWith('When: ')) return description;
   const splitAt = description.indexOf('\n\n');
@@ -84,11 +77,7 @@ export const stripScheduleFromDescription = (description: string): string => {
 
 export type NoteBucket = 'pending' | 'active' | 'expired';
 
-//a "Note to Admin"'s lane: its commuter-provided timeline (event_start/
-//event_end) wins over acknowledgement - once the window has passed it's
-//Expired regardless, otherwise it's Active once acknowledged, or still
-//waiting on review. Shared by the Notes screen and the admin badge count,
-//so both always agree on what counts as "needs review."
+// A note's bucket: Expired once its window ends, else Active if acknowledged, else Pending.
 export const classifyNote = (note: any): NoteBucket => {
   const { end } = getEventRange(note);
   if (end.getTime() < Date.now()) return 'expired';

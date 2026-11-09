@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { promoteToAdmin, getAdmins, grantOwner, revokeAdmin } from '../../api/auth';
+import { promoteToAdmin, getAdmins, grantOwner, revokeAdmin, getCurrentUser } from '../../api/auth';
+import { useFocusPolling } from '../../hooks/use-focus-polling';
 import { useUser } from '../../context/UserContext';
 import { Alert } from '../../utils/webCompat';
 
@@ -38,23 +39,31 @@ export default function AdminManagementScreen() {
   const [adminsLoading, setAdminsLoading] = useState(true);
   const [actioningEmail, setActioningEmail] = useState<string | null>(null);
 
-  const loadAdmins = async () => {
+  // Re-reads the owner flag from the backend, then the roster; runs on focus and while open.
+  const loadAdmins = useCallback(async () => {
+    let owner = (await AsyncStorage.getItem('isOwner')) === 'true';
     try {
-      const list = await getAdmins();
-      setAdmins(list);
+      const account = await getCurrentUser();
+      owner = account.role === 'admin' && !!account.is_owner;
+      await AsyncStorage.setItem('isOwner', owner ? 'true' : 'false');
     } catch {
-      // Not an owner, or the request failed — the section just stays hidden/empty.
+      // offline - fall back to the stored flag
     }
-  };
-
-  useEffect(() => {
-    AsyncStorage.getItem('isOwner').then(async (value) => {
-      const owner = value === 'true';
-      setIsOwner(owner);
-      if (owner) await loadAdmins();
-      setAdminsLoading(false);
-    });
+    setIsOwner(owner);
+    if (owner) {
+      try {
+        setAdmins(await getAdmins());
+      } catch {
+        // request failed - keep the last roster on screen
+      }
+    } else {
+      setAdmins([]);
+    }
+    setAdminsLoading(false);
   }, []);
+
+  useFocusEffect(useCallback(() => { loadAdmins(); }, [loadAdmins]));
+  useFocusPolling(loadAdmins);
 
   const handlePromote = async () => {
     const trimmed = email.trim();
@@ -68,7 +77,7 @@ export default function AdminManagementScreen() {
       setEmail('');
       //stay on this screen instead of bouncing back to Profile, so an owner
       //can see the new admin land in the roster right away
-      if (isOwner) await loadAdmins();
+      await loadAdmins();
       Alert.alert('Success', `${trimmed} is now an admin.`);
     } catch (error: any) {
       Alert.alert('Could not promote user', error.message || 'Please try again.');
@@ -132,8 +141,7 @@ export default function AdminManagementScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* web is reached from the account menu / sidebar, not a navigation
-            stack, so a page title replaces the mobile-style back header */}
+        {/* web: page title instead of the mobile back header */}
         {IS_WEB ? (
           <View style={styles.webHeader}>
             <Text style={styles.screenTitle}>Admin Management</Text>
@@ -151,6 +159,16 @@ export default function AdminManagementScreen() {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
           <Text style={styles.subtitle}>Promote commuters and manage who has admin access</Text>
 
+          {!adminsLoading && !isOwner && (
+            <View style={styles.card}>
+              <Text style={styles.helperText}>
+                Only owners can promote commuters or change admin access. Ask an owner if someone needs access.
+              </Text>
+            </View>
+          )}
+
+          {isOwner && (
+          <>
           <Text style={styles.sectionLabel}>PROMOTE A COMMUTER</Text>
           <View style={styles.card}>
             <Text style={styles.helperText}>
@@ -178,6 +196,8 @@ export default function AdminManagementScreen() {
               )}
             </TouchableOpacity>
           </View>
+          </>
+          )}
 
           {isOwner && (
             <>

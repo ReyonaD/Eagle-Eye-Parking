@@ -1,9 +1,4 @@
-// Note to Admin — frontend API boundary.
-//
-// This file is the ONLY place Note-to-Admin screens are allowed to talk to
-// the network (same isolation convention as api/alerts.js and api/auth.js).
-// Notes are a separate backend model from Alerts (see app/models.py's Note
-// class for why) — do not reuse /alerts or createAlert() here.
+// Note to Admin API. Notes are their own backend model; don't use /alerts here.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../utils/webCompat';

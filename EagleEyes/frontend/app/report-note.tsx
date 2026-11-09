@@ -18,6 +18,8 @@ import EndTimePicker, {
 import ToggleChip from '../components/ToggleChip';
 import TimePickerField from '../components/TimePickerField';
 import { useUser } from '../context/UserContext';
+import { useLots } from '../context/LotsContext';
+import { isLotNameClosed } from '../utils/lotStatus';
 import { Alert } from '../utils/webCompat';
 
 type PickedPhoto = { uri: string; file?: File };
@@ -60,6 +62,10 @@ export default function ReportNoteScreen() {
   const [reason, setReason] = useState('');
   const [detail, setDetail] = useState('');
   const [selectedLot, setSelectedLot] = useState<string | null>(null);
+  //notes stay allowed on a closed lot (e.g. "my car is stuck in the closed
+  //lot"), just flagged so the commuter knows it's closed
+  const { lots } = useLots();
+  const selectedLotClosed = isLotNameClosed(lots, selectedLot);
   const [showLotPicker, setShowLotPicker] = useState(false);
   //"YYYY-MM-DD" from the calendar picker
   const [startDate, setStartDate] = useState('');
@@ -369,6 +375,14 @@ export default function ReportNoteScreen() {
           </View>
           <Ionicons name="chevron-forward" size={18} color="#888" />
         </TouchableOpacity>
+        {selectedLotClosed && (
+          <View style={styles.closedBanner}>
+            <Ionicons name="lock-closed" size={16} color="#374151" />
+            <Text style={styles.closedBannerText}>
+              {selectedLot} is closed right now. You can still send this note to the parking team.
+            </Text>
+          </View>
+        )}
 
         <TextInput
           style={styles.input}
@@ -602,6 +616,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 16,
     marginBottom: 14,
+  },
+  closedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F3F4F6',
+    borderLeftWidth: 3,
+    borderLeftColor: '#374151',
+    borderRadius: 6,
+    padding: 10,
+    marginTop: -6,
+    marginBottom: 14,
+  },
+  closedBannerText: {
+    flex: 1,
+    color: '#374151',
+    fontSize: 13,
+    fontWeight: '600',
   },
   lotButtonLabel: {
     flexDirection: 'row',

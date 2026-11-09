@@ -7,7 +7,6 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Modal,
   ActivityIndicator,
   ScrollView,
@@ -17,7 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useLots } from '../../context/LotsContext';
@@ -33,11 +32,7 @@ import PermitHoursList from '../../components/PermitHoursList';
 import AlertIcon from '../../components/AlertIcon';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full' | 'Closed' | 'No Data';
 
-// Mobile loads just enough lots to fill the viewport, then appends more as
-// the user scrolls toward the bottom. Web instead pages through in fixed
-// chunks with Prev/Next controls.
-// Same amber as the "Near Capacity" occupancy color elsewhere in the app —
-// reused here for "you're previewing, not looking at live data".
+// Amber ("Near Capacity" color) marks a Day/Night preview instead of live data.
 const PREVIEW_AMBER = '#F39C12';
 const PREVIEW_AMBER_DARK = '#D68910';
 
@@ -62,10 +57,7 @@ function getNumColumns(width: number): number {
   return match ? match.columns : 1;
 }
 
-// Pin a lot on web with a tap on its pin icon; on native, long-press the
-// card since there's no room for a persistent icon in the list row.
-// Exported so logout can clear it — pins aren't tied to an account server-side,
-// so without this a new login on the same device would inherit the old one's pins.
+// Pins are per device (tap the pin icon on web, long-press on native); cleared on logout.
 export const PINNED_LOTS_STORAGE_KEY = 'pinnedLotIds';
 const PIN_HINT_SEEN_KEY = 'hasSeenPinHint';
 // Kept distinct from STATUS_COLOR so a pinned+Full lot doesn't read as one signal.
@@ -160,9 +152,7 @@ function getPermitBadgeInfo(permitList: string[], lotName?: string) {
       const colors = PERMIT_BADGE_COLORS[namePart] || { bg: '#D8D8D8', text: '#555' };
       return { label: namePart, ...colors };
     }
-    // ParkZen hasn't assigned this lot a permit type at all (e.g. Lot 97) —
-    // fall back to the lot number itself ("Lot 97" -> "L97") instead of a
-    // bare "?", so the badge still identifies the lot.
+    // No ParkZen permit (e.g. Lot 97): badge shows the lot number ("L97") instead of "?".
     const lotNumber = lotName?.match(/lot\s*#?\s*(\d+)/i)?.[1];
     if (lotNumber) {
       return { label: `L${lotNumber}`, bg: '#E0E0E0', text: '#666' };
@@ -170,16 +160,9 @@ function getPermitBadgeInfo(permitList: string[], lotName?: string) {
     return { label: '?', bg: '#E0E0E0', text: '#666' };
   }
   const raw = permitList[0].trim();
-  // A numbered A-Reserved/Resident-Reserved lot's own permitList now leads
-  // with its raw specific code (e.g. "Lot 16 Resident Reserve") instead of
-  // the generic bucket name — shorten it the same way the detail view does
-  // ("RR16") instead of falling through to abbreviatePermit's generic
-  // initials logic, which would otherwise mangle it.
+  // Per-lot codes shorten to "RR16"/"A24" like the detail view.
   const label = isPerLotPermitCode(raw) ? normalizePermitPreservingCode(raw) : abbreviatePermit(raw);
-  // Same color source as the Profile permit card and lot details sheet, so a
-  // given permit reads as the same color everywhere in the app. "border"
-  // only comes through for near-white fills (e.g. Evening) so the badge
-  // doesn't disappear against this card's own white background.
+  // Same permit colors as everywhere else; border only for near-white fills.
   const { bg, text, border } = getPermitCardStyle(raw);
   return { label, bg, text, border };
 }
@@ -390,8 +373,7 @@ function FilterHeader({
         )}
       </View>
 
-      {/* Filter Buttons - scroll sideways so a long permit name or
-          "DAY (PREVIEW)" never squeezes or clips the other pills */}
+      {/* Filter buttons scroll sideways so long labels never clip */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -469,9 +451,7 @@ export default function LotsScreen() {
   const [moreInfoVisible, setMoreInfoVisible] = useState(false);
   const [permitFilter, setPermitFilter] = useState('all');
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
-  // Once the user explicitly touches the permit filter (even choosing "All
-  // Permits" again), that choice wins over the "only show my permit type"
-  // preference below, instead of silently re-narrowing back to it.
+  // Once the user touches the permit filter, it overrides the "my permit" preference.
   const [permitManuallySelected, setPermitManuallySelected] = useState(false);
   const [permitPickerVisible, setPermitPickerVisible] = useState(false);
   const [availabilityPickerVisible, setAvailabilityPickerVisible] = useState(false);
@@ -551,20 +531,13 @@ export default function LotsScreen() {
     ? new Date(lastRefreshAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : 'Waiting for sync';
 
-  // "Only show my permit type" preference from Profile Setting, applied ahead
-  // of the on-screen search/permit/availability filters below — but only until
-  // the user explicitly picks a permit themselves, since they should always be
-  // able to opt back into seeing every permit.
+  // "Only show my permit type" preference, until the user picks a permit themselves.
   const permitTypeLots = useMemo(() => {
     if (!filterByPermit || !user.parkingProfile.permitType || permitManuallySelected) return lots;
     return lots.filter((lot) => lotMatchesPermitType(lot.permitList, user.parkingProfile.permitType, lot.rawPermitList));
   }, [lots, filterByPermit, user.parkingProfile.permitType, permitManuallySelected]);
 
-  // Built from the full, unnarrowed lot list so every permit is always
-  // selectable in the picker, even while the default view is narrowed to the
-  // user's own permit type. ParkZen lists individual reserved spaces (A01, A02
-  // ... A95, "Lot 19 Resident Reserve", ...) as separate permits, so group them
-  // so the dropdown shows each permit type once.
+  // From the full lot list so every permit stays selectable; per-lot codes grouped.
   const uniquePermits = useMemo(() => {
     const set = new Set<string>();
     lots.forEach((lot) => {
@@ -573,10 +546,8 @@ export default function LotsScreen() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [lots]);
 
-  // Closest-first ordering. The list is sorted from a snapshot of the user's
-  // location (sortOrigin), not the live GPS fix, so it doesn't reshuffle under
-  // their finger as they walk: the snapshot only moves when the Lots tab is
-  // opened or once they've moved RESORT_MIN_MOVE_METERS from it.
+  // Nearest first, from a location snapshot that only moves on open or after
+  // RESORT_MIN_MOVE_METERS, so the list doesn't reshuffle while scrolling.
   const [sortOrigin, setSortOrigin] = useState<LatLng | null>(null);
   const userLocationRef = useRef(userLocation);
   userLocationRef.current = userLocation;
@@ -610,10 +581,7 @@ export default function LotsScreen() {
   };
 
   const filtered = useMemo(() => {
-    // Split into words so "resident 16" or "16 resident" both find "Lot 16
-    // Resident Reserve" — every word has to appear somewhere across name,
-    // tag, address and permits, in any order, instead of needing the exact
-    // phrase typed out.
+    // Every word must appear somewhere (name, tag, address, permits), in any order.
     const queryTokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
 
     const matches = permitTypeLots.filter((lot) => {
@@ -1377,9 +1345,7 @@ pageIndicator: {
 },
 
   // --- LOT CARD ---
-  // Wraps the card's TouchableOpacity so the pin button (also a button on
-  // web) is a sibling rather than a DOM descendant — nested <button> tags
-  // are invalid HTML and break hydration on web.
+  // Wrapper keeps the pin button a sibling of the card (nested <button>s break web).
   cardWrapper: {
     position: 'relative',
   },

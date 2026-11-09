@@ -11,11 +11,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isPushEnabled, setPushEnabled, unregisterAlertPush, getWebNotificationBlocker } from '../../utils/pushNotifications';
+import { isPushEnabled, setPushEnabled, getWebNotificationBlocker } from '../../utils/pushNotifications';
+import { clearSession } from '../../utils/session';
 import { Alert } from '../../utils/webCompat';
 import { useUser } from '../../context/UserContext';
-import { PINNED_LOTS_STORAGE_KEY } from '../(tabs)/lots';
 import InitialsAvatar from '../../components/InitialsAvatar';
 
 interface MenuRowProps {
@@ -26,10 +25,7 @@ interface MenuRowProps {
   onPress?: () => void;
 }
 
-// Each nav item is its own standalone pill/card (not grouped into a bordered
-// white section), matching the admin profile mockup. The leading icon gives
-// each row a scannable shape so admins can find the right action at a glance
-// instead of reading every label.
+// Standalone pill row with a leading icon, per the admin profile mockup.
 function MenuRow({ icon, label, value, subtitle, onPress }: MenuRowProps) {
   return (
     <TouchableOpacity
@@ -87,13 +83,9 @@ export default function AdminProfileScreen() {
         text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
-          //needs the auth token, so it has to run before it's removed
-          await unregisterAlertPush();
-          await AsyncStorage.removeItem('token');
-          await AsyncStorage.removeItem('role');
-          await AsyncStorage.removeItem('isOwner');
-          //clears the cached profile and pinned lots too, so neither bleeds into the next login
-          await AsyncStorage.removeItem(PINNED_LOTS_STORAGE_KEY);
+          //clears the token, role, push registration and pinned lots, then the
+          //cached profile, so nothing bleeds into the next login
+          await clearSession();
           await refreshUser();
           router.replace('/login');
         },

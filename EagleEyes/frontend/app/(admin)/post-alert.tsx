@@ -7,8 +7,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { createAlert, uploadAlertImage } from '../../api/alerts';
+import { createAlert, uploadAlertImage, isLotClosedNow } from '../../api/alerts';
 import LotPickerModal from '../../components/LotPickerModal';
+import { useLots } from '../../context/LotsContext';
+import { isLotNameClosed } from '../../utils/lotStatus';
 import { Alert } from '../../utils/webCompat';
 import { HAZARD_CATEGORIES as ALERT_TYPES, OTHER_HAZARD_VALUE, MAX_CUSTOM_HAZARD_LENGTH } from '../../utils/alertVisuals';
 
@@ -20,9 +22,8 @@ const MAX_PHOTOS = 3;
 type PickedPhoto = { uri: string; file?: File };
 
 export default function PostAlertScreen() {
-  // This screen is a hidden tab route, so router.back() unreliably lands on the
-  // tab navigator's default tab (Hazards) instead of wherever it was actually
-  // pushed from. Callers pass ?from=... to say where "back" should really go.
+  const { lots } = useLots();
+  // router.back() is unreliable from a hidden tab route, so callers pass ?from=...
   const { from } = useLocalSearchParams<{ from?: string }>();
   const backDestination = from === 'profile' ? '/(admin)/profile' : '/(admin)/hazards';
 
@@ -101,6 +102,18 @@ export default function PostAlertScreen() {
       Alert.alert('Missing Type', 'Please type what kind of hazard this is.');
       return;
     }
+    //admins may still post on a closed lot, but confirm it's intended
+    if (await isLotClosedNow(selectedLot, isLotNameClosed(lots, selectedLot))) {
+      Alert.alert('Lot Is Closed', `${selectedLot} is closed right now. Post this hazard anyway?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Post Anyway', onPress: () => submitPost(true) },
+      ]);
+      return;
+    }
+    await submitPost(false);
+  };
+
+  const submitPost = async (warned: boolean) => {
     setIsPosting(true);
     try {
       //photos upload one at a time so we can attach the URLs to the alert below
@@ -110,7 +123,7 @@ export default function PostAlertScreen() {
         imageUrls.push(image_url);
       }
 
-      await createAlert({
+      const posted = await createAlert({
         title: title.trim(),
         alert_type: 'hazard',
         category: hazardCategory,
@@ -118,7 +131,9 @@ export default function PostAlertScreen() {
         lot_name: selectedLot || undefined,
         image_urls: imageUrls.length ? imageUrls : undefined,
       });
-      Alert.alert('Posted', 'Hazard alert has been posted.', [
+      //backup: the backend's own closure check, in case ours missed it
+      const closedNote = !warned && posted?.conflicts?.length ? ` Note: ${selectedLot} is closed right now.` : '';
+      Alert.alert('Posted', `Hazard alert has been posted.${closedNote}`, [
         { text: 'OK', onPress: () => router.replace(backDestination) },
       ]);
     } catch {
@@ -192,7 +207,7 @@ export default function PostAlertScreen() {
           <View style={styles.lotSelectorLeft}>
             <Ionicons name="location-outline" size={18} color={selectedLot ? '#00853E' : '#aaa'} />
             <Text style={[styles.typeSelectorText, !!selectedLot && styles.typeSelectorSelected]}>
-              {selectedLot ?? 'SELECT LOT (OPTIONAL)'}
+              {selectedLot ?? 'SELECT LOT (OR LEAVE BLANK FOR CAMPUS-WIDE)'}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#aaa" />

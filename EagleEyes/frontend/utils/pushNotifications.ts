@@ -34,10 +34,8 @@ export async function isPushEnabled(): Promise<boolean> {
 }
 
 /**
- * Gets this device's Expo push token and registers it with the backend.
- * With prompt=false it only registers if permission was already granted, so
- * app launches never re-show the system prompt; login and the Profile switch
- * pass prompt=true. Returns whether the device is now registered.
+ * Registers this device's Expo push token. prompt=false only registers if permission
+ * was already granted. Returns whether the device is registered.
  */
 export async function registerForAlertPush({ prompt }: { prompt: boolean }): Promise<boolean> {
   if (!pushSupported || !(await isPushEnabled())) return false;
@@ -82,11 +80,7 @@ export async function unregisterAlertPush(): Promise<void> {
   await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
 }
 
-/**
- * Web only: why browser notifications can't be turned on right now, or null if
- * they can. Lets the Profile switch explain the actual fix instead of a
- * generic "check your settings".
- */
+/** Web only: why browser notifications can't be enabled, or null if they can. */
 export function getWebNotificationBlocker(): 'unsupported' | 'insecure' | 'denied' | null {
   if (pushSupported || typeof window === 'undefined') return null;
   if (!('Notification' in window)) return 'unsupported';
@@ -102,10 +96,8 @@ export function getWebNotificationBlocker(): 'unsupported' | 'insecure' | 'denie
 /** Backs the Profile "Notifications" switch. Returns the resulting on/off state. */
 export async function setPushEnabled(enabled: boolean): Promise<boolean> {
   if (!pushSupported) {
-    //web has no Expo push; the switch instead controls the admin dashboard's
-    //browser notifications (hooks/use-admin-web-alerts.ts). Ask for permission
-    //FIRST, before any await: Safari/Firefox only show the prompt while still
-    //inside the tap that triggered it.
+    // web: controls browser notifications instead. Ask before any await, since
+    // Safari/Firefox only prompt inside the tap itself.
     let granted = false;
     if (enabled && getWebNotificationBlocker() === null) {
       const permission =
@@ -128,9 +120,8 @@ export async function setPushEnabled(enabled: boolean): Promise<boolean> {
 }
 
 /**
- * Mounted once in the root layout: refreshes this device's registration on
- * launch (push tokens can change) and opens the matching alerts screen when
- * an alert notification is tapped. `ready` is the root navigator being mounted.
+ * Refreshes push registration on launch and opens the right screen when a
+ * notification is tapped. `ready` = root navigator mounted.
  */
 export function useAlertPushNotifications(ready: boolean) {
   const router = useRouter();

@@ -1,7 +1,4 @@
-// Diagnostic logs — frontend API boundary.
-//
-// Sends the app's captured console output (utils/logCapture.ts) to the backend
-// so we can trace bugs that only reproduce on a user's own device.
+// Diagnostic logs API: sends captured console output (utils/logCapture.ts) to the backend.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Dimensions, Platform } from 'react-native';

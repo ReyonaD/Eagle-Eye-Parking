@@ -1,21 +1,9 @@
-// Night-time lot-access rule, from UNT's official day/night permit chart.
-// Daytime access is unchanged (still whatever ParkZen's dashboard says);
-// this covers nighttime only, since ParkZen won't have that configured
-// before the project closes.
-//
-// Chart has 21 permit types x 15 lot-groups (A, AH, E, FS, HD, HSF, HSG,
-// HSR, MC, R, RM, RR, SV, UCG, VIS). NIGHT_PERMITS_BY_GROUP = which permits
-// may park in each group's lots at night.
-//
-// Note: AH and R aren't pure supersets of their daytime list at night (e.g.
-// AH permit holders lose their own AH lot but gain A-Reserved). Transcribed
-// as-is from the chart — worth confirming it's not a chart typo.
+// Night-time lot access from UNT's official day/night permit chart (daytime access
+// still comes from ParkZen). NIGHT_PERMITS_BY_GROUP = permits allowed in each lot group at night.
 
 import { A_RESERVED, RESIDENT_RESERVED, consolidatePermits } from './permits';
 
-// Permit-code -> app's permit name, where one exists (live-verified, see
-// permits.ts). Codes with no live equivalent use the chart's own name —
-// won't match live data yet, kept for completeness.
+// Chart code -> app permit name; codes without a live permit keep the chart's name.
 const CODE_TO_NAME: Record<string, string> = {
   AA: 'All Access',
   A: A_RESERVED,
@@ -44,19 +32,12 @@ function names(...codes: string[]): string[] {
   return codes.map((code) => CODE_TO_NAME[code]);
 }
 
-// Reverse lookup — permit name -> official chart code (A, AH, E, FS, ...),
-// for anywhere that needs to display the short code instead of abbreviating
-// the name itself (e.g. the Lots tab's permit badge).
+// Permit name -> chart code, for showing short codes (e.g. Lots tab badges).
 export const NAME_TO_CODE: Record<string, string> = Object.fromEntries(
   Object.entries(CODE_TO_NAME).map(([code, name]) => [name, code])
 );
 
-// Each group's own code is listed first — the rest of the app (lot badges,
-// map pin labels) treats a permit list's first entry as "the" permit to
-// show, so leading with "AA" (All Access, which is valid for nearly every
-// group) made every lot's badge read "AA" at night. Membership is unchanged
-// from the chart, only the order, so filtering logic (which just checks
-// `.includes()`) isn't affected.
+// Each group's own code is listed first, since the first entry is the badge shown.
 export const NIGHT_PERMITS_BY_GROUP: Record<string, string[]> = {
   A: names('A', 'AA', 'AH', 'BR', 'BV', 'DV', 'E', 'FS', 'HD', 'HR', 'HSF', 'HSG', 'HSR', 'R', 'RM', 'RR', 'TF', 'UCG'),
   AH: names('HD', 'AA', 'BR'),
@@ -75,9 +56,7 @@ export const NIGHT_PERMITS_BY_GROUP: Record<string, string[]> = {
   VIS: names('BV', 'AA', 'BR'),
 };
 
-// A lot-group's "self" permit — every lot in that group must accept it by
-// definition, so its presence in a lot's daytime permits infers the group.
-// Unlisted groups (no live permit to key off) fall back to unchanged access.
+// A group's own permit; finding it in a lot's daytime permits identifies the group.
 const GROUP_MARKER_PERMIT: Record<string, string> = {
   E: 'Eagle',
   FS: 'Faculty and Staff',
@@ -89,9 +68,7 @@ const GROUP_MARKER_PERMIT: Record<string, string> = {
   UCG: 'Union Circle Garage',
 };
 
-// Day rules run Mon-Fri 7am-5:30pm; everything else (weeknights and all
-// weekend) is night, per the official chart. Every label below is built from
-// these two times, so the UI can't drift from isNightWindow.
+// Day rules: Mon-Fri 7am-5:30pm. Everything else is night.
 const DAY_START_MINUTES = 7 * 60;
 const NIGHT_START_MINUTES = 17 * 60 + 30;
 

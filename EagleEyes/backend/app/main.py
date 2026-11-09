@@ -1,3 +1,4 @@
+import logging
 import httpx
 import os
 import random
@@ -7,23 +8,24 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
-from jose import jwt, JWTError 
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, text
+from sqlalchemy import desc, text, func
 from .database import engine, Base
 from . import models
 #imports custom files
 from app.database import get_db
 from app.models import User, Alert, Note, DiagnosticLog, PasswordResetToken, PushToken, UserNotification
-from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest, PushTokenRegister, UserNotificationResponse, UnreadCountResponse, MyNoteResponse
+from app.schemas import UserCreate, UserPermitUpdate, UserNameUpdate, UserPlateUpdate, AlertResponse, AlertCreate, AlertApprove, AlertActiveUpdate, AlertEventUpdate, NoteCreate, NoteResponse, DiagnosticLogCreate, DiagnosticLogSummary, DiagnosticLogResponse, ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest, PushTokenRegister, UserNotificationResponse, UnreadCountResponse, MyNoteResponse, EventConflict
 from app.core.security import get_password_hash, verify_password, create_access_token
-from app.core.security import SECRET_KEY, ALGORITHM, create_access_token, require_admin, require_owner
+from app.core.security import require_admin, require_owner, get_current_user, get_optional_user
 from app.core.email import send_password_reset_email
 from app.core.push import send_alert_published, send_note_acknowledged, is_expo_push_token
 from app.core.notifications import notify_note_acknowledged
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 Base.metadata.create_all(bind=engine)
 #create_all does not add new columns to existing tables, so patch them in here.
 #Existing alerts predate the approval flow and stay visible as 'published'.
@@ -45,10 +47,8 @@ with engine.connect() as _conn:
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS plate_number VARCHAR"))
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS reporter_name VARCHAR"))
     _conn.execute(text("ALTER TABLE notes ADD COLUMN IF NOT EXISTS contact_email VARCHAR"))
-    #hazards now stay on the map until an admin deactivates them; before that
-    #they simply lapsed 24h after being reported. When the column is first
-    #added, close out those older hazards at their old expiry so they don't
-    #all reappear on the map at once.
+    # Hazards now stay up until deactivated; when adding the column, close out old
+    # hazards at their former 24h expiry so they don't all reappear.
     has_deactivated_at = _conn.execute(text(
         "SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'alerts' AND column_name = 'deactivated_at'"
@@ -114,41 +114,25 @@ parkzen_auth_cache = {
     "expires_at": None
 }
 permit_cache = {}
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+#get_current_user / require_admin / require_owner live in app.core.security
+#and re-read the user from the database on every request (see there for why)
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    """Check the JWT token and return the current user"""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        #decode the token using the secret key and algorithm
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
+def _normalize_email(email: str) -> str:
+    #emails are compared case-insensitively everywhere: "Foo@unt.edu" and
+    #"foo@unt.edu" are the same person
+    return (email or "").strip().lower()
 
-    #find user in database by email
-    user= db.query(User).filter(User.email == email).first()
-    if user is None:
-        raise credentials_exception
-    
-    return user
+def _find_user_by_email(db: Session, email: str):
+    #lower() on both sides also matches accounts registered before emails
+    #were normalized on the way in
+    return db.query(User).filter(func.lower(User.email) == _normalize_email(email)).first()
 
 permit_cache = {}
-#how long a cached ParkZen permit (name + allowed hours) is trusted before
-#it's re-fetched, so an hours change made in the ParkZen dashboard shows up
-#in the app without a backend restart
+# Re-fetch cached ParkZen permits hourly so dashboard changes show without a restart.
 PERMIT_CACHE_TTL = timedelta(hours=1)
 
 async def get_permit_info(permit_id: str, token: str) -> Optional[dict]:
-    """Fetch a permit from ParkZen - its name, type, and allowed parking
-    hours (rules.dailyTimeSlots: per weekday, the time slots the permit may
-    park in) - using a cache to be fast. None if ParkZen can't be reached."""
+    """A permit's name, type and allowed hours from ParkZen (cached). None if unreachable."""
     cached = permit_cache.get(permit_id)
     if cached and cached["fetched_at"] > datetime.now() - PERMIT_CACHE_TTL:
         return cached["info"]
@@ -171,7 +155,7 @@ async def get_permit_info(permit_id: str, token: str) -> Optional[dict]:
                 permit_cache[permit_id] = {"info": info, "fetched_at": datetime.now()}
                 return info
     except httpx.RequestError as e:
-        print(f"Error fetching permit {permit_id}: {e}")
+        logger.warning("Error fetching permit %s: %s", permit_id, e)
     #keep serving a stale copy rather than nothing if ParkZen is unreachable
     return cached["info"] if cached else None
 
@@ -184,14 +168,15 @@ async def get_permit_name(permit_id: str, token: str):
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
     """Registers new user and save them to the database"""
     #check if the email is already in the database
-    existing_user = db.query(User).filter(User.email == user.email).first()
+    email = _normalize_email(user.email)
+    existing_user = _find_user_by_email(db, email)
     if existing_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is already registered")
     #scramble the password using bcrypt
     hashedPW = get_password_hash(user.password)
     #create a new User object with the email and hashed password
     new_user = User(
-        email=user.email,
+        email=email,
         hashed_password=hashedPW,
         role="commuter"
     )
@@ -210,10 +195,10 @@ def login(
     """Authenticate user and return a JWT token"""
     #find the user in database by email
     #FastAPI call email field "username" by default, so we have to use form_data.username to get the email
-    user = db.query(User).filter(User.email == form_data.username).first()
+    user = _find_user_by_email(db, form_data.username)
 
-    #check if the user exists and if the password is matched
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    #check if the user exists, is still active, and the password matches
+    if not user or user.is_active is False or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail = "Invalid email or password",
@@ -246,7 +231,7 @@ def forgot_password(payload: ForgotPasswordRequest, background_tasks: Background
         "message": "If an account exists for that email, a reset link has been sent."
     }
 
-    user = db.query(User).filter(User.email == payload.email).first()
+    user = _find_user_by_email(db, payload.email)
     if not user:
         return generic_response
 
@@ -278,7 +263,7 @@ def _validate_reset_code(email: str, code: str, db: Session):
         detail="This code is invalid or has expired. Please request a new one.",
     )
 
-    user = db.query(User).filter(User.email == email).first()
+    user = _find_user_by_email(db, email)
     if not user:
         raise invalid_error
 
@@ -412,9 +397,7 @@ def remove_push_token(
     db.commit()
     return {"message": "Push token removed."}
 
-#─── Note Status (a commuter's own Notes to Admin and whether each has been
-#acknowledged). Every query here is scoped to current_user, so nobody can
-#read or mark another user's ──────────────────────────────────────────────
+# ─── Note Status: a commuter's own notes (all queries scoped to current_user) ───
 
 @app.get("/users/me/notes", response_model=List[MyNoteResponse])
 def list_my_notes(
@@ -562,9 +545,7 @@ async def _fetch_raw_lots() -> tuple[list, str]:
 
 @app.get("/api/permits")
 async def get_permit_types():
-    """Returns the distinct list of real ParkZen permit names (drawn from every
-    lot's permit list), so the frontend's permit picker never drifts from what
-    ParkZen actually recognizes."""
+    """Distinct ParkZen permit names across all lots, for the permit picker."""
     try:
         actual_lots_array, active_token = await _fetch_raw_lots()
 
@@ -583,14 +564,12 @@ async def get_permit_types():
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Server error: {e}")
+        logger.exception("ParkZen request failed: %s", e)
         raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
 
 @app.get("/api/permit-hours")
 async def get_permit_hours():
-    """When each permit may park, straight from ParkZen: one entry per permit
-    used by any UNT lot, with its per-weekday allowed time slots
-    (dailyTimeSlots: [{day, timeSlots: [{startTime, endTime}]}], 24h "HH:MM")."""
+    """Allowed hours for every permit used by a UNT lot (dailyTimeSlots, 24h "HH:MM")."""
     try:
         actual_lots_array, active_token = await _fetch_raw_lots()
 
@@ -608,7 +587,7 @@ async def get_permit_hours():
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Server error: {e}")
+        logger.exception("ParkZen request failed: %s", e)
         raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
 
 @app.get("/api/lots")
@@ -695,39 +674,42 @@ async def get_parking_lots():
         return actual_lots_array
 
     except Exception as e:
-        print(f"Server error: {e}")
+        logger.exception("ParkZen request failed: %s", e)
         raise HTTPException(status_code=500, detail="Internal Server Error while communicating to ParkZen")
 #TEST ROUTE
 @app.get("/admin/test")
-def admin_only_dashboard(role: str = Depends(require_admin)):
+def admin_only_dashboard(admin: User = Depends(require_admin)):
     # Because of Depends(require_admin), standard commuters will get a 403 error 
     # before this code even runs!
     return {
         "message": "Welcome to the EagleEyes Admin Dashboard!", 
-        "your_role": role
+        "your_role": admin.role
     }
 
 @app.put("/admin/users/{target_email}/promote")
 def promote_to_admin(
     target_email: str,
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    owner: User = Depends(require_owner)
 ):
-    #find target user
-    target_user = db.query(User).filter(User.email == target_email).first()
+    """Owner-only: turns an existing commuter account into an admin. Takes
+    effect on the target's very next request - role checks read the database."""
+    target_user = _find_user_by_email(db, target_email)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+    if target_user.role == "admin":
+        raise HTTPException(status_code=400, detail=f"{target_user.email} is already an admin.")
+
     #promote
     target_user.role = "admin"
     db.commit()
 
-    return {"message": f"User {target_email} has been successfully promoted to admin."}
+    return {"message": f"User {target_user.email} has been successfully promoted to admin."}
 
 @app.get("/admin/admins")
 def list_admins(
     db: Session = Depends(get_db),
-    is_owner: bool = Depends(require_owner)
+    owner: User = Depends(require_owner)
 ):
     """Owner-only: the full admin roster, so an owner can see who else has
     admin access and decide whether to grant/revoke it."""
@@ -741,40 +723,43 @@ def list_admins(
 def grant_owner(
     target_email: str,
     db: Session = Depends(get_db),
-    is_owner: bool = Depends(require_owner)
+    owner: User = Depends(require_owner)
 ):
     """Owner-only: gives an existing admin owner-level access (can manage
     other admins too). The target must already be an admin."""
-    target_user = db.query(User).filter(User.email == target_email).first()
+    target_user = _find_user_by_email(db, target_email)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
     if target_user.role != "admin":
         raise HTTPException(status_code=400, detail="Only existing admins can be granted owner access.")
+    if target_user.is_owner:
+        raise HTTPException(status_code=400, detail=f"{target_user.email} is already an owner.")
 
     target_user.is_owner = True
     db.commit()
 
-    return {"message": f"User {target_email} is now an owner."}
+    return {"message": f"User {target_user.email} is now an owner."}
 
 @app.put("/admin/users/{target_email}/revoke")
 def revoke_admin(
     target_email: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    is_owner: bool = Depends(require_owner)
+    current_user: User = Depends(require_owner)
 ):
-    """Owner-only: strips a user's admin (and owner, if any) access back down
-    to a regular commuter account. Guards against an owner locking themselves
-    out and against leaving the system with zero owners."""
-    if target_email == current_user.email:
+    """Owner-only: demotes an admin to commuter. Can't revoke yourself or the last owner."""
+    if _normalize_email(target_email) == _normalize_email(current_user.email):
         raise HTTPException(status_code=400, detail="You can't revoke your own access. Ask another owner to do it.")
 
-    target_user = db.query(User).filter(User.email == target_email).first()
+    target_user = _find_user_by_email(db, target_email)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
+    if target_user.role != "admin":
+        raise HTTPException(status_code=400, detail=f"{target_user.email} is not an admin.")
 
     if target_user.is_owner:
-        remaining_owners = db.query(User).filter(User.is_owner == True, User.id != target_user.id).count()
+        remaining_owners = db.query(User).filter(
+            User.is_owner == True, User.role == "admin", User.id != target_user.id
+        ).count()
         if remaining_owners == 0:
             raise HTTPException(status_code=400, detail="Can't remove the last remaining owner.")
 
@@ -782,28 +767,31 @@ def revoke_admin(
     target_user.is_owner = False
     db.commit()
 
-    return {"message": f"User {target_email}'s admin access has been revoked."}
+    return {"message": f"User {target_user.email}'s admin access has been revoked."}
 
 @app.get("/alerts", response_model=List[AlertResponse])
 def get_alerts(
     alert_type: str=Query(..., description="Must be 'hazard' or 'event'"),
-    db: Session= Depends(get_db)
+    db: Session= Depends(get_db),
+    viewer: Optional[User] = Depends(get_optional_user)
 ):
-    """
-    Fetches the list for the tabs. 
-    Orders them by newest first!
-    """
+    """Published alerts, newest first. Reporter emails only for admins."""
     alerts = db.query(Alert)\
             .filter(Alert.alert_type == alert_type, Alert.status == "published")\
             .order_by(desc(Alert.created_at))\
             .all()
-    return alerts
+    if viewer is not None and viewer.role == "admin":
+        return alerts
+    return [
+        AlertResponse.model_validate(a, from_attributes=True).model_copy(update={"reporter_emails": []})
+        for a in alerts
+    ]
 
 @app.get("/alerts/pending", response_model=List[AlertResponse])
 def get_pending_alerts(
     alert_type: str = Query(..., description="Must be 'hazard' or 'event'"),
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
     """Admin review queue: commuter-submitted alerts waiting for approval."""
     return db.query(Alert)\
@@ -815,7 +803,7 @@ def get_pending_alerts(
 def get_declined_alerts(
     alert_type: str = Query(..., description="Must be 'hazard' or 'event'"),
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
     """Admin-only history of reports an admin declined, kept instead of hard-deleted."""
     return db.query(Alert)\
@@ -853,6 +841,81 @@ async def upload_alert_image(
 
     return {"image_url": f"/uploads/{filename}"}
 
+# ─── Lot closures: published events with category "Lot Closure" (or legacy
+# "Closure"). Mirrors frontend/utils/lotStatus.ts. ───
+CLOSURE_CATEGORIES = {"lot closure", "closure"}
+
+def _is_closure(category: Optional[str]) -> bool:
+    return (category or "").strip().lower() in CLOSURE_CATEGORIES
+
+def _lot_names(lot_name: Optional[str]) -> List[str]:
+    return [name.strip() for name in (lot_name or "").split(";") if name.strip()]
+
+def _naive_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    #event_start/event_end are stored as naive UTC; incoming values may be aware
+    if dt is None:
+        return None
+    return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo else dt
+
+def _overlapping_events(
+    db: Session,
+    lot_name: Optional[str],
+    start: datetime,
+    end: Optional[datetime],
+    closures_only: bool,
+    exclude_id: Optional[int] = None,
+) -> List[dict]:
+    """Published events on any of `lot_name`'s lots overlapping [start, end).
+    end=None = no end date; start == end checks a single moment."""
+    wanted = {name.lower() for name in _lot_names(lot_name)}
+    if not wanted:
+        return []
+    start, end = _naive_utc(start), _naive_utc(end)
+    query = db.query(Alert).filter(
+        Alert.alert_type == "event",
+        Alert.status == "published",
+        Alert.event_start.isnot(None),
+    )
+    if exclude_id is not None:
+        query = query.filter(Alert.id != exclude_id)
+
+    conflicts = []
+    for event in query.all():
+        if closures_only and not _is_closure(event.category):
+            continue
+        shared = [name for name in _lot_names(event.lot_name) if name.lower() in wanted]
+        if not shared:
+            continue
+        ev_start, ev_end = _naive_utc(event.event_start), _naive_utc(event.event_end)
+        if end is not None and start == end:
+            overlaps = ev_start <= start and (ev_end is None or start < ev_end)
+        else:
+            overlaps = (ev_end is None or start < ev_end) and (end is None or ev_start < end)
+        if overlaps:
+            conflicts.append({
+                "id": event.id,
+                "title": event.title,
+                "category": event.category,
+                "is_closure": _is_closure(event.category),
+                "lot_names": shared,
+                "event_start": event.event_start,
+                "event_end": event.event_end,
+            })
+    return conflicts
+
+def _active_closures(db: Session, lot_name: Optional[str]) -> List[dict]:
+    now = datetime.now(timezone.utc)
+    return _overlapping_events(db, lot_name, now, now, closures_only=True)
+
+def _event_conflicts(db: Session, category: str, lot_name: Optional[str],
+                     start: Optional[datetime], end: Optional[datetime],
+                     exclude_id: Optional[int] = None) -> List[dict]:
+    """Closures overlapping a regular event, or every event overlapping a closure."""
+    if start is None:
+        return []
+    return _overlapping_events(db, lot_name, start, end,
+                               closures_only=not _is_closure(category), exclude_id=exclude_id)
+
 #pending reports for the same lot+hazard type absorb duplicates for this long;
 #a report older than this is treated as stale and no longer absorbs them
 DUPLICATE_REPORT_WINDOW = timedelta(hours=48)
@@ -869,14 +932,27 @@ def create_alert(
 
     alert_type = alert_data.alert_type.lower()
 
-    #dedup/merge models "multiple different commuters independently reporting
-    #the same hazard" - it never applies to admin posts (there's no multi-
-    #reporter confirmation signal when it's the same admin posting twice),
-    #and a lot-less report can't be confirmed as "the same incident" as
-    #another lot-less report, so only dedupe for commuters with a lot picked.
-    #Only pending reports absorb duplicates: once one is published, a new
-    #report goes to the admin queue on its own (it may be a new incident, and
-    #folding it into a live alert would skip review and send no notification)
+    #a commuter hazard needs a place: a lot, or (for "Not in a lot", e.g. the
+    #road between lots) a description saying where it is
+    if alert_type == "hazard" and current_user.role != "admin" \
+            and not (alert_data.lot_name or "").strip() and not (alert_data.description or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pick the lot this hazard is in, or describe where it is.",
+        )
+
+    #a closed lot has nobody parking in it, so commuters can't report hazards
+    #on it; admins can still post one (they get the closure back as a warning)
+    closures = _active_closures(db, alert_data.lot_name) if alert_type == "hazard" else []
+    if closures and current_user.role != "admin":
+        names = ", ".join(sorted({name for c in closures for name in c["lot_names"]}))
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{names} is closed right now, so hazard reports for it are disabled.",
+        )
+
+    # Merge duplicate commuter reports (same lot + type) into a pending one. Not for
+    # admin posts or lot-less reports, and never into a published alert.
     existing = None
     if current_user.role != "admin" and alert_data.lot_name:
         existing = db.query(Alert).filter(
@@ -933,22 +1009,39 @@ def create_alert(
     #commuter reports are pushed later, when an admin approves them
     if new_alert.status == "published":
         background_tasks.add_task(send_alert_published, new_alert.id, current_user.id)
-    return new_alert
+    if alert_type == "event":
+        conflicts = _event_conflicts(db, new_alert.category, new_alert.lot_name,
+                                     new_alert.event_start, new_alert.event_end, exclude_id=new_alert.id)
+    else:
+        conflicts = closures
+    response = AlertResponse.model_validate(new_alert, from_attributes=True)
+    response.conflicts = [EventConflict(**c) for c in conflicts]
+    return response
 
 @app.put("/alerts/{alert_id}/upvote", response_model=AlertResponse)
 def upvote_alert(
     alert_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    """A commuter confirms a report ("I see this too"). Each account counts once,
+    using the same reporter list the duplicate-report merge uses."""
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code= 404, detail="Alert not found or already resolved.")
-    
-    alert.upvotes+=1
-    db.commit()
-    db.refresh(alert)
 
-    return alert
+    reporters = list(alert.reporter_emails or [])
+    if current_user.email not in reporters:
+        reporters.append(current_user.email)
+        alert.reporter_emails = reporters
+        alert.upvotes = len(reporters)
+        db.commit()
+        db.refresh(alert)
+
+    response = AlertResponse.model_validate(alert, from_attributes=True)
+    if current_user.role != "admin":
+        response.reporter_emails = []
+    return response
 
 #─── Notes (private commuter -> admin messages; see Note model for why this
 #is its own table instead of another Alert category) ────────────────────────
@@ -986,11 +1079,9 @@ def create_note(
 @app.get("/notes", response_model=List[NoteResponse])
 def get_notes(
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
-    """Admin-only: every note to admin, newest first. The admin UI buckets
-    these into Acknowledgment Pending/Active/Expired client-side from
-    event_end and acknowledged_at - there's no server-side status filter."""
+    """Admin-only: every note, newest first (the app buckets them by status)."""
     return db.query(Note).order_by(desc(Note.created_at)).all()
 
 @app.put("/notes/{note_id}/acknowledge", response_model=NoteResponse)
@@ -998,7 +1089,7 @@ def acknowledge_note(
     note_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
     note = db.query(Note).filter(Note.id == note_id).first()
     if not note:
@@ -1046,7 +1137,7 @@ def list_diagnostic_logs(
     reporter_email: Optional[str] = Query(None, description="Only logs sent by this user"),
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
     """Admin-only: newest submissions first, without the log body (use GET /logs/{id})."""
     query = db.query(DiagnosticLog)
@@ -1058,7 +1149,7 @@ def list_diagnostic_logs(
 def get_diagnostic_log(
     log_id: int,
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
     log = db.query(DiagnosticLog).filter(DiagnosticLog.id == log_id).first()
     if not log:
@@ -1071,7 +1162,7 @@ def approve_alert(
     edits: AlertApprove,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
     """Admin approves a pending report (optionally editing it) and publishes it."""
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
@@ -1093,14 +1184,18 @@ def approve_alert(
     db.refresh(alert)
     if not was_published:
         background_tasks.add_task(send_alert_published, alert.id)
-    return alert
+    response = AlertResponse.model_validate(alert, from_attributes=True)
+    #the lot may have closed while the report sat in the queue
+    if alert.alert_type == "hazard":
+        response.conflicts = [EventConflict(**c) for c in _active_closures(db, alert.lot_name)]
+    return response
 
 @app.put("/alerts/{alert_id}", response_model=AlertResponse)
 def update_event(
     alert_id: int,
     payload: AlertEventUpdate,
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
     """Admin edits a published event's details - e.g. setting the end date of
     an event that was saved with "No end date" once it's known."""
@@ -1118,18 +1213,19 @@ def update_event(
     alert.event_end = payload.event_end
     db.commit()
     db.refresh(alert)
-    return alert
+    response = AlertResponse.model_validate(alert, from_attributes=True)
+    response.conflicts = [EventConflict(**c) for c in _event_conflicts(
+        db, alert.category, alert.lot_name, alert.event_start, alert.event_end, exclude_id=alert.id)]
+    return response
 
 @app.put("/alerts/{alert_id}/active", response_model=AlertResponse)
 def set_hazard_active(
     alert_id: int,
     payload: AlertActiveUpdate,
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
-    """Admin takes a published hazard off the map/lots once it's over
-    (active=false), or puts it back up (active=true). Unlike DELETE, the
-    hazard stays in the published history."""
+    """Admin takes a published hazard off the map (active=false) or back on; it stays in history."""
     alert = db.query(Alert).filter(
         Alert.id == alert_id,
         Alert.alert_type == "hazard",
@@ -1147,15 +1243,9 @@ def set_hazard_active(
 def remove_alert(
     alert_id: int,
     db: Session = Depends(get_db),
-    current_role: str = Depends(require_admin)
+    admin: User = Depends(require_admin)
 ):
-    """
-    One endpoint, three outcomes depending on the report's current status:
-    - pending   -> decline it: keep the row as 'declined' instead of erasing
-                   it, so admins can see what's been turned down
-    - published -> resolved hazard being pulled off the live feed: gone for good
-    - declined  -> admin clearing out old rejected history: gone for good
-    """
+    """Pending -> declined (kept for history); published or declined -> deleted."""
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code= 404, detail="Alert not found or already resolved.")

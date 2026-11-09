@@ -29,10 +29,7 @@ interface UserContextType {
       parkingProfile?: Partial<ParkingProfile>;
     }
   ) => void;
-  // Rebuilds the profile from the current session (backend account, or blank
-  // defaults if logged out). Call this right after login and right after
-  // logout — see the note on the effect below for why it can't be left to
-  // just run once on app start.
+  // Rebuilds the profile from the current session. Call after every login and logout.
   refreshUser: () => Promise<void>;
 }
 
@@ -73,13 +70,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  // Always rebuilds from a clean slate instead of merging onto whatever is
-  // already in state/AsyncStorage. That's deliberate: this context used to
-  // only sync from the backend once, on the very first app mount, and never
-  // cleared its cache on logout — so logging out of one account and into a
-  // different one kept showing the first account's name/email/permit, since
-  // nothing ever told it the session had changed. Call this after every
-  // login and every logout so the profile always matches who's signed in.
+  // Rebuilds from scratch (never merges) so a new login never shows the previous account.
   const refreshUser = async () => {
     const token = await AsyncStorage.getItem('token');
     if (!token) {
@@ -103,9 +94,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setUser(fresh);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
     } catch {
-      // Offline or the request failed. On a cold start state is still the blank
-      // DEFAULT_USER, so fall back to the last profile cached for this session
-      // (the cache is cleared on logout, so it always belongs to this account).
+      // Offline: fall back to this session's cached profile (cleared on logout).
       try {
         const cached = await AsyncStorage.getItem(STORAGE_KEY);
         if (cached) setUser({ ...DEFAULT_USER, ...JSON.parse(cached) });

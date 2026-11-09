@@ -59,10 +59,7 @@ const CLOSURE_VISUAL_ICON = getEventVisual(CLOSURE_CATEGORY).icon;
 const getMapStatusIcons = (status: any) =>
   getLotStatusIcons(status).filter((visual) => visual.icon !== CLOSURE_VISUAL_ICON);
 
-// Event/hazard icons pop once - a quick scale-up and settle - the first time
-// each one shows up on a lot this session, so a new report catches the eye
-// without the map moving constantly. Module-level so it survives the map tab
-// remounting; skipped entirely when the phone has Reduce Motion on.
+// New event/hazard icons pop once per session (skipped with Reduce Motion).
 const poppedIconKeys = new Set<string>();
 let reduceMotionEnabled = false;
 AccessibilityInfo.isReduceMotionEnabled()
@@ -90,10 +87,7 @@ function PopIn({ popKey, children }: { popKey: string; children: React.ReactNode
   return <Animated.View style={{ transform: [{ scale }] }}>{children}</Animated.View>;
 }
 
-// How much of a closure/event/hazard badge to draw, from how big the lot is
-// on screen right now, so a badge never spills over neighboring lots when the
-// user zooms out: the full pill (every icon) when the lot has room,
-// then just the most important icon, then a small dot.
+// Badge detail by on-screen lot size, so badges never spill onto neighboring lots.
 type BadgeSize = 'full' | 'compact' | 'dot';
 const BADGE_ICON_PX: Record<BadgeSize, number> = { full: 22, compact: 18, dot: 12 };
 const BADGE_ICON_GLYPH_PX: Record<BadgeSize, number> = { full: 14, compact: 12, dot: 8 };
@@ -266,27 +260,20 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     longitudeDelta: untRegion.longitudeDelta,
   });
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
-  // Lot numbers and badges are fixed-size, so mid-pinch they'd outgrow (or
-  // drift off) lots that are shrinking with the map. They're hidden while a
-  // zoom is in progress and re-fitted once it settles. Plain panning keeps them.
+  // Labels and badges are hidden mid-zoom and re-fitted once it settles.
   const [isZooming, setIsZooming] = useState(false);
   const isZoomingRef = useRef(false);
 
-  // Map lifecycle logging, captured by utils/logCapture for "Send App Logs".
-  // A bad/restricted Google Maps API key only shows up natively (logcat), but
-  // from JS it looks like: onMapReady fires, onMapLoaded never does.
+  // A bad Google Maps API key shows up in JS only as onMapReady without onMapLoaded.
   const mapLoadedRef = useRef(false);
   const mapLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    console.log('[EagleMap] mounted | provider: google | mapType:', mapType, '| lots:', liveLots.length);
     return () => {
       if (mapLoadTimeoutRef.current) clearTimeout(mapLoadTimeoutRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleMapReady = () => {
-    console.log('[EagleMap] onMapReady | size:', mapSize.width, 'x', mapSize.height);
     mapReadyRef.current = true;
     // initialRegion is Main campus; move if another campus was already selected
     if (selectedCampus !== 'Main campus') animateToCampus(selectedCampus);
@@ -300,7 +287,6 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
 
   const handleMapLoaded = () => {
     mapLoadedRef.current = true;
-    console.log('[EagleMap] onMapLoaded (tiles rendered)');
   };
 
   // Animating before onMapReady throws natively on Android ("Map size can't be
@@ -317,10 +303,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     if (mapReadyRef.current) animateToCampus(selectedCampus);
   }, [selectedCampus]);
 
-  // On app entry, if the user is near a lot, zoom in on them instead of the
-  // default campus-wide view. Runs once, off the map's own first location
-  // fix (same pattern LotPickerModal already uses) rather than a separate
-  // permission/geolocation call.
+  // On first location fix, zoom to the user if they're near a lot.
   const hasAutoZoomedRef = useRef(false);
   const liveLotsRef = useRef(liveLots);
   liveLotsRef.current = liveLots;
@@ -388,9 +371,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     return new Set(Object.values(ownerByName));
   }, [liveLots, lot20LabelId]);
 
-  // Diagonal stripes over each closed lot. Spaced in meters, not pixels, so
-  // these Polylines only mount/unmount when a closure starts or ends - never
-  // while the user is pinching (see the Marker note below).
+  // Stripes over closed lots, spaced in meters so they don't remount while zooming.
   const closedLotStripes = useMemo(() => liveLots.flatMap((lot) => {
     if (lot.isVisible === false || !isLotClosed(lot.lotStatus)) return [];
     return getStripeSegments(lot.coordinates || []).map((segment, index) => ({
@@ -399,12 +380,8 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     }));
   }), [liveLots]);
 
-  // Every lot gets exactly one Marker (its number label and/or status badge),
-  // mounted for as long as the lot exists. Zooming or a status change only
-  // toggles `visible` (via opacity) and moves the coordinate. Mounting/unmounting
-  // Markers while the user pinches crashes the native Google map on the New
-  // Architecture (react-native-maps legacy interop), which kicked users back to
-  // the home screen.
+  // One Marker per lot, kept mounted and only hidden/moved: mounting Markers mid-pinch
+  // crashes the native Google map on the New Architecture.
   const lotLabels = useMemo(() => {
     const labelsHidden = mapRegion.latitudeDelta > 0.01;
 
@@ -562,9 +539,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
                 <Text style={{
                   color: lotStroke(lot) || lotFill(lot) || (darkSurface ? '#e5e5e5' : '#1f1f1f'),
                   fontSize: labelFontSize,
-                  // semi-bold, not heavy, so lot numbers don't outweigh the
-                  // map's own street/building names; the halo below keeps the
-                  // lighter text readable over lot fills and roads
+                  // semi-bold so lot numbers don't outweigh street names; the halo keeps them readable
                   fontWeight: '600',
                   textShadowColor: darkSurface ? 'rgba(0, 0, 0, 0.85)' : 'rgba(255, 255, 255, 0.9)',
                   textShadowOffset: { width: 0, height: 0 },

@@ -20,9 +20,7 @@ export function centroid(coords: LatLng[]): LatLng {
   return { latitude: lat, longitude: lon };
 }
 
-/** How close the user needs to be to a lot, on app entry, to auto-zoom to
- * it instead of falling back to the default campus view. Roughly covers the
- * Main Campus footprint. */
+/** How close to a lot the user must be on app entry to auto-zoom to it (~Main Campus). */
 export const NEARBY_LOT_THRESHOLD_METERS = 1200;
 
 /** Tight, lot-level region delta used when auto-zooming to a nearby lot (native). */
@@ -44,11 +42,8 @@ export function nearestLotDistance(origin: LatLng, lots: { coordinates?: LatLng[
 export const CLOSED_LOT_STRIPE_SPACING_METERS = 7;
 
 /**
- * Diagonal (45°) hatch lines clipped to a lot's polygon, as line segments.
- * Neither map library can pattern-fill a polygon, so a closed lot's stripes are
- * drawn as separate lines. Spacing is in meters on the ground (not pixels), so
- * the set of lines doesn't change while the user zooms - only when a closure
- * starts or ends.
+ * 45° hatch lines clipped to a lot polygon (maps can't pattern-fill), spaced in meters
+ * so they only change when a closure starts or ends.
  */
 export function getStripeSegments(
   polygon: LatLng[],
@@ -56,9 +51,7 @@ export function getStripeSegments(
 ): [LatLng, LatLng][] {
   if (polygon.length < 3) return [];
 
-  // Flatten to meters from a whole-degree origin (the same one for every lot
-  // on campus, so the zones of one lot - e.g. Lot 20's - get stripes that line
-  // up), then rotate 45° so every stripe is a line of constant u.
+  // Project to meters from a shared origin (so zones of one lot line up), rotated 45°.
   const origin = { latitude: Math.round(polygon[0].latitude), longitude: Math.round(polygon[0].longitude) };
   const metersPerLat = 110540;
   const metersPerLng = 111320 * Math.cos((origin.latitude * Math.PI) / 180);

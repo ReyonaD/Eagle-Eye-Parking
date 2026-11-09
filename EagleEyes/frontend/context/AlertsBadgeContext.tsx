@@ -9,9 +9,8 @@ import { getMyUpdatesUnreadCount } from '../api/myUpdates';
 //device-local "last seen" marker: alerts with an id above this count as new.
 //Stored per device so each user's badge reflects what *they* haven't viewed yet.
 const LAST_SEEN_KEY = 'alerts_last_seen_id';
-//per-alert "read" state, separate from the bell's last-seen marker: visiting the
-//Alerts tab clears the bell, but an alert stays unread until it's actually opened.
-//Alerts at or below the baseline id (whatever existed on first launch) count as read.
+// Per-alert read state (separate from the bell); alerts at or below the first-launch
+// baseline id count as read.
 const READ_BASELINE_KEY = 'alerts_read_baseline_id';
 const READ_IDS_KEY = 'alerts_read_ids';
 const POLL_MS = 10000;

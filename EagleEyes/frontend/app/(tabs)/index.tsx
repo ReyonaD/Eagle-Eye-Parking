@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Image, FlatList, Platform, Animated, Modal, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, FlatList, Animated, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useLots } from '../../context/LotsContext';
@@ -17,40 +17,15 @@ import { DAY_HOURS_LABEL, NIGHT_HOURS_LABEL } from '../../utils/nightPermitRules
 
 const MAP_HAZARD_FAB_BOTTOM = 60;
 
-// Same amber as the "Near Capacity" occupancy color elsewhere in the app —
-// reused here for "you're previewing, not looking at live data".
+// Amber ("Near Capacity" color) marks a Day/Night preview instead of live data.
 const PREVIEW_AMBER = '#F39C12';
 const PREVIEW_AMBER_DARK = '#D68910';
 
-// Top Bar Component
-// function TopBar() {
-//   const router = useRouter();
-//   return (
-//     <View style={styles.topBar}>
-      
-//       {/* LEFT: Logo + App Name */}
-//       <View style={styles.leftGroup}>
-//         <Image
-//           source={require('../../assets/images/Logo_EagleEye.png')}
-//           style={styles.logo}
-//         />
-//         <Text style={styles.appNameLeft}>EagleEyes</Text>
-//       </View>
-
-//       {/* RIGHT: Bell */}
-//       <TouchableOpacity style={styles.bellWrapper} onPress={() => router.push('/(tabs)/alerts')}>
-//         <Ionicons name="notifications-outline" size={27} color="#333" />
-//       </TouchableOpacity>
-
-//     </View>
-//   );
-// }
 export default function MapScreen() {
   const router = useRouter();
   //consume the global data
   const { lots, isLoading, lastRefreshAt, fetchLotStatuses, filterByPermit, previewMode, setPreviewMode, actuallyNight, mapType, setMapType, mapTheme, setMapTheme, isDarkMap } = useLots();
   const { user } = useUser();
-  console.log("MapScreen Render - isLoading:", isLoading, "Lots count:", lots?.length);
 
   const refreshLabel = lastRefreshAt
     ? new Date(lastRefreshAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -66,9 +41,7 @@ export default function MapScreen() {
   // Measured bottom edge of the dropdown row; overlays anchor to it on any screen size
   const [dropdownRowBottom, setDropdownRowBottom] = useState(0);
   const [mapSettingsOpen, setMapSettingsOpen] = useState(false);
-  // Live ParkZen permit types, grouped so "A01".."A95" / "Lot NN Resident
-  // Reserve" collapse into one row each instead of cluttering the list —
-  // same source and grouping as Profile Setting's permit picker.
+  // Live ParkZen permit types, with per-lot codes grouped (same as Profile Setting).
   const [permitTypes, setPermitTypes] = useState<string[]>([
     "Eagle", "Remote", "Faculty and Staff", "A-Reserved",
     "Resident", "Resident Reserved", "Hall Director", "Motorcycle",
@@ -88,17 +61,13 @@ export default function MapScreen() {
       });
   }, []);
 
-  // Street Parking isn't a real ParkZen permit type — it's this app's own
-  // name-based category (see utils/permits.ts) — so it's added in alongside
-  // the live/fallback list rather than coming from it.
+  // Street Parking is an app-only category (utils/permits.ts), not a ParkZen permit.
   const permitOptions = useMemo(() => buildPermitOptions(permitTypes, [STREET_PARKING]), [permitTypes]);
   const openGroup = permitOptions.find((o): o is Extract<PermitOption, { kind: 'group' }> =>
     o.kind === 'group' && o.label === openGroupLabel
   );
 
-  // Closures, events, and recent hazards come pre-applied on each lot from
-  // LotsContext (polled every 30s); re-read on focus so a closure an admin
-  // just posted shows up as soon as the map is opened.
+  // Re-read closures/events/hazards on focus so a new closure shows immediately.
   useFocusEffect(useCallback(() => { fetchLotStatuses(); }, [fetchLotStatuses]));
 
   // Subtle periodic wiggle on the hazard button to draw the eye to it,
@@ -129,12 +98,8 @@ export default function MapScreen() {
   const filteredLots = (lots || []).map((lot: any) => {
     if (selectedPermit === "All Permits") return { ...lot, isVisible: true };
 
-    // A specific per-lot pick (e.g. "Lot 16 Resident Reserve") means "show
-    // only the one physical lot this exact permit belongs to" — that
-    // distinction only survives in the lot's raw ParkZen codes, since the
-    // consolidated permitList collapses every per-lot code into the shared
-    // "A-Reserved"/"Resident Reserved" category for filtering/night-rule
-    // purposes. So this checks rawPermitList directly instead.
+    // A per-lot pick (e.g. "Lot 16 Resident Reserve") only shows that one lot, which
+    // only the raw ParkZen codes can tell.
     if (isPerLotPermitCode(selectedPermit)) {
       const isVisible = Array.isArray(lot.rawPermitList) && lot.rawPermitList.includes(selectedPermit);
       return { ...lot, isVisible };
@@ -142,11 +107,7 @@ export default function MapScreen() {
 
     if (!lot?.permits) return { ...lot, isVisible: false };
 
-    // Listed lots' permitList is already consolidated (category + normalized
-    // permits); other lots' raw permits need normalizing here. Either way this
-    // ends up exact-matched below, same as the Lots tab's own permit filter —
-    // no loose substring matching, so "Resident" can't accidentally pick up
-    // lookalikes like "HSR-Resident" or "Resident Reserved".
+    // Exact match (not substring) so "Resident" doesn't match "HSR-Resident".
     const groups: string[] = lot.category && Array.isArray(lot.permitList)
       ? lot.permitList
       : consolidatePermits(lot.permits);
@@ -155,10 +116,7 @@ export default function MapScreen() {
     return { ...lot, isVisible };
   });
 
-  // "Only show my permit type" preference from Profile Setting, applied on top
-  // of the CAMPUS/PERMIT dropdowns above rather than replacing them — but only
-  // until the user explicitly picks something from the PERMIT dropdown, since
-  // they should always be able to opt back into seeing every permit.
+  // "Only show my permit type" preference, until the user picks from the PERMIT dropdown.
   const permitTypeFilteredLots = (filterByPermit && user.parkingProfile.permitType && !permitManuallySelected)
     ? filteredLots.map((lot) => ({
         ...lot,
@@ -166,10 +124,7 @@ export default function MapScreen() {
       }))
     : filteredLots;
 
-  // The PERMIT dropdown still reads "All Permits" while the preference above is
-  // quietly narrowing the map underneath it — show the user's own permit type
-  // instead so the label matches what's actually visible, until they've made
-  // their own explicit choice.
+  // Show the user's permit in the dropdown while the preference is narrowing the map.
   const permitDropdownLabel = getPermitDisplayLabel(
     filterByPermit && user.parkingProfile.permitType && selectedPermit === 'All Permits' && !permitManuallySelected
       ? user.parkingProfile.permitType
@@ -247,9 +202,7 @@ export default function MapScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Single launcher for map settings (permit-rule preview + map type)
-            instead of separate floating controls. Amber whenever previewing
-            a time that doesn't match the real clock. */}
+        {/* Map settings launcher; amber while previewing another time of day */}
         <TouchableOpacity
           style={[styles.mapSettingsButton, !isLivePreview && styles.mapSettingsButtonPreview]}
           onPress={() => setMapSettingsOpen(!mapSettingsOpen)}

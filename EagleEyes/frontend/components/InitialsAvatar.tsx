@@ -17,9 +17,7 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-// Same light-green/UNT-green treatment used everywhere else in the app,
-// rather than a per-user color hash, so admin and commuter avatars still
-// read as the same visual system.
+// Same UNT-green style for every avatar.
 export default function InitialsAvatar({ name, size = 96, style }: InitialsAvatarProps) {
   const initials = getInitials(name);
   return (

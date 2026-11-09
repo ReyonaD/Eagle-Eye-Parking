@@ -1,7 +1,4 @@
-// When each permit may park, from ParkZen's own permit rules
-// (GET /api/permit-hours -> rules.dailyTimeSlots), and how to show it.
-// Most UNT permits are any time; a few (e.g. Evening, Night) only cover part
-// of the day, and those are what the app calls out.
+// When each permit may park (ParkZen rules.dailyTimeSlots) and how to display it.
 
 import { normalizePermit, normalizePermitPreservingCode } from './permits';
 
@@ -42,9 +39,7 @@ function slotsFor(hours: PermitHours, day: string): [number, number][] {
     .sort((a, b) => a[0] - b[0]);
 }
 
-// One day's allowed hours as text. A day that runs from midnight to a morning
-// time and again from an afternoon time to midnight is really one overnight
-// window ("3:30 PM – 7:00 AM"), so it's shown that way.
+// One day's hours as text; midnight-to-morning plus afternoon-to-midnight shows as one overnight window.
 function describeDay(slots: [number, number][]): string {
   if (slots.length === 0) return 'Not allowed';
   if (slots.length === 1 && slots[0][0] === 0 && slots[0][1] === END_OF_DAY) return ANY_TIME;
@@ -87,11 +82,7 @@ export function isAnyTimePermit(hours: PermitHours): boolean {
   return WEEK.every((day) => describeDay(slotsFor(hours, day)) === ANY_TIME);
 }
 
-/**
- * Permit hours keyed by every label the app shows for a permit - ParkZen's raw
- * name ("F/S"), its normalized name ("Faculty and Staff"), and its per-lot code
- * ("A37") - so any permit chip or the account's saved permit can look it up.
- */
+/** Permit hours keyed by raw name, normalized name and per-lot code. */
 export function buildPermitHoursIndex(list: PermitHours[]): Record<string, PermitHours> {
   const index: Record<string, PermitHours> = {};
   (list || []).forEach((permit) => {

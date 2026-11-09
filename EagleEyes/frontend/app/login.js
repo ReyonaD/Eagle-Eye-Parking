@@ -24,10 +24,7 @@ export default function LoginScreen() {
             //pull this account's own profile so a previous session's cached
             //name/email/permit can never leak into the newly logged-in account
             await refreshUser();
-            //asks for notification permission, then ParkZen's parking
-            //permissions, once signed in; one after the other because Android
-            //shows one prompt at a time, and not awaited so they never hold
-            //up navigation
+            // notification prompt, then ParkZen's (one at a time on Android); not awaited
             registerForAlertPush({ prompt: true }).then(askParkingPermissionsOnce);
             //route the user based on the role provided in the JWT token
             if (userData.role === 'admin'){

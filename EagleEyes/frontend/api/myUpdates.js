@@ -1,9 +1,4 @@
-// Note Status — frontend API boundary.
-//
-// A commuter's own Notes to Admin and whether each has been acknowledged,
-// plus the unread "your note was acknowledged" entries behind the badges.
-// Unlike the public alerts feed in api/alerts.js, every call here is for the
-// logged-in user only — the backend scopes all of /users/me/* to the token's owner.
+// Note Status API: the logged-in user's own notes and acknowledgment updates.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../utils/webCompat';

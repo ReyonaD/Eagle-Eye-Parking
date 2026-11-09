@@ -1,12 +1,32 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../utils/webCompat';
+import { findActiveClosures } from '../utils/lotStatus';
 
 export const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+
+// Error with the backend's `detail` message and HTTP status.
+const errorFromResponse = async (response, fallback) => {
+    let detail = null;
+    try {
+        const data = await response.json();
+        if (typeof data?.detail === 'string') detail = data.detail;
+    } catch {
+        // not JSON - keep the fallback message
+    }
+    const error = new Error(detail || fallback);
+    error.status = response.status;
+    error.detail = detail;
+    return error;
+};
 // GET: Fetch the feed (works for both tabs!)
 export const getAlerts = async (alertType) => {
     try{
-        const response = await apiFetch(`${BASE_URL}/alerts?alert_type=${alertType}`);
+        // the feed is public; logged-in admins also get each report's reporter emails
+        const token = await AsyncStorage.getItem('token');
+        const response = await apiFetch(`${BASE_URL}/alerts?alert_type=${alertType}`, {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        });
         if (!response.ok) throw new Error(`Failed to fetch ${alertType}`);
         return await response.json();
     } catch (error) {
@@ -28,7 +48,7 @@ export const createAlert = async (alertData) => {
             },
             body: JSON.stringify(alertData),
         });
-        if (!response.ok) throw new Error('Failed to submit report');
+        if (!response.ok) throw await errorFromResponse(response, 'Failed to submit report');
         return await response.json();
     } catch (error){
         console.error("API Error (createAlert):", error);
@@ -36,15 +56,8 @@ export const createAlert = async (alertData) => {
     }
 };
 
-// POST: Upload one photo for a hazard/event report; call once per photo, then
-// pass the returned image_urls into createAlert(). Requires login.
-//
-// `photo` is an expo-image-picker asset ({ uri, file? }). On native, RN's fetch
-// polyfill accepts the { uri, name, type } object shape in place of a real Blob.
-// On web, FormData is the browser's real implementation, which has no idea what
-// that shape means — it just calls String() on it, producing the literal text
-// "[object Object]" instead of a file part. expo-image-picker's web module
-// already hands back the real File as `asset.file`, so use that directly there.
+// POST: upload one report photo (requires login); returns { image_url }.
+// On web, FormData needs the real File (asset.file), not the native { uri } shape.
 export const uploadAlertImage = async (photo) => {
     const token = await AsyncStorage.getItem('token');
     const formData = new FormData();
@@ -110,7 +123,7 @@ export const approveAlert = async (alertId, edits = {}) => {
         },
         body: JSON.stringify(edits),
     });
-    if (!response.ok) throw new Error('Failed to approve report');
+    if (!response.ok) throw await errorFromResponse(response, 'Failed to approve report');
     return await response.json();
 };
 // PUT: Admin takes a published hazard off the map/lots (active=false) or puts
@@ -140,13 +153,12 @@ export const updateEvent = async (alertId, eventData) => {
         },
         body: JSON.stringify(eventData),
     });
-    if (!response.ok) throw new Error('Failed to update event');
+    if (!response.ok) throw await errorFromResponse(response, 'Failed to update event');
     return await response.json();
 };
 // DELETE: Admin declines/removes a hazard report (admin-only endpoint)
 export const deleteAlert = async (alertId) => {
     const token = await AsyncStorage.getItem('token');
-    console.log("deleteAlert — token present:", !!token, "| alertId:", alertId);
     try {
         const response = await apiFetch(`${BASE_URL}/alerts/${alertId}`, {
             method: 'DELETE',
@@ -162,11 +174,13 @@ export const deleteAlert = async (alertId) => {
         throw error;
     }
 };
-// PUT: Upvote an existing alert
+// PUT: Confirm an existing alert (requires login; each account counts once)
 export const upvoteAlert = async (alertId) => {
+    const token = await AsyncStorage.getItem('token');
     try{
         const response = await apiFetch(`${BASE_URL}/alerts/${alertId}/upvote`, {
             method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}` },
         });
         if (!response.ok) throw new Error('Failed to verify alert');
         return await response.json();
@@ -175,3 +189,13 @@ export const upvoteAlert = async (alertId) => {
         throw error;
     }
 }
+// Whether `lotName` is closed right now, checked against freshly fetched
+// events. `fallback` is used when the request fails (e.g. offline).
+export const isLotClosedNow = async (lotName, fallback = false) => {
+    if (!lotName) return false;
+    try {
+        return findActiveClosures(await getAlerts('event'), lotName).length > 0;
+    } catch {
+        return fallback;
+    }
+};

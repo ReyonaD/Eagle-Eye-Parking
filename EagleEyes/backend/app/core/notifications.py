@@ -5,9 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Note, User, UserNotification
 
-#kind values stored on UserNotification
-#(hazard report approve/decline entries used to exist; older rows may still be
-#in the table with kind report_approved / report_declined)
+# UserNotification kinds (older rows may have report_approved / report_declined)
 NOTE_ACKNOWLEDGED = "note_acknowledged"
 
 
@@ -21,9 +19,7 @@ def _notify(
     body: Optional[str],
     lot_name: Optional[str],
 ) -> int:
-    """Adds one "My Updates" entry per distinct submitter. Doesn't commit - the
-    caller commits it together with the status change that triggered it, so
-    the two can never get out of sync. Returns how many entries were new."""
+    """Adds one "My Updates" entry per submitter. The caller commits. Returns how many were new."""
     unique_emails = {e for e in (emails or []) if e}
     if not unique_emails:
         return 0

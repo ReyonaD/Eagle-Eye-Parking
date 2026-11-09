@@ -21,7 +21,6 @@ export const register = async (email, password) => {
 //LOGIN
 export const login = async (email, password) => {
     try{
-        console.log("[Auth] Logging in as:", email);
         //FastAPI login requires form-urlencoded, NOT JSON!
         const formData = `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
         const res = await apiFetch(`${BASE_URL}/login`, {
@@ -42,7 +41,6 @@ export const login = async (email, password) => {
         errorMessage = data.detail[0].msg; 
         }
 
-        console.log("BACKEND REJECTION:", JSON.stringify(data, null, 2));
         throw new Error(errorMessage);
         } 
         //save token, role, and owner status to AsyncStorage
@@ -69,7 +67,11 @@ export const getCurrentUser = async () => {
     const response = await apiFetch(`${BASE_URL}/users/me`, {
         headers: { 'Authorization': `Bearer ${token}` },
     });
-    if (!response.ok) throw new Error('Failed to fetch account details');
+    if (!response.ok) {
+        const error = new Error('Failed to fetch account details');
+        error.status = response.status;
+        throw error;
+    }
     return await response.json();
 };
 //GET PERMIT TYPES - the real, live list of ParkZen permit names (for the picker)

@@ -4,9 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useAdminNotesBadge } from '../context/AdminNotesBadgeContext';
 
-//web-only replacement for the bottom tab bar - the primary admin
-//destinations, as a collapsible left rail under the logo (set by TopBar above
-//it). Profile now lives in the TopBar's account menu instead of here.
+// web-only admin navigation (collapsible left rail)
 const NAV_ITEMS = [
   { route: '/(admin)/hazards', label: 'Hazards', icon: 'warning-outline' },
   { route: '/(admin)/events', label: 'Events', icon: 'list-outline' },
@@ -38,11 +36,7 @@ export default function AdminSidebar({
       </View>
 
       {NAV_ITEMS.map(item => {
-        //expo-router strips "(group)" segments from the real URL, so the
-        //live pathname is "/hazards", never "/(admin)/hazards" - match on
-        //that stripped form. Secondary pages (hazard-history, post-alert, ...)
-        //are nested under one of these three; keep that parent item
-        //highlighted while on them too.
+        // URLs drop "(admin)"; sub-pages keep their parent item highlighted
         const matchPath = item.route.replace('/(admin)', '');
         const isActive = pathname === matchPath || pathname.startsWith(`${matchPath}/`);
         const badgeCount = badgeFor[item.route] ?? 0;

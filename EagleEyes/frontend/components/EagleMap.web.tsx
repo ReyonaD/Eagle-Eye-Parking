@@ -25,9 +25,7 @@ const CAMPUS_REGIONS: Record<string, { lat: number; lng: number }> = {
 };
 const CAMPUS_ZOOM = 15;
 
-// Pans/zooms the map when the CAMPUS dropdown changes — a plain prop change
-// on <Map> only sets the *initial* view, so this has to go through the
-// imperative google.maps instance instead.
+// Pans the map when the CAMPUS dropdown changes (<Map> props only set the initial view).
 function CampusPanController({ selectedCampus }: { selectedCampus: string }) {
   const map = useMap();
 
@@ -41,11 +39,7 @@ function CampusPanController({ selectedCampus }: { selectedCampus: string }) {
   return null;
 }
 
-// On app entry, if the browser reports the user is near a lot, zoom in on
-// them instead of the default campus-wide view. Runs once (same
-// navigator.geolocation pattern LotPickerModal.web.tsx already uses), reading
-// the latest liveLots via a ref so it doesn't need to re-request location
-// every time the 30s lot refresh hands in a new array.
+// On load, zoom to the user if they're near a lot (runs once).
 function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
   const map = useMap();
   const liveLotsRef = useRef(liveLots);
@@ -71,10 +65,7 @@ function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
           map.setZoom(NEARBY_ZOOM_LEVEL_WEB);
         };
 
-        // CampusPanController already pans/zooms this same map instance once
-        // on mount — issuing our own pan/zoom in the same moment raced it and
-        // threw deep inside the Maps SDK. Waiting for the map to report
-        // "idle" (settled from that initial move) avoids the collision.
+        // Wait for "idle" so this doesn't race CampusPanController's initial move.
         const googleMaps = (window as any).google?.maps;
         if (googleMaps?.event) {
           googleMaps.event.addListenerOnce(map, 'idle', applyZoom);
@@ -122,9 +113,7 @@ function WebPolygon({ paths, options, onClick }: { paths: any; options: any; onC
   return null;
 }
 
-// Diagonal stripes over a closed lot (same geometry as the native map). Each
-// stripe is a 2-point path of one stroke-only, unclickable polygon, so a whole
-// lot's stripes are a single map object and clicks fall through to the lot.
+// Stripes over a closed lot, as one unclickable polygon so clicks reach the lot.
 function WebStripes({ coordinates, color }: { coordinates: { latitude: number; longitude: number }[]; color: string }) {
   const map = useMap();
   const stripesRef = React.useRef<any>(null);
@@ -189,10 +178,7 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
                 lng: coord.longitude,
               }));
 
-              // Same hide-but-keep-in-the-list treatment as the native map:
-              // a filtered-out lot goes transparent and unclickable instead
-              // of disappearing, so re-selecting "All Permits" doesn't need
-              // a re-fetch to bring it back.
+              // Filtered-out lots go transparent instead of being removed.
               const hidden = lot.isVisible === false;
 
               return (

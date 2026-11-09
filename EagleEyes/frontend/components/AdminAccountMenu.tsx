@@ -2,21 +2,15 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { unregisterAlertPush } from '../utils/pushNotifications';
+import { clearSession } from '../utils/session';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUser } from '../context/UserContext';
-import { PINNED_LOTS_STORAGE_KEY } from '../app/(tabs)/lots';
 import { Alert } from '../utils/webCompat';
 import InitialsAvatar from './InitialsAvatar';
 
 const IS_WEB = Platform.OS === 'web';
 
-//Top-right account control for the admin TopBar (the familiar web-app
-//pattern: avatar + name, opens a menu with Profile Details / Log Out).
-//This is now the ONLY place admins can log out - it's been removed from
-//the Profile screen itself. Name is hidden on narrow mobile to save space,
-//but the avatar is still tappable there so logout stays reachable everywhere.
+// Admin account menu in the TopBar (Profile Details / Log Out); name hidden on narrow screens.
 export default function AdminAccountMenu() {
   const { user, refreshUser } = useUser();
   const insets = useSafeAreaInsets();
@@ -30,13 +24,9 @@ export default function AdminAccountMenu() {
         text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
-          //needs the auth token, so it has to run before it's removed
-          await unregisterAlertPush();
-          await AsyncStorage.removeItem('token');
-          await AsyncStorage.removeItem('role');
-          await AsyncStorage.removeItem('isOwner');
-          //clears the cached profile and pinned lots too, so neither bleeds into the next login
-          await AsyncStorage.removeItem(PINNED_LOTS_STORAGE_KEY);
+          //clears the token, role, push registration and pinned lots, then the
+          //cached profile, so nothing bleeds into the next login
+          await clearSession();
           await refreshUser();
           router.replace('/login');
         },
@@ -58,8 +48,7 @@ export default function AdminAccountMenu() {
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOpen(false)}>
-          {/* approximate anchor under the TopBar (logo height + its padding/border);
-              not pixel-measured against the trigger, but close enough for this bar's fixed layout */}
+          {/* anchored just under the TopBar */}
           <View style={[styles.dropdown, { top: insets.top + 78 }]}>
             <View style={styles.dropdownHeader}>
               <Text style={styles.dropdownName} numberOfLines={1}>{user.name || 'Admin'}</Text>

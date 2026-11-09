@@ -6,12 +6,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { getAlerts, getPendingAlerts, getDeclinedAlerts, approveAlert, deleteAlert, setHazardActive, uploadAlertImage, BASE_URL } from '../../api/alerts';
+import { getAlerts, getPendingAlerts, getDeclinedAlerts, approveAlert, deleteAlert, setHazardActive, uploadAlertImage, isLotClosedNow, BASE_URL } from '../../api/alerts';
 import { useLots } from '../../context/LotsContext';
 import LotMiniMap from '../../components/LotMiniMap';
 import { Alert } from '../../utils/webCompat';
 import { getHazardVisual } from '../../utils/alertVisuals';
-import { isHazardActive } from '../../utils/lotStatus';
+import { isHazardActive, isLotNameClosed } from '../../utils/lotStatus';
 import { useFocusPolling } from '../../hooks/use-focus-polling';
 import { useAdminNotesBadge } from '../../context/AdminNotesBadgeContext';
 
@@ -372,6 +372,7 @@ function HazardDetail({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function HazardsScreen() {
+  const { lots: screenLots } = useLots();
   const { viewId } = useLocalSearchParams<{ viewId?: string }>();
   //so the sidebar's pending count drops as soon as a report is reviewed
   const { refreshBadge } = useAdminNotesBadge();
@@ -384,9 +385,7 @@ export default function HazardsScreen() {
   const fetchHazards = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      //pending = awaiting review; declined = admin turned down; published = live on the feed.
-      //declined is always fetched (even on mobile, where it's not shown inline) so the
-      //"VIEW DECLINED" button and the history page's deep-link-back can find a report by id
+      // declined is always fetched so "VIEW DECLINED" and history deep-links can find a report
       const [pending, declined, published] = await Promise.all([
         getPendingAlerts('hazard').catch(() => []),
         getDeclinedAlerts('hazard').catch(() => []),
@@ -416,9 +415,7 @@ export default function HazardsScreen() {
   //report shows up without them having to pull-to-refresh or leave the tab
   useFocusPolling(() => fetchHazards(false));
 
-  //the Published/Declined history pages deep-link back here with ?viewId=<id>
-  //to reuse this screen's own detail view (edit/approve/remove) instead of
-  //duplicating it; wait for the matching report to show up, then open it once
+  // history pages link back with ?viewId=<id>; open that report once it loads
   const viewHandledRef = useRef(false);
   useEffect(() => {
     if (!viewId || viewHandledRef.current) return;
@@ -485,12 +482,34 @@ export default function HazardsScreen() {
   };
 
   const handleApprove = async (hazard: any, edits: { title: string; description: string }) => {
+    //the lot may have closed while this report sat in the queue - checked
+    //against fresh events, not the lot statuses (up to 30s stale)
+    if (await isLotClosedNow(hazard.lot_name, isLotNameClosed(screenLots, hazard.lot_name))) {
+      Alert.alert(
+        'Lot Is Closed',
+        `${hazard.lot_name} is closed right now. Publish this hazard anyway?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Publish Anyway', onPress: () => publish(hazard, edits, true) },
+        ],
+      );
+      return;
+    }
+    publish(hazard, edits, false);
+  };
+
+  const publish = async (hazard: any, edits: { title: string; description: string }, warned: boolean) => {
     try {
-      await approveAlert(hazard.id, edits);
+      const published = await approveAlert(hazard.id, edits);
       setSelectedHazard(null);
       fetchHazards();
       refreshBadge();
-      Alert.alert('Published', 'The report is now live for commuters.');
+      //backup: the backend's own closure check, in case ours missed it
+      if (!warned && published?.conflicts?.length) {
+        Alert.alert('Published', `The report is now live for commuters. Note: ${hazard.lot_name} is closed right now.`);
+      } else {
+        Alert.alert('Published', 'The report is now live for commuters.');
+      }
     } catch {
       Alert.alert('Error', 'Could not publish this report. Check your connection.');
     }

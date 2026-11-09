@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LotsProvider } from '../context/LotsContext';
 import { AlertsBadgeProvider } from '../context/AlertsBadgeContext';
 import { UserProvider } from '../context/UserContext';
+import SessionWatcher from '../components/SessionWatcher';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useAlertPushNotifications } from '../utils/pushNotifications';
 
@@ -26,8 +27,6 @@ export default function RootLayout() {
         const role = await AsyncStorage.getItem('role');
         const firstSegment = segments[0];
 
-        console.log('[Router] Current segment:', firstSegment, '| Has token:', !!token, '| Role:', role);
-
         // Check which "zone" the user is currently in
         const inTabsGroup = firstSegment === '(tabs)';
         const inAdminGroup = firstSegment === '(admin)';
@@ -35,16 +34,12 @@ export default function RootLayout() {
 
         if (!token && (inTabsGroup || inAdminGroup)) {
           // No token, but trying to access the main app -> Kick to login
-          console.log('[Router] No token! Kicking to login...');
           router.replace('./login');
         } else if (token && inAuthGroup) {
           // Has token, but sitting on the login screen -> Route based on role
-          console.log('[Router] Token found! Routing based on role...');
           if (role === 'admin') {
-            console.log('[Router] Admin user detected, sending to admin dashboard...');
             router.replace('./(admin)');
           } else {
-            console.log('[Router] Regular user detected, sending to map...');
             router.replace('./(tabs)');
           }
         }
@@ -61,6 +56,7 @@ export default function RootLayout() {
       <LotsProvider>
         <AlertsBadgeProvider>
         <UserProvider>
+          <SessionWatcher ready={!!navigationState?.key} />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="(admin)" />

@@ -51,34 +51,18 @@ class Alert(Base):
     #URLs (relative to the backend) of photos attached to the report
     image_urls = Column(JSON, nullable=True, default=list)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    #for alert_type='event': when the event actually starts/ends, as picked by
-    #the admin in the form - distinct from created_at, which is just when the
-    #row was submitted. Null for hazards and for events created before this existed.
+    # events: when it actually starts/ends (null for hazards and old events)
     event_start = Column(DateTime, nullable=True)
     event_end = Column(DateTime, nullable=True)
-    #emails of every distinct commuter who reported/confirmed this; lets admins
-    #see who to follow up with and is how we tell a genuine second confirmation
-    #from the same person re-submitting the same report
+    # every distinct reporter, so a repeat report from the same person isn't a second confirmation
     reporter_emails = Column(JSON, nullable=True, default=list)
-    #for alert_type='hazard': when an admin marked it as over. A published
-    #hazard shows on the map/lots until then; null = still active. Reactivating
-    #clears it again.
+    # hazards: when an admin marked it over; null = still on the map
     deactivated_at = Column(DateTime, nullable=True)
 
 
 class Note(Base):
-    """
-    A private commuter -> admin message (e.g. "my car broke down in Lot 20,
-    back by 5pm"). Deliberately a separate table from Alert, not another
-    alert_type/category value:
-    - it's never meant to be published/broadcast, unlike hazards and events
-    - each note is one person's own situation, so the Alert dedup/merge
-      logic (multiple commuters confirming the SAME incident) doesn't apply
-      here and would incorrectly combine two unrelated people's notes about
-      the same lot
-    - fields like phone_number only ever make sense for a note, not for any
-      Alert category
-    """
+    """A private commuter -> admin message. Separate from Alert: never published,
+    never merged with other reports, and has note-only fields like phone_number."""
     __tablename__ = "notes"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -108,11 +92,7 @@ class Note(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class DiagnosticLog(Base):
-    """
-    A snapshot of the app's recent console output, sent by a commuter from
-    Help & Support so we can trace bugs that only happen on their device
-    (e.g. the Android map not showing) without needing the device in hand.
-    """
+    """Recent app console output a commuter sent from Help & Support."""
     __tablename__ = "diagnostic_logs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -141,11 +121,7 @@ class PasswordResetToken(Base):
     attempts = Column(Integer, default=0, nullable=False)
 
 class PushToken(Base):
-    """
-    One row per device that has turned on alert notifications. A token is an
-    Expo push token (ExponentPushToken[...]) and belongs to whoever last signed
-    in on that device, so switching accounts moves it instead of duplicating it.
-    """
+    """One row per device with alert notifications on; owned by the last account signed in there."""
     __tablename__ = "push_tokens"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -156,15 +132,8 @@ class PushToken(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class UserNotification(Base):
-    """
-    One commuter's personal "Note Status" entry: an admin acknowledged their
-    note. Unlike Alert, it's only ever visible to the one user it belongs to.
-    - source_id is deliberately not a ForeignKey: admins can hard-delete
-      alerts, and the commuter's history should still make sense afterwards,
-      so title/body/lot_name are a snapshot taken when the update was created
-    - the unique constraint is what guarantees one update per review event,
-      even if an admin double-taps or two admins act at the same time
-    """
+    """A commuter's "Note Status" entry. source_id isn't a ForeignKey and title/body are
+    snapshots, so history survives deletes; the unique constraint prevents duplicates."""
     __tablename__ = "user_notifications"
     __table_args__ = (
         UniqueConstraint("user_id", "source_type", "source_id", "kind", name="uq_user_notification_event"),

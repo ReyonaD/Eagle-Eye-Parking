@@ -9,10 +9,7 @@ import { toLocalDateString, formatDate, getEventRange } from '../../utils/eventD
 
 const PAGE_SIZE = 15;
 
-//mobile-only companion to the Notes from Commuters screen: Expired notes
-//link here instead of listing inline, so the main screen stays focused on
-//Acknowledgment Pending / Active. Loads a bounded page at a time via LOAD
-//MORE rather than rendering the whole history at once.
+// mobile-only: expired notes, paged with LOAD MORE
 export default function NotesHistoryScreen() {
   const [notes, setNotes] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);

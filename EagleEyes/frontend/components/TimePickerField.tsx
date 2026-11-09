@@ -84,10 +84,7 @@ function Column<T extends string | number>({
   );
 }
 
-// Tap-to-pick time field: shows the chosen time like the app's date buttons,
-// and opens a popup with quick presets plus hour / minute / AM-PM columns -
-// no typing "HH:MM". Value stays the same "H:MM" + AM/PM pair the forms
-// already validate and convert.
+// Tap-to-pick time field with presets and hour/minute/AM-PM columns; value is "H:MM" + AM/PM.
 export default function TimePickerField({
   time,
   period,

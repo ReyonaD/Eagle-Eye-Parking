@@ -1,7 +1,4 @@
-// Push notifications — frontend API boundary.
-//
-// Registers this device's Expo push token with the backend so it gets a push
-// whenever a hazard/event alert is published (see backend app/core/push.py).
+// Push notifications API: registers this device's Expo push token for published alerts.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../utils/webCompat';

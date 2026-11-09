@@ -270,8 +270,7 @@ export default function CommuterNotesScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['right', 'left']}>
-      {/* web is reached from the sidebar, not a navigation stack, so a page
-          title replaces the mobile-style back header */}
+      {/* web: page title instead of the mobile back header */}
       {!IS_WEB && (
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.replace('/(admin)/profile')} hitSlop={10}>

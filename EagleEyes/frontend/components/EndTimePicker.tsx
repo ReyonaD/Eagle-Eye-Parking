@@ -55,10 +55,8 @@ interface EndTimePickerProps {
   onChange: (value: EndTimeValue) => void;
 }
 
-// 4-mode End Time selector from DDS2's Note to Admin wireframe (24hr / End of
-// day / Overnight / Custom). Always resolves to a concrete end - unlike admin
-// events, a note needs an estimated end so admins can track when it expires. Custom reveals a date button (opens the same
-// mini calendar used elsewhere in the app) plus a typed time + AM/PM toggle.
+// End time selector for notes (24hr / End of day / Overnight / Custom); always resolves to
+// a concrete end so admins know when a note expires.
 export default function EndTimePicker({ value, onChange }: EndTimePickerProps) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const setMode = (mode: EndTimeMode) => onChange({ ...value, mode });

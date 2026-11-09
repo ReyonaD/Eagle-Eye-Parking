@@ -8,9 +8,7 @@ import { Alert } from '../../utils/webCompat';
 import { getEventVisual } from '../../utils/alertVisuals';
 import { getEventRange, toLocalDateString, getTodayDateString, formatDate } from '../../utils/eventDates';
 
-//mobile-only companion to the Campus Events screen: a dedicated page to browse
-//already-finished events and reuse one (prefill + pick a new date) instead of
-//retyping a recurring event from scratch every time
+// mobile-only: browse finished events and reuse one with a new date
 export default function PastEventsScreen() {
   const [events, setEvents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);

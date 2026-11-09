@@ -500,9 +500,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
-  // Emphasizes a UI element the note refers to (e.g. a button on another
-  // screen) without implying it's tappable right here, unlike the external
-  // link style above.
+  // Highlights a UI element mentioned in the note, without looking tappable.
   purchasePermitLinkStatic: {
     fontWeight: '700',
   },

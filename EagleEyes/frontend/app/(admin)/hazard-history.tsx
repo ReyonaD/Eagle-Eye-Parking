@@ -15,10 +15,7 @@ const PAGE_SIZE = 15;
 const parseUTC = (isoString: string) =>
   new Date(/Z$|[+-]\d{2}:?\d{2}$/.test(isoString) ? isoString : `${isoString}Z`);
 
-//mobile-only companion to the Hazard Reports screen: Published and Declined
-//each link here instead of listing inline, so the main screen stays focused
-//on the actionable Pending queue. Loads a bounded page at a time via LOAD MORE
-//rather than rendering the whole (potentially long-running) history at once.
+// mobile-only: published and declined reports, paged with LOAD MORE
 export default function HazardHistoryScreen() {
   const { status } = useLocalSearchParams<{ status?: string }>();
   const isDeclined = status === 'declined';

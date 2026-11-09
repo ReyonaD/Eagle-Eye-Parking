@@ -9,6 +9,8 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { createAlert, uploadAlertImage } from '../api/alerts';
 import LotPickerModal from '../components/LotPickerModal';
+import { useLots } from '../context/LotsContext';
+import { isLotNameClosed } from '../utils/lotStatus';
 import { Alert } from '../utils/webCompat';
 import { HAZARD_CATEGORIES as ALERT_TYPES, OTHER_HAZARD_VALUE, MAX_CUSTOM_HAZARD_LENGTH, getCategoryLabel } from '../utils/alertVisuals';
 
@@ -22,10 +24,15 @@ export default function ReportHazardScreen() {
   const [memo, setMemo]                 = useState('');
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedLot, setSelectedLot]   = useState<string | null>(null);
+  //picked "Not in a lot" in the lot picker - then the description has to say where
+  const [noLot, setNoLot]               = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showLotPicker, setShowLotPicker] = useState(false);
   const [photos, setPhotos]             = useState<PickedPhoto[]>([]);
   const [isPosting, setIsPosting]       = useState(false);
+  const { lots } = useLots();
+  //a closure can start while the form is open (lot statuses re-poll every 30s)
+  const selectedLotClosed = isLotNameClosed(lots, selectedLot);
 
   const selectedLabel = ALERT_TYPES.find(t => t.value === selectedType)?.label;
   //"Other" asks for the hazard type in a text box; what's typed becomes the category
@@ -104,6 +111,18 @@ export default function ReportHazardScreen() {
       Alert.alert('Missing Type', 'Please type what kind of hazard this is.');
       return;
     }
+    if (!selectedLot && !noLot) {
+      Alert.alert('Missing Lot', 'Please pick the lot this hazard is in, or choose "Not in a lot".');
+      return;
+    }
+    if (noLot && !memo.trim()) {
+      Alert.alert('Missing Location', 'Since this hazard isn\'t in a lot, please describe where it is.');
+      return;
+    }
+    if (selectedLotClosed) {
+      Alert.alert('Lot Closed', `${selectedLot} is closed right now, so hazard reports for it are disabled. Pick a different lot.`);
+      return;
+    }
     setIsPosting(true);
     try {
       //photos upload one at a time so we can attach the URLs to the report below
@@ -129,8 +148,13 @@ export default function ReportHazardScreen() {
         'Thanks! Your report was sent to the parking team for review and will appear once approved.',
         [{ text: 'OK', onPress: () => router.back() }],
       );
-    } catch {
-      Alert.alert('Error', 'Could not submit your report. Make sure you are logged in and try again.');
+    } catch (error: any) {
+      if (error?.status === 409) {
+        //the backend's closure check (the app's lot statuses can lag behind)
+        Alert.alert('Lot Closed', error.detail || 'This lot is closed right now, so hazard reports for it are disabled.');
+      } else {
+        Alert.alert('Error', 'Could not submit your report. Make sure you are logged in and try again.');
+      }
     } finally {
       setIsPosting(false);
     }
@@ -154,7 +178,9 @@ export default function ReportHazardScreen() {
 
         <TextInput
           style={styles.memoInput}
-          placeholder="ADD MEMO/DESCRIPTION (LOT, LOCATION, DETAILS)"
+          placeholder={noLot
+            ? 'DESCRIBE WHERE IT IS * (E.G. ROAD BEHIND LOT 20) AND ANY DETAILS'
+            : 'ADD MEMO/DESCRIPTION (LOCATION, DETAILS)'}
           placeholderTextColor="#aaa"
           value={memo}
           onChangeText={setMemo}
@@ -190,13 +216,18 @@ export default function ReportHazardScreen() {
           onPress={() => setShowLotPicker(true)}
         >
           <View style={styles.lotSelectorLeft}>
-            <Ionicons name="location-outline" size={18} color={selectedLot ? '#00853E' : '#aaa'} />
-            <Text style={[styles.typeSelectorText, !!selectedLot && styles.typeSelectorSelected]}>
-              {selectedLot ?? 'SELECT LOT (OPTIONAL)'}
+            <Ionicons name="location-outline" size={18} color={selectedLot || noLot ? '#00853E' : '#aaa'} />
+            <Text style={[styles.typeSelectorText, (!!selectedLot || noLot) && styles.typeSelectorSelected]}>
+              {selectedLot ?? (noLot ? 'NOT IN A LOT' : 'SELECT LOT *')}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#aaa" />
         </TouchableOpacity>
+        {selectedLotClosed && (
+          <Text style={styles.closedWarning}>
+            {selectedLot} is closed right now. Hazard reports are disabled for closed lots - pick a different lot.
+          </Text>
+        )}
 
         {/* Photos — optional evidence for the report */}
         <Text style={styles.photosLabel}>PHOTOS (OPTIONAL)</Text>
@@ -235,7 +266,9 @@ export default function ReportHazardScreen() {
       <LotPickerModal
         visible={showLotPicker}
         onClose={() => setShowLotPicker(false)}
-        onSelect={(lotName) => setSelectedLot(lotName)}
+        onSelect={(lotName) => { setSelectedLot(lotName); setNoLot(false); }}
+        onSelectNoLot={() => { setSelectedLot(null); setNoLot(true); }}
+        disableClosed
       />
 
       <Modal visible={showDropdown} transparent animationType="fade">
@@ -275,6 +308,10 @@ export default function ReportHazardScreen() {
 }
 
 const styles = StyleSheet.create({
+  closedWarning: {
+    color: '#B42318', fontSize: 13, fontWeight: '600',
+    marginTop: -30, marginBottom: 28, paddingHorizontal: 4,
+  },
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   scroll: { padding: 20, paddingBottom: 40 },
 

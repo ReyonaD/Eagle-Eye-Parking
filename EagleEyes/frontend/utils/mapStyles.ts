@@ -1,6 +1,4 @@
-// Google Maps styles shared by the native and web maps, plus the colors of
-// what the app draws on top of the map that need a different shade on a dark
-// background (the lot's own occupancy colors read fine on both).
+// Google Maps styles (native + web) and overlay colors that need a darker-map variant.
 
 import { CLOSED_FILL_COLOR, CLOSED_STROKE_COLOR, CLOSED_STRIPE_COLOR } from './lotStatus';
 

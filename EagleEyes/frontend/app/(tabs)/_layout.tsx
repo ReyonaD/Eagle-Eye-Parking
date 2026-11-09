@@ -3,14 +3,10 @@ import React from 'react';
 import { Platform, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
 import TopBar from '../../components/TopBar'
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
   // Alerts has its own back button + title, so the brand topbar (logo + bell)
   // would just stack redundant chrome above it — hide it on that screen only.
   const pathname = usePathname();

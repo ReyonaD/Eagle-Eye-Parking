@@ -5,14 +5,8 @@ import { getPendingAlerts } from '../api/alerts';
 import { classifyNote } from '../utils/eventDates';
 import { useAdminNewItemNotifier, useAdminTabTitleCount } from '../hooks/use-admin-web-alerts';
 
-//Live counts of what's waiting on an admin: notes to admin not yet
-//acknowledged (badge on the TopBar's notes icon on mobile and the sidebar's
-//Notes nav item on web) and commuter hazard reports waiting for review
-//(sidebar's Hazards nav item on web). Events have no badge: only admins
-//create them, so nothing is ever waiting there.
-//Scoped to the admin layout only (not the root app layout) since
-//getNotes requires admin auth - a commuter session would just fail this call
-//every poll for no reason.
+// Counts waiting on an admin: unacknowledged notes and pending hazard reports.
+// Mounted only in the admin layout (the endpoints need admin auth).
 const POLL_MS = 10000;
 
 interface AdminNotesBadgeContextType {
@@ -31,9 +25,7 @@ export function AdminNotesBadgeProvider({ children }: { children: ReactNode }) {
   useAdminTabTitleCount(pendingCount + pendingHazardCount);
 
   const refreshBadge = useCallback(async () => {
-    //fetched separately so one failing doesn't freeze the other badge;
-    //on failure (not an admin yet, or a network hiccup) each keeps its current
-    //count rather than flashing it away
+    // Fetched separately so one failure doesn't freeze the other; keep counts on error.
     await Promise.all([
       getNotes()
         .then((all: any[]) => {
@@ -70,10 +62,7 @@ export function AdminNotesBadgeProvider({ children }: { children: ReactNode }) {
   );
 }
 
-//unlike most context hooks, this one is safe to call with no provider
-//mounted (returns a static 0 count) rather than throwing - TopBar is shared
-//between the admin and commuter layouts, and only the admin layout mounts
-//the provider, so TopBar needs to call this hook unconditionally either way
+// Safe without a provider (returns 0): TopBar is shared with the commuter layout.
 export const useAdminNotesBadge = (): AdminNotesBadgeContextType => {
   const context = useContext(AdminNotesBadgeContext);
   return context ?? { pendingCount: 0, pendingHazardCount: 0, refreshBadge: async () => {} };

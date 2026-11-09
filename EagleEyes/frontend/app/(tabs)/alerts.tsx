@@ -632,10 +632,7 @@ export default function AlertsScreen() {
         transparent={false}
         onRequestClose={() => setSelectedAlert(null)}
       >
-        {/* RN's Modal mounts into its own native root on iOS, so the outer
-            SafeAreaProvider's measured insets don't reach inside it — without
-            this, SafeAreaView here sees a 0 top inset and the header renders
-            up under the notch/status bar, out of easy tap reach. */}
+        {/* iOS Modals don't inherit safe-area insets, so provide them here */}
         <SafeAreaProvider>
           {selectedAlert && (
             <AlertDetail alert={selectedAlert} onBack={() => setSelectedAlert(null)} />

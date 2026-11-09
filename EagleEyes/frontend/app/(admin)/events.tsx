@@ -9,7 +9,7 @@ import { Alert } from '../../utils/webCompat';
 import { getEventVisual, EVENT_CATEGORIES } from '../../utils/alertVisuals';
 import DatePickerModal from '../../components/DatePickerModal';
 import LotPickerModal from '../../components/LotPickerModal';
-import { parseLotNames, joinLotNames, formatLotNames, CLOSURE_CATEGORY, isClosureCategory } from '../../utils/lotStatus';
+import { parseLotNames, joinLotNames, formatLotNames, CLOSURE_CATEGORY, isClosureCategory, findEventConflicts, describeEventConflicts } from '../../utils/lotStatus';
 import { useFocusPolling } from '../../hooks/use-focus-polling';
 import {
   toLocalDateString, getTodayDateString, isoToLocalDate, formatDate,
@@ -64,7 +64,7 @@ export default function EventsScreen() {
     try {
       const data = await getAlerts('event');
       setEvents(data);
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Could not load campus events.");
     } finally {
       if (showLoading) setIsLoading(false);
@@ -186,6 +186,33 @@ export default function EventsScreen() {
       return;
     }
 
+    // warn about overlapping closures/events; the admin can still save
+    const conflicts = findEventConflicts(events, {
+      category: submittedCategory,
+      lotNames: affectedLots,
+      start: eventStart,
+      end: eventEnd,
+      excludeId: editingEventId,
+    });
+    if (conflicts.length > 0) {
+      const closingLots = isClosureCategory(submittedCategory);
+      Alert.alert(
+        closingLots ? 'Events Already Booked' : 'Lot Closed During This Event',
+        `${closingLots
+          ? 'This closure overlaps events already scheduled on these lots:'
+          : 'These lots are closed for part or all of this event:'}\n\n${describeEventConflicts(conflicts)}\n\nSave anyway?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Save Anyway', onPress: () => saveEvent(submittedCategory, eventStart, eventEnd, conflicts.map(c => c.alert.id)) },
+        ],
+      );
+      return;
+    }
+    await saveEvent(submittedCategory, eventStart, eventEnd, []);
+  };
+
+  // `warnedIds`: conflicts already confirmed, so the backend's list only warns about new ones
+  const saveEvent = async (submittedCategory: string, eventStart: Date, eventEnd: Date | null, warnedIds: number[]) => {
     setIsSaving(true);
     try {
       //still fold the schedule into the description as human-readable text,
@@ -207,18 +234,22 @@ export default function EventsScreen() {
         event_start: eventStart.toISOString(),
         event_end: eventEnd ? eventEnd.toISOString() : undefined,
       };
-      if (editingEventId !== null) {
+      const saved = editingEventId !== null
         //null (not undefined) so switching to "No end date" clears the old end
-        await updateEvent(editingEventId, { ...eventData, event_end: eventData.event_end ?? null });
-        Alert.alert('Success', 'Event updated successfully');
+        ? await updateEvent(editingEventId, { ...eventData, event_end: eventData.event_end ?? null })
+        : await createAlert({ ...eventData, alert_type: 'event' });
+      const missed = (saved?.conflicts || []).filter((c: any) => !warnedIds.includes(c.id));
+      const successText = `Event ${editingEventId !== null ? 'updated' : 'created'} successfully`;
+      if (missed.length > 0) {
+        const lines = missed.map((c: any) => `• ${(c.lot_names || []).join(', ')} – ${c.title}`).join('\n');
+        Alert.alert('Saved, With Overlaps', `${successText}, but it overlaps:\n\n${lines}`);
       } else {
-        await createAlert({ ...eventData, alert_type: 'event' });
-        Alert.alert('Success', 'Event created successfully');
+        Alert.alert('Success', successText);
       }
       setShowAddEventModal(false);
       resetForm();
       fetchEvents();
-    } catch (error) {
+    } catch {
       Alert.alert('Error', `Could not ${editingEventId !== null ? 'update' : 'create'} the event. Please try again.`);
     } finally {
       setIsSaving(false);
@@ -257,7 +288,7 @@ export default function EventsScreen() {
       setShowDeleteConfirmation(false);
       await fetchEvents();
       Alert.alert('Event deleted', 'The event has been removed from the user side.');
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Could not delete the event. Please try again.');
     } finally {
       setIsDeletingEvent(false);
@@ -289,9 +320,7 @@ export default function EventsScreen() {
     setShowAddEventModal(true);
   };
 
-  //puts a saved event's category back into the picker: a custom one typed
-  //under "Other" goes back in the text box, and the old "Closure" name maps
-  //to the current closure category
+  // restore a saved category into the picker (custom -> "Other", legacy "Closure" -> current)
   const loadCategory = (stored?: string | null) => {
     if (!stored) { setCategory(null); setOtherCategory(''); return; }
     if (isClosureCategory(stored)) { setCategory(CLOSURE_CATEGORY); setOtherCategory(''); return; }
@@ -329,9 +358,7 @@ export default function EventsScreen() {
     setShowAddEventModal(true);
   };
 
-  //the Past Events page deep-links back here with ?reuseId=<id>; wait for the
-  //matching event to show up in the fetched list, then fire the reuse flow
-  //once (a ref, not state, so re-fetching events after save doesn't reopen it)
+  // Past Events links here with ?reuseId=<id>; open the reuse flow once that event loads
   const reuseHandledRef = useRef(false);
   useEffect(() => {
     if (!reuseId || reuseHandledRef.current) return;

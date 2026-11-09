@@ -34,8 +34,7 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
 
       {role === 'admin' ? (
         <View style={styles.adminRightGroup}>
-          {/* on web this now lives in the sidebar instead; mobile keeps this
-              icon exactly as before, since mobile nav isn't changing */}
+          {/* mobile only; web uses the sidebar */}
           {!IS_WEB && (
             <TouchableOpacity
               style={styles.bellWrapper}
@@ -52,8 +51,7 @@ export default function TopBar({ role = 'commuter' }: TopBarProps) {
               </View>
             </TouchableOpacity>
           )}
-          {/* mobile keeps the Profile tab (with its own Log Out) untouched;
-              this account menu is a web-only replacement for that tab */}
+          {/* web-only account menu (mobile uses the Profile tab) */}
           {IS_WEB && <AdminAccountMenu />}
         </View>
       ) : (
@@ -104,10 +102,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  //new lockup is a wide icon+wordmark image, unlike the old square icon-only
-  //mark, so it carries its own "EagleEyes" name now. This is the version
-  //cropped to the artwork (1558x400, ~3.9:1); the uncropped file has ~50%
-  //empty padding, which made the visible logo tiny at header size
+  // wide logo + wordmark, cropped to the artwork (~3.9:1)
   logo: {
     width: 196,
     height: 50,
