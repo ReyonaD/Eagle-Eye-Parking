@@ -29,12 +29,14 @@ function CampusPanController({ selectedCampus }: { selectedCampus: string }) {
   return null;
 }
 
-// On load, zoom to the user if they're near a lot (runs once).
+// On load, zoom to the user if they're near a lot (runs once). Waits for the lots:
+// with permission already granted the fix can arrive before they load, and judging
+// "near a lot" against an empty list would wrongly keep the Main Campus view.
 function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
   const map = useMap();
-  const liveLotsRef = useRef(liveLots);
-  liveLotsRef.current = liveLots;
   const startedRef = useRef(false);
+  const doneRef = useRef(false);
+  const [userLoc, setUserLoc] = useState<{ latitude: number; longitude: number } | null>(null);
   const { updateUserLocation } = useLots();
 
   useEffect(() => {
@@ -44,24 +46,10 @@ function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const userLoc = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+        const loc = { latitude: position.coords.latitude, longitude: position.coords.longitude };
         // Shared with the Lots tab so its permit picker can list nearby permits first.
-        updateUserLocation(userLoc);
-        const distance = nearestLotDistance(userLoc, liveLotsRef.current || []);
-        if (distance > NEARBY_LOT_THRESHOLD_METERS) return; // far from campus — leave the default view.
-
-        const applyZoom = () => {
-          map.panTo({ lat: userLoc.latitude, lng: userLoc.longitude });
-          map.setZoom(NEARBY_ZOOM_LEVEL_WEB);
-        };
-
-        // Wait for "idle" so this doesn't race CampusPanController's initial move.
-        const googleMaps = (window as any).google?.maps;
-        if (googleMaps?.event) {
-          googleMaps.event.addListenerOnce(map, 'idle', applyZoom);
-        } else {
-          applyZoom();
-        }
+        updateUserLocation(loc);
+        setUserLoc(loc);
       },
       () => {
         // Permission denied or unavailable — leave the default Main Campus view.
@@ -69,6 +57,25 @@ function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
       { timeout: 8000 },
     );
   }, [map]);
+
+  useEffect(() => {
+    if (doneRef.current || !map || !userLoc || !liveLots || liveLots.length === 0) return;
+    doneRef.current = true;
+    if (nearestLotDistance(userLoc, liveLots) > NEARBY_LOT_THRESHOLD_METERS) return; // far from campus — leave the default view.
+
+    const applyZoom = () => {
+      map.panTo({ lat: userLoc.latitude, lng: userLoc.longitude });
+      map.setZoom(NEARBY_ZOOM_LEVEL_WEB);
+    };
+
+    // Wait for "idle" so this doesn't race CampusPanController's initial move.
+    const googleMaps = (window as any).google?.maps;
+    if (googleMaps?.event) {
+      googleMaps.event.addListenerOnce(map, 'idle', applyZoom);
+    } else {
+      applyZoom();
+    }
+  }, [map, userLoc, liveLots]);
 
   return null;
 }
