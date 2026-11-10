@@ -187,9 +187,10 @@ export default function LotPickerModal({
           )}
         </View>
 
-        {/* kept mounted while searching (just hidden) so the map isn't rebuilt */}
+        {/* moved off-screen (not shrunk or unmounted) while searching, so the map keeps its
+            size and camera and isn't rebuilt */}
         {apiKey ? (
-          <View style={searching ? styles.hidden : styles.map}>
+          <View style={[styles.map, searching && styles.offscreen]} pointerEvents={searching ? 'none' : 'auto'}>
             <APIProvider apiKey={apiKey}>
               <Map
                 defaultCenter={{ lat: UNT_CENTER.latitude, lng: UNT_CENTER.longitude }}
@@ -279,7 +280,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 15, color: '#1a1a1a', paddingVertical: 0, outlineStyle: 'none' } as any,
 
   map: { height: '40%' },
-  hidden: { height: 0, overflow: 'hidden' },
+  offscreen: { position: 'absolute', top: -10000, left: 0, right: 0 },
   sectionLabel: {
     fontSize: 11, fontWeight: '900', color: '#888', letterSpacing: 1.2,
     paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4,

@@ -141,8 +141,9 @@ export default function LotPickerModal({
           )}
         </View>
 
-        {/* hidden (not unmounted) while searching so the map keeps its position */}
-        <View style={searching ? styles.hidden : styles.map}>
+        {/* moved off-screen (not shrunk or unmounted) while searching: a zero-height map
+            loses its camera and comes back zoomed out to the whole continent */}
+        <View style={[styles.map, searching && styles.offscreen]} pointerEvents={searching ? 'none' : 'auto'}>
           <MapView
             ref={mapRef}
             style={StyleSheet.absoluteFill}
@@ -225,7 +226,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 15, color: '#1a1a1a', paddingVertical: 0 },
 
   map: { height: '40%' },
-  hidden: { height: 0, overflow: 'hidden' },
+  offscreen: { position: 'absolute', top: -10000, left: 0, right: 0 },
 
   sectionLabel: {
     fontSize: 11, fontWeight: '900', color: '#888', letterSpacing: 1.2,
