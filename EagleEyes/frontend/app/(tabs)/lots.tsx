@@ -28,7 +28,7 @@ import { getPermitCardStyle } from '../../utils/permitColors';
 import { NAME_TO_CODE, DAY_HOURS_LABEL, NIGHT_HOURS_LABEL } from '../../utils/nightPermitRules';
 import { Alert } from '../../utils/webCompat';
 import { getLotStatusIcons, getLotStatusItems, getLotTakeover } from '../../utils/lotStatus';
-import PermitHoursList from '../../components/PermitHoursList';
+import LotPermits from '../../components/LotPermits';
 import AlertIcon from '../../components/AlertIcon';
 type AvailabilityStatus = 'Available' | 'Near Capacity' | 'Full' | 'Closed' | 'No Data';
 
@@ -1040,28 +1040,7 @@ export default function LotsScreen() {
                       ) : null}
                       {(selectedLot.permitList || []).length > 0 && (
                         <View style={{ marginTop: 6 }}>
-                          <Text style={styles.detailLabel}>Permits:</Text>
-                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                            {dedupePermitLabels(selectedLot.permitList).map((label, i) => {
-                              const permitStyle = getPermitCardStyle(label);
-                              return (
-                                <View
-                                  key={i}
-                                  style={{
-                                    backgroundColor: permitStyle.bg,
-                                    borderRadius: 12,
-                                    paddingHorizontal: 10,
-                                    paddingVertical: 4,
-                                    overflow: 'hidden',
-                                    ...(permitStyle.border ? { borderWidth: 1, borderColor: permitStyle.border } : null),
-                                  }}
-                                >
-                                  <Text style={{ fontSize: 12, color: permitStyle.text, fontWeight: '500' }}>{label}</Text>
-                                </View>
-                              );
-                            })}
-                          </View>
-                          <PermitHoursList permits={dedupePermitLabels(selectedLot.permitList)} />
+                          <LotPermits permits={dedupePermitLabels(selectedLot.permitList)} title="Permits:" titleStyle={styles.detailLabel} />
                         </View>
                       )}
                     </View>

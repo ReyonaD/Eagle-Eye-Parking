@@ -98,6 +98,12 @@ export function buildLotStatuses(hazards: any[], events: any[], now: Date = new 
   return statuses;
 }
 
+// Status for one lot. Keys are trimmed (parseLotNames), but some ParkZen names end
+// in a space ("Lot 39 - Eagle "), so the lookup trims too
+export function statusForLot(statuses: Record<string, LotStatus>, lotName?: string | null): LotStatus | undefined {
+  return statuses[String(lotName || '').trim()];
+}
+
 export function isLotClosed(status?: LotStatus | null): boolean {
   return !!status?.closure?.active;
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, ActivityIndicator, Modal, TextInput, Platform } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
@@ -18,6 +18,7 @@ import {
 } from '../../utils/eventDates';
 import ToggleChip from '../../components/ToggleChip';
 import TimePickerField from '../../components/TimePickerField';
+import { QuickActions, QuickAction, useHover } from '../../components/QuickActions';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -48,6 +49,59 @@ const combineDateAndTime = (date: Date, time: { hours: number; minutes: number }
   return combined;
 };
 
+function EventCard({ eventItem, onPress, onEdit, actions, busy }: {
+  eventItem: any;
+  onPress: () => void;
+  onEdit: () => void;
+  actions: QuickAction[];
+  busy: boolean;
+}) {
+  const visual = getEventVisual(eventItem.category);
+  const { hovered, hoverProps } = useHover();
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      onPress={onPress}
+      {...hoverProps}
+    >
+      <View style={styles.cardRow}>
+        <View style={styles.cardBody}>
+          <View style={styles.cardHeader}>
+            <View style={styles.titleRow}>
+              <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
+                <Ionicons name={visual.icon as any} size={24} color={visual.iconColor} />
+              </View>
+              <Text style={styles.cardTitle}>{eventItem.title}</Text>
+            </View>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{eventItem.upvotes}</Text>
+            </View>
+          </View>
+          <Text style={styles.cardTime}>{formatEventTimes(eventItem)}</Text>
+          {!!eventItem.lot_name && (
+            <Text style={styles.cardLots}>📍 {formatLotNames(eventItem.lot_name)}</Text>
+          )}
+          {eventItem.description && (
+            <Text style={styles.cardDesc}>{eventItem.description}</Text>
+          )}
+          <View style={styles.cardFooter}>
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={onEdit}
+              accessibilityLabel={`Edit ${eventItem.title}`}
+            >
+              <Ionicons name="create-outline" size={14} color="#00853E" />
+              <Text style={styles.editButtonText}>EDIT</Text>
+            </TouchableOpacity>
+            <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
+          </View>
+        </View>
+        <QuickActions visible={hovered} actions={actions} busy={busy} />
+      </View>
+    </Pressable>
+  );
+}
+
 export default function EventsScreen() {
   const { openAdd, reuseId } = useLocalSearchParams<{ openAdd?: string; reuseId?: string }>();
   const insets = useSafeAreaInsets();
@@ -58,6 +112,8 @@ export default function EventsScreen() {
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  //event whose hover Delete is in flight (web)
+  const [busyEventId, setBusyEventId] = useState<number | null>(null);
 
   const fetchEvents = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -295,6 +351,28 @@ export default function EventsScreen() {
     }
   };
 
+  //hover Delete on a card (web): same confirm, without opening the details first
+  const quickDeleteEvent = (eventItem: any) => {
+    Alert.alert('Delete Event', `Permanently delete "${eventItem.title}"? This will reflect on the user side.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setBusyEventId(eventItem.id);
+          try {
+            await deleteAlert(eventItem.id);
+            await fetchEvents(false);
+          } catch {
+            Alert.alert('Error', 'Could not delete the event. Please try again.');
+          } finally {
+            setBusyEventId(null);
+          }
+        },
+      },
+    ]);
+  };
+
   const handleDeleteEvent = () => {
     if (!selectedEvent || isDeletingEvent) return;
     setShowDeleteConfirmation(true);
@@ -404,46 +482,16 @@ export default function EventsScreen() {
               ) : activeEvents.length === 0 ? (
                 <Text style={styles.emptyText}>No events scheduled for this date.</Text>
               ) : (
-                activeEvents.map((eventItem) => {
-                  const visual = getEventVisual(eventItem.category);
-                  return (
-                    <TouchableOpacity
-                      key={eventItem.id}
-                      style={styles.card}
-                      onPress={() => setSelectedEvent(eventItem)}
-                    >
-                      <View style={styles.cardHeader}>
-                        <View style={styles.titleRow}>
-                          <View style={[styles.iconBox, { backgroundColor: visual.bg }]}>
-                            <Ionicons name={visual.icon as any} size={24} color={visual.iconColor} />
-                          </View>
-                          <Text style={styles.cardTitle}>{eventItem.title}</Text>
-                        </View>
-                        <View style={styles.badge}>
-                          <Text style={styles.badgeText}>{eventItem.upvotes}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.cardTime}>{formatEventTimes(eventItem)}</Text>
-                      {!!eventItem.lot_name && (
-                        <Text style={styles.cardLots}>📍 {formatLotNames(eventItem.lot_name)}</Text>
-                      )}
-                      {eventItem.description && (
-                         <Text style={styles.cardDesc}>{eventItem.description}</Text>
-                      )}
-                      <View style={styles.cardFooter}>
-                        <TouchableOpacity
-                          style={styles.editButton}
-                          onPress={() => handleEditEvent(eventItem)}
-                          accessibilityLabel={`Edit ${eventItem.title}`}
-                        >
-                          <Ionicons name="create-outline" size={14} color="#00853E" />
-                          <Text style={styles.editButtonText}>EDIT</Text>
-                        </TouchableOpacity>
-                        <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
+                activeEvents.map((eventItem) => (
+                  <EventCard
+                    key={eventItem.id}
+                    eventItem={eventItem}
+                    onPress={() => setSelectedEvent(eventItem)}
+                    onEdit={() => handleEditEvent(eventItem)}
+                    actions={[{ label: 'Delete event', icon: 'trash-outline', tone: 'decline', onPress: () => quickDeleteEvent(eventItem) }]}
+                    busy={busyEventId === eventItem.id}
+                  />
+                ))
               )}
 
             </View>
@@ -1004,6 +1052,9 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 2,
   },
+  cardPressed: { opacity: 0.75 },
+  cardRow: { flexDirection: 'row', alignItems: 'center' },
+  cardBody: { flex: 1 },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

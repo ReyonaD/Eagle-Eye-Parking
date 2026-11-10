@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Animated, Easing, AccessibilityInfo } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Animated, Easing, AccessibilityInfo, AppState } from 'react-native';
 import MapView, { Marker, Polygon, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import LotDetailsSheet from './LotDetailsSheet';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,9 @@ import { getEventVisual } from '../utils/alertVisuals';
 import AlertIcon from './AlertIcon';
 import { LIGHT_MAP_STYLE, DARK_MAP_STYLE, getClosedLotColors, getLotStrokeColor, getLotFillOpacity } from '../utils/mapStyles';
 import { useLots } from '../context/LotsContext';
+
+// Re-center on the user when the app returns after at least this long in the background.
+const RECENTER_AFTER_BACKGROUND_MS = 5 * 60 * 1000;
 
 interface EagleMapProps {
   liveLots: any[];
@@ -277,6 +280,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     mapReadyRef.current = true;
     // initialRegion is Main campus; move if another campus was already selected
     if (selectedCampus !== 'Main campus') animateToCampus(selectedCampus);
+    tryAutoZoom();
     if (mapLoadTimeoutRef.current) clearTimeout(mapLoadTimeoutRef.current);
     mapLoadTimeoutRef.current = setTimeout(() => {
       if (!mapLoadedRef.current) {
@@ -303,24 +307,23 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     if (mapReadyRef.current) animateToCampus(selectedCampus);
   }, [selectedCampus]);
 
-  // On first location fix, zoom to the user if they're near a lot.
+  // Once we have a location fix, the lots and a ready map, zoom to the user if
+  // they're near a lot. All three are needed: with permission already granted the
+  // fix often arrives before the lots load, and judging "near a lot" against an
+  // empty list would wrongly leave the map on Main Campus.
   const hasAutoZoomedRef = useRef(false);
+  const userLocRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const liveLotsRef = useRef(liveLots);
   liveLotsRef.current = liveLots;
   const { updateUserLocation } = useLots();
 
-  const handleUserLocationChange = (event: any) => {
-    const coordinate = event?.nativeEvent?.coordinate;
-    if (!coordinate) return;
-    const userLoc = { latitude: coordinate.latitude, longitude: coordinate.longitude };
-    // Shared with the Lots tab so its permit picker can list nearby permits first.
-    updateUserLocation(userLoc);
-
-    if (hasAutoZoomedRef.current) return;
+  const tryAutoZoom = () => {
+    const userLoc = userLocRef.current;
+    const lots = liveLotsRef.current || [];
+    if (hasAutoZoomedRef.current || !userLoc || !mapReadyRef.current || lots.length === 0) return;
     hasAutoZoomedRef.current = true;
 
-    const distance = nearestLotDistance(userLoc, liveLotsRef.current || []);
-    if (distance <= NEARBY_LOT_THRESHOLD_METERS) {
+    if (nearestLotDistance(userLoc, lots) <= NEARBY_LOT_THRESHOLD_METERS) {
       mapRef.current?.animateToRegion({
         latitude: userLoc.latitude,
         longitude: userLoc.longitude,
@@ -329,6 +332,37 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
       }, 800);
     }
     // Otherwise the user is far from campus — leave the default Main Campus view.
+  };
+
+  useEffect(() => {
+    tryAutoZoom();
+  }, [liveLots]);
+
+  // Back after a while in the background: zoom to the user again on the next fix.
+  useEffect(() => {
+    let backgroundedAt: number | null = null;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background') {
+        backgroundedAt = Date.now();
+      } else if (state === 'active' && backgroundedAt !== null) {
+        if (Date.now() - backgroundedAt >= RECENTER_AFTER_BACKGROUND_MS) {
+          hasAutoZoomedRef.current = false;
+          userLocRef.current = null; // wait for a fresh fix, not where they were
+        }
+        backgroundedAt = null;
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  const handleUserLocationChange = (event: any) => {
+    const coordinate = event?.nativeEvent?.coordinate;
+    if (!coordinate) return;
+    const userLoc = { latitude: coordinate.latitude, longitude: coordinate.longitude };
+    // Shared with the Lots tab so its permit picker can list nearby permits first.
+    updateUserLocation(userLoc);
+    userLocRef.current = userLoc;
+    tryAutoZoom();
   };
 
   const handleZoomIn = async () => {

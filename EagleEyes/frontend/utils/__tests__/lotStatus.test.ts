@@ -3,6 +3,7 @@ import {
   joinLotNames,
   isClosureCategory,
   buildLotStatuses,
+  statusForLot,
   isLotClosed,
   isLotNameClosed,
   findEventConflicts,
@@ -96,6 +97,20 @@ describe('buildLotStatuses', () => {
       { id: 2, lot_name: 'Lot 20', deactivated_at: '2026-11-08T00:00:00' },
     ], [], NOW);
     expect(statuses['Lot 20'].hazards.map((h) => h.id)).toEqual([1]);
+  });
+});
+
+describe('statusForLot', () => {
+  // some ParkZen lot names end in a space; a closure picked from the list must still match
+  it('finds the status for a lot name with a trailing space', () => {
+    const statuses = buildLotStatuses([], [event(1, CLOSURE_CATEGORY, 'Lot 39 - Eagle ', at(9), at(17))], NOW);
+    expect(isLotClosed(statusForLot(statuses, 'Lot 39 - Eagle '))).toBe(true);
+    expect(isLotClosed(statusForLot(statuses, 'Lot 39 - Eagle'))).toBe(true);
+  });
+
+  it('returns nothing for a lot without a status or a missing name', () => {
+    expect(statusForLot({}, 'Lot 20')).toBeUndefined();
+    expect(statusForLot({}, null)).toBeUndefined();
   });
 });
 

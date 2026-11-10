@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Platform, Image,
+  View, Text, StyleSheet, TouchableOpacity, Pressable, ScrollView, ActivityIndicator, RefreshControl, Platform, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -10,6 +10,7 @@ import { BASE_URL } from '../../api/alerts';
 import { getNotes, acknowledgeNote } from '../../api/notes';
 import { useFocusPolling } from '../../hooks/use-focus-polling';
 import { useAdminNotesBadge } from '../../context/AdminNotesBadgeContext';
+import { QuickActions, QuickAction, useHover } from '../../components/QuickActions';
 import {
   parseUTC, toLocalDateString, getTodayDateString, formatDate, getEventRange,
   classifyNote, NoteBucket,
@@ -40,14 +41,21 @@ const classify = classifyNote;
 
 // ─── NoteCard ─────────────────────────────────────────────────────────────────
 
-function NoteCard({ note, bucket, onPress }: { note: any; bucket: Bucket; onPress: () => void }) {
+function NoteCard({ note, bucket, onPress, actions = [], busy = false }: {
+  note: any;
+  bucket: Bucket;
+  onPress: () => void;
+  actions?: QuickAction[];
+  busy?: boolean;
+}) {
   const { end } = getEventRange(note);
   const isExpired = bucket === 'expired';
+  const { hovered, hoverProps } = useHover();
   return (
-    <TouchableOpacity
-      style={[styles.card, isExpired && styles.cardOlder]}
+    <Pressable
+      style={({ pressed }) => [styles.card, isExpired && !hovered && styles.cardOlder, pressed && styles.cardPressed]}
       onPress={onPress}
-      activeOpacity={0.75}
+      {...hoverProps}
     >
       <View style={styles.cardContent}>
         <View style={styles.iconBox}>
@@ -67,8 +75,9 @@ function NoteCard({ note, bucket, onPress }: { note: any; bucket: Bucket; onPres
           </Text>
           <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
         </View>
+        <QuickActions visible={hovered} actions={actions} busy={busy} />
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -81,6 +90,8 @@ function NoteColumn({
   bucket,
   onPress,
   emptyText,
+  actionsFor,
+  busyId,
 }: {
   title: string;
   accentColor: string;
@@ -88,6 +99,8 @@ function NoteColumn({
   bucket: Bucket;
   onPress: (n: any) => void;
   emptyText: string;
+  actionsFor?: (n: any) => QuickAction[];
+  busyId?: number | null;
 }) {
   return (
     <View style={[styles.webColumn, { borderLeftColor: accentColor }]}>
@@ -98,7 +111,16 @@ function NoteColumn({
         {notes.length === 0 ? (
           <Text style={styles.emptyText}>{emptyText}</Text>
         ) : (
-          notes.map(n => <NoteCard key={n.id} note={n} bucket={bucket} onPress={() => onPress(n)} />)
+          notes.map(n => (
+            <NoteCard
+              key={n.id}
+              note={n}
+              bucket={bucket}
+              onPress={() => onPress(n)}
+              actions={actionsFor?.(n)}
+              busy={busyId === n.id}
+            />
+          ))
         )}
       </ScrollView>
     </View>
@@ -205,6 +227,7 @@ export default function CommuterNotesScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedNote, setSelectedNote] = useState<any | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   const fetchNotes = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -245,15 +268,22 @@ export default function CommuterNotesScreen() {
   const expiredNotes = notes.filter(n => classify(n) === 'expired').sort(byEndDesc);
 
   const handleAcknowledge = async (note: any) => {
+    setBusyId(note.id);
     try {
       await acknowledgeNote(note.id);
       setSelectedNote(null);
-      fetchNotes();
+      await fetchNotes(false);
       refreshBadge();
     } catch {
       Alert.alert('Error', 'Could not acknowledge this note. Check your connection.');
+    } finally {
+      setBusyId(null);
     }
   };
+
+  const pendingActions = (n: any): QuickAction[] => [
+    { label: 'Acknowledge', icon: 'checkmark', tone: 'approve', onPress: () => handleAcknowledge(n) },
+  ];
 
   if (selectedNote) {
     return (
@@ -297,6 +327,8 @@ export default function CommuterNotesScreen() {
                 bucket="pending"
                 onPress={setSelectedNote}
                 emptyText="Nothing waiting on review."
+                actionsFor={pendingActions}
+                busyId={busyId}
               />
               <NoteColumn
                 title="ACTIVE"
@@ -407,6 +439,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardOlder: { opacity: 0.65 },
+  cardPressed: { opacity: 0.75 },
   cardContent: { flexDirection: 'row', alignItems: 'center' },
   iconBox: {
     width: 46,

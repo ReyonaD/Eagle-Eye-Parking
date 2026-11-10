@@ -8,7 +8,7 @@ import { getPermitHours } from '../api/auth';
 import { buildPermitHoursIndex, PermitHours } from '../utils/permitHours';
 import { MapTheme } from '../utils/mapStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
-import { buildLotStatuses, applyLotStatus, LotStatus } from '../utils/lotStatus';
+import { buildLotStatuses, applyLotStatus, statusForLot, LotStatus } from '../utils/lotStatus';
 import { distanceMeters, LatLng } from '../utils/geo';
 //define the exact shape of data
 interface LotsContextType {
@@ -342,7 +342,7 @@ export function LotsProvider({ children }: { children : ReactNode }) {
       status: showLiveOccupancy ? lot.dayStatus : 'No Data',
       lastUpdatedAt: showLiveOccupancy ? lot.dayLastUpdatedAt : null,
       sourceTimestampProvidedByParkzen: showLiveOccupancy ? lot.daySourceTimestampProvidedByParkzen : false,
-    }, lotStatuses[lot.name]);
+    }, statusForLot(lotStatuses, lot.name));
   }), [rawLots, previewingNight, showLiveOccupancy, lotStatuses]);
 
   useEffect(() => {

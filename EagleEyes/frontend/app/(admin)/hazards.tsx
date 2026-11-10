@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Image, Modal, RefreshControl, Platform,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, ActivityIndicator, TextInput, Image, Modal, RefreshControl, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -14,6 +14,7 @@ import { getHazardVisual } from '../../utils/alertVisuals';
 import { isHazardActive, isLotNameClosed } from '../../utils/lotStatus';
 import { useFocusPolling } from '../../hooks/use-focus-polling';
 import { useAdminNotesBadge } from '../../context/AdminNotesBadgeContext';
+import { QuickActions, QuickAction, useHover } from '../../components/QuickActions';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -52,17 +53,22 @@ function HazardCard({
   hazard,
   isNew,
   onPress,
+  actions = [],
+  busy = false,
 }: {
   hazard: any;
   isNew: boolean;
   onPress: () => void;
+  actions?: QuickAction[];
+  busy?: boolean;
 }) {
   const { icon, bg, iconColor, iconFamily } = getHazardVisual(hazard.category);
+  const { hovered, hoverProps } = useHover();
   return (
-    <TouchableOpacity
-      style={[styles.card, !isNew && styles.cardOlder]}
+    <Pressable
+      style={({ pressed }) => [styles.card, !isNew && !hovered && styles.cardOlder, pressed && styles.cardPressed]}
       onPress={onPress}
-      activeOpacity={0.75}
+      {...hoverProps}
     >
       {isNew && (
         <View style={styles.badge}>
@@ -96,8 +102,9 @@ function HazardCard({
           )}
           <Text style={styles.clickDetails}>CLICK FOR DETAILS</Text>
         </View>
+        <QuickActions visible={hovered} actions={actions} busy={busy} />
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -112,6 +119,8 @@ function HazardColumn({
   isNew,
   onPress,
   emptyText,
+  actionsFor,
+  busyId,
 }: {
   title: string;
   accentColor: string;
@@ -119,6 +128,8 @@ function HazardColumn({
   isNew: boolean;
   onPress: (h: any) => void;
   emptyText: string;
+  actionsFor?: (h: any) => QuickAction[];
+  busyId?: number | null;
 }) {
   return (
     <View style={[styles.webColumn, { borderLeftColor: accentColor }]}>
@@ -130,7 +141,14 @@ function HazardColumn({
           <Text style={styles.emptyText}>{emptyText}</Text>
         ) : (
           hazards.map(h => (
-            <HazardCard key={h.id} hazard={h} isNew={isNew} onPress={() => onPress(h)} />
+            <HazardCard
+              key={h.id}
+              hazard={h}
+              isNew={isNew}
+              onPress={() => onPress(h)}
+              actions={actionsFor?.(h)}
+              busy={busyId === h.id}
+            />
           ))
         )}
       </ScrollView>
@@ -381,6 +399,8 @@ export default function HazardsScreen() {
   const [publishedHazards, setPublishedHazards] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedHazard, setSelectedHazard] = useState<any | null>(null);
+  //id of the card whose quick action is in flight (web hover buttons)
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   const fetchHazards = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -444,13 +464,16 @@ export default function HazardsScreen() {
         text: confirmLabel,
         style: 'destructive',
         onPress: async () => {
+          setBusyId(hazard.id);
           try {
             await deleteAlert(hazard.id);
             setSelectedHazard(null);
-            fetchHazards();
+            await fetchHazards(false);
             refreshBadge();
           } catch {
             Alert.alert('Error', 'Could not update this report. Check your connection.');
+          } finally {
+            setBusyId(null);
           }
         },
       },
@@ -458,8 +481,22 @@ export default function HazardsScreen() {
   };
 
   //deactivate = the hazard is over: hide it from the map/lots but keep it in
-  //the published history; reactivate = it's back, show it again
-  const handleSetActive = (hazard: any, active: boolean) => {
+  //the published history; reactivate = it's back, show it again.
+  //quick (hover button) skips the confirm since it's one click to undo
+  const handleSetActive = (hazard: any, active: boolean, quick = false) => {
+    const apply = async () => {
+      setBusyId(hazard.id);
+      try {
+        const updated = await setHazardActive(hazard.id, active);
+        if (!quick) setSelectedHazard(updated);
+        await fetchHazards(false);
+      } catch {
+        Alert.alert('Error', 'Could not update this hazard. Check your connection.');
+      } finally {
+        setBusyId(null);
+      }
+    };
+    if (quick) { apply(); return; }
     const title = active ? 'Reactivate Hazard' : 'Deactivate Hazard';
     const message = active
       ? `Show "${hazard.title}" on the map and lots again until it's deactivated?`
@@ -468,20 +505,13 @@ export default function HazardsScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: active ? 'Reactivate' : 'Deactivate',
-        onPress: async () => {
-          try {
-            const updated = await setHazardActive(hazard.id, active);
-            setSelectedHazard(updated);
-            fetchHazards(false);
-          } catch {
-            Alert.alert('Error', 'Could not update this hazard. Check your connection.');
-          }
-        },
+        onPress: apply,
       },
     ]);
   };
 
-  const handleApprove = async (hazard: any, edits: { title: string; description: string }) => {
+  //quick approve (hover button) publishes the report as submitted, with no edits
+  const handleApprove = async (hazard: any, edits?: { title: string; description: string }) => {
     //the lot may have closed while this report sat in the queue - checked
     //against fresh events, not the lot statuses (up to 30s stale)
     if (await isLotClosedNow(hazard.lot_name, isLotNameClosed(screenLots, hazard.lot_name))) {
@@ -498,22 +528,34 @@ export default function HazardsScreen() {
     publish(hazard, edits, false);
   };
 
-  const publish = async (hazard: any, edits: { title: string; description: string }, warned: boolean) => {
+  const publish = async (hazard: any, edits: { title: string; description: string } | undefined, warned: boolean) => {
+    setBusyId(hazard.id);
     try {
-      const published = await approveAlert(hazard.id, edits);
+      const published = await approveAlert(hazard.id, edits ?? {});
       setSelectedHazard(null);
-      fetchHazards();
+      await fetchHazards(false);
       refreshBadge();
       //backup: the backend's own closure check, in case ours missed it
       if (!warned && published?.conflicts?.length) {
         Alert.alert('Published', `The report is now live for commuters. Note: ${hazard.lot_name} is closed right now.`);
-      } else {
+      } else if (edits) {
+        //quick approvals skip the popup: the card moving to Published is the confirmation
         Alert.alert('Published', 'The report is now live for commuters.');
       }
     } catch {
       Alert.alert('Error', 'Could not publish this report. Check your connection.');
+    } finally {
+      setBusyId(null);
     }
   };
+
+  const pendingActions = (h: any): QuickAction[] => [
+    { label: 'Decline', icon: 'close', tone: 'decline', onPress: () => handleDecline(h) },
+    { label: 'Approve', icon: 'checkmark', tone: 'approve', onPress: () => handleApprove(h) },
+  ];
+  const publishedActions = (h: any): QuickAction[] => isHazardActive(h)
+    ? [{ label: 'Deactivate (hide from map)', icon: 'eye-off-outline', tone: 'neutral', onPress: () => handleSetActive(h, false, true) }]
+    : [{ label: 'Reactivate (show on map)', icon: 'eye-outline', tone: 'approve', onPress: () => handleSetActive(h, true, true) }];
 
   return (
     <SafeAreaView style={styles.container} edges={['right', 'left']}>
@@ -548,6 +590,8 @@ export default function HazardsScreen() {
                     isNew
                     onPress={setSelectedHazard}
                     emptyText="No pending reports."
+                    actionsFor={pendingActions}
+                    busyId={busyId}
                   />
                   <HazardColumn
                     title="DECLINED"
@@ -564,6 +608,8 @@ export default function HazardsScreen() {
                     isNew={false}
                     onPress={setSelectedHazard}
                     emptyText="No published hazards."
+                    actionsFor={publishedActions}
+                    busyId={busyId}
                   />
                 </View>
               )}
@@ -719,6 +765,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   cardOlder: { opacity: 0.65 },
+  cardPressed: { opacity: 0.75 },
   badge: {
     position: 'absolute',
     top: -8,
