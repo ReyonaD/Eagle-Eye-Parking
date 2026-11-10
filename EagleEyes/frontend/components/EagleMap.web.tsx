@@ -1,21 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { nearestLotDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_LEVEL_WEB, getStripeSegments } from '../utils/geo';
-import { isLotClosed, getActiveEvent, getLotTakeover, LotStatus, CLOSED_STRIPE_WIDTH } from '../utils/lotStatus';
+import { isLotClosed, getActiveEvent, CLOSED_STRIPE_WIDTH } from '../utils/lotStatus';
 import { LIGHT_MAP_STYLE, DARK_MAP_STYLE, getClosedLotColors, getLotStrokeColor, getLotFillOpacity } from '../utils/mapStyles';
-import { getCategoryLabel } from '../utils/alertVisuals';
 import { useLots } from '../context/LotsContext';
-
-// One line per closure/event/hazard on the lot, for the click popup.
-function describeLotStatus(status?: LotStatus | null): string {
-  if (!status) return '';
-  const lines: string[] = [];
-  if (status.closure) lines.push(`${getCategoryLabel('event', status.closure.alert.category)}${status.closure.active ? '' : ' (later today)'}`);
-  status.events.forEach((e) => lines.push(`${getCategoryLabel('event', e.alert.category)}${e.active ? '' : ' (later today)'}`));
-  status.hazards.forEach((h) => lines.push(`Hazard (${getCategoryLabel('hazard', h.category)}): ${h.title}`));
-  return lines.length ? `\n${lines.join('\n')}` : '';
-}
+import LotDetailsSheet from './LotDetailsSheet';
 
 // Same regions/zoom as the native map (components/EagleMap.tsx).
 const CAMPUS_REGIONS: Record<string, { lat: number; lng: number }> = {
@@ -155,6 +145,8 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
   const closedColors = getClosedLotColors(darkSurface);
   const untCenter = { lat: 33.2140, lng: -97.1475 };
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+  //lot whose details sheet is open (same sheet as the native map)
+  const [sheetLot, setSheetLot] = useState<any | null>(null);
 
   return (
     <View style={styles.container}>
@@ -192,21 +184,7 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
                       strokeWeight: hidden ? 0 : (getActiveEvent(lot.lotStatus) && !isLotClosed(lot.lotStatus) ? 4 : 2),
                       clickable: !hidden,
                     }}
-                    onClick={() => {
-                      // a closure or event in progress: just the lot and what's going on
-                      const takeover = getLotTakeover(lot.lotStatus);
-                      if (takeover) {
-                        window.alert(`${lot.name}\n${takeover.label} · ${takeover.until}` + describeLotStatus(lot.lotStatus));
-                        return;
-                      }
-                      window.alert(
-                        `${lot.name}\n` +
-                        `Permits: ${lot.permits}\n` +
-                        `Percent Empty: ${lot.percentEmpty !== undefined ? lot.percentEmpty + '%' : 'Unknown'}\n` +
-                        `Is Full: ${lot.isFull ? 'Yes' : 'No'}` +
-                        describeLotStatus(lot.lotStatus)
-                      );
-                    }}
+                    onClick={() => setSheetLot(lot)}
                   />
                   {!hidden && isLotClosed(lot.lotStatus) && <WebStripes coordinates={lot.coordinates} color={closedColors.stripe} />}
                 </React.Fragment>
@@ -219,6 +197,8 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
           <Text style={styles.errorText}>Google Maps API Key is missing!</Text>
         </View>
       )}
+
+      <LotDetailsSheet lot={sheetLot} visible={sheetLot !== null} onClose={() => setSheetLot(null)} />
 
       <View style={styles.capacityContainer}>
         <View style={styles.capacityRow}>

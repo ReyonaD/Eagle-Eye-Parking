@@ -1,11 +1,10 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, ScrollView, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, ScrollView, Linking, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDirections } from '../utils/navigation';
-import { getPermitCardStyle } from '../utils/permitColors';
 import { getPremiumParkingLink, dedupePermitLabels } from '../utils/permits';
 import { getLotStatusItems, getLotTakeover } from '../utils/lotStatus';
-import PermitHoursList from './PermitHoursList';
+import LotPermits from './LotPermits';
 import AlertIcon from './AlertIcon';
 
 const STATUS_COLOR = {
@@ -37,6 +36,7 @@ function InfoRow({ icon, label, value }) {
 
 //bottom sheet with the lot's real details, used when tapping a lot on the map
 export default function LotDetailsSheet({ lot, visible, onClose }) {
+  const { height } = useWindowDimensions();
   if (!lot) return null;
 
   //a closure or event in progress: show just the lot and what's going on
@@ -58,7 +58,8 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
       {/* dark backdrop, tap to close */}
       <Pressable style={styles.backdrop} onPress={onClose} />
 
-      <View style={styles.sheet}>
+      {/* capped height: the details scroll and the buttons stay pinned at the bottom */}
+      <View style={[styles.sheet, { maxHeight: height * 0.85 }]}>
         <View style={styles.handle} />
 
         <View style={styles.headerRow}>
@@ -69,61 +70,53 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
           </View>
         </View>
 
-        {statusItems.length > 0 && (
-          <View style={styles.alertsBlock}>
-            {statusItems.map((item) => (
-              <View key={item.key} style={styles.alertRow}>
-                <View style={[styles.alertIcon, { backgroundColor: item.visual.bg }]}>
-                  <AlertIcon visual={item.visual} size={18} />
+        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+          {statusItems.length > 0 && (
+            <View style={styles.alertsBlock}>
+              {statusItems.map((item) => (
+                <View key={item.key} style={styles.alertRow}>
+                  <View style={[styles.alertIcon, { backgroundColor: item.visual.bg }]}>
+                    <AlertIcon visual={item.visual} size={18} />
+                  </View>
+                  <View style={styles.alertTextCol}>
+                    <Text style={styles.alertTitle} numberOfLines={1}>{item.title}</Text>
+                    <Text style={styles.alertDetail} numberOfLines={1}>{item.detail}</Text>
+                  </View>
                 </View>
-                <View style={styles.alertTextCol}>
-                  <Text style={styles.alertTitle} numberOfLines={1}>{item.title}</Text>
-                  <Text style={styles.alertDetail} numberOfLines={1}>{item.detail}</Text>
+              ))}
+            </View>
+          )}
+
+          {!takeover && (
+            <>
+              <InfoRow
+                icon="speedometer-outline"
+                label="Occupancy"
+                value={typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% empty` : 'No data'}
+              />
+              <InfoRow
+                icon="time-outline"
+                label="ParkZen capture time"
+                value={captureTimeValue}
+              />
+              <InfoRow
+                icon="car-outline"
+                label="Capacity"
+                value={lot.capacity ? `${lot.capacity} spaces` : null}
+              />
+              <InfoRow icon="location-outline" label="Address" value={lot.address} />
+
+              {permits.length > 0 && (
+                <View style={styles.permitsBlock}>
+                  <LotPermits permits={permits} />
                 </View>
-              </View>
-            ))}
-          </View>
-        )}
+              )}
+            </>
+          )}
+        </ScrollView>
 
         {!takeover && (
-          <>
-            <InfoRow
-              icon="speedometer-outline"
-              label="Occupancy"
-              value={typeof lot.percentEmpty === 'number' ? `${lot.percentEmpty}% empty` : 'No data'}
-            />
-            <InfoRow
-              icon="time-outline"
-              label="ParkZen capture time"
-              value={captureTimeValue}
-            />
-            <InfoRow
-              icon="car-outline"
-              label="Capacity"
-              value={lot.capacity ? `${lot.capacity} spaces` : null}
-            />
-            <InfoRow icon="location-outline" label="Address" value={lot.address} />
-
-            {permits.length > 0 && (
-              <View style={styles.permitsBlock}>
-                <Text style={styles.permitsTitle}>Permits</Text>
-                <ScrollView style={styles.permitsScroll} contentContainerStyle={styles.permitsWrap}>
-                  {permits.map((label, i) => {
-                    const permitStyle = getPermitCardStyle(label);
-                    const borderStyle = permitStyle.border
-                      ? { borderWidth: 1, borderColor: permitStyle.border }
-                      : null;
-                    return (
-                      <View key={i} style={[styles.permitChip, { backgroundColor: permitStyle.bg }, borderStyle]}>
-                        <Text style={[styles.permitChipText, { color: permitStyle.text }]}>{label}</Text>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
-                <PermitHoursList permits={permits} />
-              </View>
-            )}
-
+          <View style={styles.actions}>
             {premiumParkingLink && (
               <TouchableOpacity
                 style={styles.payButton}
@@ -141,7 +134,7 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
               <Ionicons name="navigate" size={22} color="#fff" />
               <Text style={styles.directionsText}>Get Directions</Text>
             </TouchableOpacity>
-          </>
+          </View>
         )}
       </View>
     </Modal>
@@ -150,7 +143,11 @@ export default function LotDetailsSheet({ lot, visible, onClose }) {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  //full width on phones; centered and capped on wide web screens
   sheet: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -172,14 +169,12 @@ const styles = StyleSheet.create({
   alertDetail: { fontSize: 12, color: '#777', marginTop: 1 },
   infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },
   infoIcon: { marginRight: 10 },
-  infoLabel: { fontSize: 14, color: '#777', width: 80 },
+  infoLabel: { fontSize: 14, color: '#777', marginRight: 12 },
   infoValue: { fontSize: 14, color: '#333', fontWeight: '500', flex: 1, textAlign: 'right' },
+  body: { flexGrow: 0, flexShrink: 1 },
+  bodyContent: { paddingBottom: 4 },
+  actions: { paddingTop: 4 },
   permitsBlock: { marginTop: 8 },
-  permitsTitle: { fontSize: 14, color: '#777', marginBottom: 8 },
-  permitsScroll: { maxHeight: 240 },
-  permitsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  permitChip: { backgroundColor: '#f0f0f0', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, overflow: 'hidden' },
-  permitChipText: { fontSize: 12, color: '#555', fontWeight: '500' },
   payButton: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
     backgroundColor: '#D6332A', height: 50, borderRadius: 10, marginTop: 18, gap: 8,
