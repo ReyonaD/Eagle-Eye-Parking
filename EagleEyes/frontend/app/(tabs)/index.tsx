@@ -182,6 +182,7 @@ export default function MapScreen() {
         <EagleMap
           liveLots={permitTypeFilteredLots}
           selectedCampus={selectedCampus}
+          onCampusDetected={setSelectedCampus}
           mapType={mapType}
           darkMap={isDarkMap}
         />

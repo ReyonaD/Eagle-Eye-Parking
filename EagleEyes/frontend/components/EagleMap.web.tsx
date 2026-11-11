@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
-import { nearestLotDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_LEVEL_WEB, getStripeSegments } from '../utils/geo';
+import { nearestLotDistance, nearestCampus, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_LEVEL_WEB, getStripeSegments } from '../utils/geo';
 import { isLotClosed, getActiveEvent, CLOSED_STRIPE_WIDTH } from '../utils/lotStatus';
 import { LIGHT_MAP_STYLE, DARK_MAP_STYLE, getClosedLotColors, getLotStrokeColor, getLotFillOpacity } from '../utils/mapStyles';
 import { useLots } from '../context/LotsContext';
@@ -16,15 +17,18 @@ const CAMPUS_REGIONS: Record<string, { lat: number; lng: number }> = {
 const CAMPUS_ZOOM = 15;
 
 // Pans the map when the CAMPUS dropdown changes (<Map> props only set the initial view).
-function CampusPanController({ selectedCampus }: { selectedCampus: string }) {
+// shownCampusRef is the campus the map is showing; the dropdown being set to it
+// (e.g. after zooming to the user) doesn't move the map.
+function CampusPanController({ selectedCampus, shownCampusRef }: { selectedCampus: string; shownCampusRef: React.MutableRefObject<string> }) {
   const map = useMap();
 
   useEffect(() => {
     const region = CAMPUS_REGIONS[selectedCampus];
-    if (!map || !region) return;
+    if (!map || !region || selectedCampus === shownCampusRef.current) return;
+    shownCampusRef.current = selectedCampus;
     map.panTo(region);
     map.setZoom(CAMPUS_ZOOM);
-  }, [map, selectedCampus]);
+  }, [map, selectedCampus, shownCampusRef]);
 
   return null;
 }
@@ -32,7 +36,11 @@ function CampusPanController({ selectedCampus }: { selectedCampus: string }) {
 // On load, zoom to the user if they're near a lot (runs once). Waits for the lots:
 // with permission already granted the fix can arrive before they load, and judging
 // "near a lot" against an empty list would wrongly keep the Main Campus view.
-function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
+function UserLocationAutoZoomController({ liveLots, shownCampusRef, onCampusDetected }: {
+  liveLots: any[];
+  shownCampusRef: React.MutableRefObject<string>;
+  onCampusDetected?: (campus: string) => void;
+}) {
   const map = useMap();
   const startedRef = useRef(false);
   const doneRef = useRef(false);
@@ -62,6 +70,9 @@ function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
     if (doneRef.current || !map || !userLoc || !liveLots || liveLots.length === 0) return;
     doneRef.current = true;
     if (nearestLotDistance(userLoc, liveLots) > NEARBY_LOT_THRESHOLD_METERS) return; // far from campus — leave the default view.
+    const campus = nearestCampus(userLoc);
+    shownCampusRef.current = campus;
+    onCampusDetected?.(campus);
 
     const applyZoom = () => {
       map.panTo({ lat: userLoc.latitude, lng: userLoc.longitude });
@@ -75,7 +86,7 @@ function UserLocationAutoZoomController({ liveLots }: { liveLots: any[] }) {
     } else {
       applyZoom();
     }
-  }, [map, userLoc, liveLots]);
+  }, [map, userLoc, liveLots, shownCampusRef, onCampusDetected]);
 
   return null;
 }
@@ -139,14 +150,59 @@ function WebStripes({ coordinates, color }: { coordinates: { latitude: number; l
   return null;
 }
 
+// Re-center button: asks the browser for a fresh position, flies there at lot zoom,
+// and sets the campus dropdown to match.
+function RecenterButton({ shownCampusRef, onCampusDetected }: {
+  shownCampusRef: React.MutableRefObject<string>;
+  onCampusDetected?: (campus: string) => void;
+}) {
+  const map = useMap();
+  const [locating, setLocating] = useState(false);
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
+
+  const recenter = () => {
+    if (!map || locating) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocating(false);
+        const loc = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+        const campus = nearestCampus(loc);
+        shownCampusRef.current = campus;
+        onCampusDetected?.(campus);
+        map.panTo({ lat: loc.latitude, lng: loc.longitude });
+        map.setZoom(NEARBY_ZOOM_LEVEL_WEB);
+      },
+      () => {
+        setLocating(false);
+        window.alert('Your location is unavailable. Allow location access for this site and try again.');
+      },
+      { timeout: 8000, maximumAge: 30000 },
+    );
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.recenterButton}
+      onPress={recenter}
+      accessibilityRole="button"
+      accessibilityLabel="Center on my location"
+    >
+      <Ionicons name={locating ? 'navigate-outline' : 'navigate'} size={22} color="#00853e" />
+    </TouchableOpacity>
+  );
+}
+
 interface EagleMapProps {
   liveLots: any[];
   mapType?: 'standard' | 'satellite';
   selectedCampus?: string;
+  // Called with the campus the user is on when the map zooms to their location.
+  onCampusDetected?: (campus: string) => void;
   darkMap?: boolean;
 }
 
-export default function EagleMap({ liveLots, mapType = 'standard', selectedCampus = 'Main campus', darkMap = false }: EagleMapProps) {
+export default function EagleMap({ liveLots, mapType = 'standard', selectedCampus = 'Main campus', onCampusDetected, darkMap = false }: EagleMapProps) {
   // Satellite imagery is dark too, so it gets the same lighter overlay shades.
   const darkSurface = darkMap || mapType === 'satellite';
   const closedColors = getClosedLotColors(darkSurface);
@@ -154,6 +210,8 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
   //lot whose details sheet is open (same sheet as the native map)
   const [sheetLot, setSheetLot] = useState<any | null>(null);
+  // the map opens on Main campus (defaultCenter)
+  const shownCampusRef = useRef('Main campus');
 
   return (
     <View style={styles.container}>
@@ -167,8 +225,8 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
             mapTypeId={mapType === 'satellite' ? 'satellite' : 'roadmap'}
             styles={mapType === 'satellite' ? undefined : (darkMap ? DARK_MAP_STYLE : LIGHT_MAP_STYLE)}
           >
-            <CampusPanController selectedCampus={selectedCampus} />
-            <UserLocationAutoZoomController liveLots={liveLots} />
+            <CampusPanController selectedCampus={selectedCampus} shownCampusRef={shownCampusRef} />
+            <UserLocationAutoZoomController liveLots={liveLots} shownCampusRef={shownCampusRef} onCampusDetected={onCampusDetected} />
             {liveLots.map((lot) => {
               if (!lot.coordinates || lot.coordinates.length === 0) return null;
 
@@ -198,6 +256,7 @@ export default function EagleMap({ liveLots, mapType = 'standard', selectedCampu
               );
             })}
           </Map>
+          <RecenterButton shownCampusRef={shownCampusRef} onCampusDetected={onCampusDetected} />
         </APIProvider>
       ) : (
         <View style={styles.errorContainer}>
@@ -242,6 +301,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#d32f2f',
     fontWeight: 'bold',
+  },
+  // same spot and look as the native map's zoom controls
+  recenterButton: {
+    position: 'absolute',
+    right: 16,
+    bottom: 145,
+    padding: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'white',
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   capacityContainer: {
     position: "absolute",

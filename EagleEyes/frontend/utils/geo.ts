@@ -20,6 +20,27 @@ export function centroid(coords: LatLng[]): LatLng {
   return { latitude: lat, longitude: lon };
 }
 
+/** Center of each campus in the map's CAMPUS dropdown. */
+export const CAMPUS_CENTERS: Record<string, LatLng> = {
+  'Main campus': { latitude: 33.2110, longitude: -97.1475 },
+  'Discovery Park': { latitude: 33.2549, longitude: -97.1520 },
+  'Frisco Landing': { latitude: 33.1858, longitude: -96.8055 },
+};
+
+/** The campus (CAMPUS_CENTERS name) closest to `origin`. */
+export function nearestCampus(origin: LatLng): string {
+  let best = 'Main campus';
+  let bestDistance = Infinity;
+  Object.entries(CAMPUS_CENTERS).forEach(([name, center]) => {
+    const d = distanceMeters(origin, center);
+    if (d < bestDistance) {
+      best = name;
+      bestDistance = d;
+    }
+  });
+  return best;
+}
+
 /** How close to a lot the user must be on app entry to auto-zoom to it (~Main Campus). */
 export const NEARBY_LOT_THRESHOLD_METERS = 1200;
 

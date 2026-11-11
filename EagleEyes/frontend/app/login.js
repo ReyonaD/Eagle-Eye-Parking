@@ -52,6 +52,7 @@ export default function LoginScreen() {
 
       <TextInput
         style={styles.input}
+        placeholderTextColor="#6B7280"
         placeholder="UNT Email"
         value={email}
         onChangeText={setEmail}
@@ -61,6 +62,7 @@ export default function LoginScreen() {
 
       <TextInput
         style={styles.input}
+        placeholderTextColor="#6B7280"
         placeholder="Password"
         value={password}
         onChangeText={setPassword}
@@ -103,7 +105,7 @@ const styles = StyleSheet.create({
     height: 111,
   },
   subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 40 },
-  input: { height: 52, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, marginBottom: 16, fontSize: 16 },
+  input: { height: 52, backgroundColor: '#fff', color: '#1A1A1A', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, marginBottom: 16, fontSize: 16 },
   forgotWrapper: { alignSelf: 'flex-end', marginTop: -4, marginBottom: 12 },
   forgotText: { fontSize: 14, color: '#00853E', fontWeight: '600' },
   primaryButton: { backgroundColor: '#00853E', height: 52, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },

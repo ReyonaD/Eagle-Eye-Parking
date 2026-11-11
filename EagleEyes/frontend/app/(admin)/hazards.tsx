@@ -402,7 +402,9 @@ export default function HazardsScreen() {
   //id of the card whose quick action is in flight (web hover buttons)
   const [busyId, setBusyId] = useState<number | null>(null);
 
-  const fetchHazards = async (showLoading = true) => {
+  // reportErrors: background polls fail quietly and keep the last list on screen
+  // (offline, laptop asleep) instead of popping an alert every few seconds.
+  const fetchHazards = async (showLoading = true, reportErrors = showLoading) => {
     if (showLoading) setIsLoading(true);
     try {
       // declined is always fetched so "VIEW DECLINED" and history deep-links can find a report
@@ -415,7 +417,7 @@ export default function HazardsScreen() {
       setDeclinedHazards(declined);
       setPublishedHazards(published);
     } catch {
-      Alert.alert('Error', 'Could not load hazard reports.');
+      if (reportErrors) Alert.alert('Error', 'Could not load hazard reports.');
     } finally {
       if (showLoading) setIsLoading(false);
     }
@@ -424,7 +426,7 @@ export default function HazardsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await fetchHazards(false); //quiet fetch: keep the list visible while refreshing
+    await fetchHazards(false, true); //quiet fetch: keep the list visible while refreshing
     setIsRefreshing(false);
   };
 

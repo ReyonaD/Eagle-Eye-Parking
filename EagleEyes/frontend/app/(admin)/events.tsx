@@ -115,13 +115,15 @@ export default function EventsScreen() {
   //event whose hover Delete is in flight (web)
   const [busyEventId, setBusyEventId] = useState<number | null>(null);
 
-  const fetchEvents = async (showLoading = true) => {
+  // reportErrors: background polls fail quietly and keep the last list on screen
+  // (offline, laptop asleep) instead of popping an alert every few seconds.
+  const fetchEvents = async (showLoading = true, reportErrors = showLoading) => {
     if (showLoading) setIsLoading(true);
     try {
       const data = await getAlerts('event');
       setEvents(data);
     } catch {
-      Alert.alert("Error", "Could not load campus events.");
+      if (reportErrors) Alert.alert("Error", "Could not load campus events.");
     } finally {
       if (showLoading) setIsLoading(false);
     }

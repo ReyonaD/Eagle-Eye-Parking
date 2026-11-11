@@ -1,4 +1,4 @@
-import { distanceMeters, centroid, nearestLotDistance, formatDistance, getStripeSegments } from '../geo';
+import { distanceMeters, centroid, nearestLotDistance, nearestCampus, formatDistance, getStripeSegments } from '../geo';
 
 const UNT = { latitude: 33.211, longitude: -97.1475 };
 
@@ -62,5 +62,13 @@ describe('getStripeSegments', () => {
 
   it('returns nothing for invalid polygons', () => {
     expect(getStripeSegments([UNT, UNT])).toEqual([]);
+  });
+});
+
+describe('nearestCampus', () => {
+  it('picks the campus the user is on', () => {
+    expect(nearestCampus(UNT)).toBe('Main campus');
+    expect(nearestCampus({ latitude: 33.2535, longitude: -97.1530 })).toBe('Discovery Park');
+    expect(nearestCampus({ latitude: 33.1870, longitude: -96.8040 })).toBe('Frisco Landing');
   });
 });

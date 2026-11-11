@@ -229,12 +229,14 @@ export default function CommuterNotesScreen() {
   const [selectedNote, setSelectedNote] = useState<any | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
 
-  const fetchNotes = async (showLoading = true) => {
+  // reportErrors: background polls fail quietly and keep the last list on screen
+  // (offline, laptop asleep) instead of popping an alert every few seconds.
+  const fetchNotes = async (showLoading = true, reportErrors = showLoading) => {
     if (showLoading) setIsLoading(true);
     try {
       setNotes(await getNotes());
     } catch {
-      Alert.alert('Error', 'Could not load notes from commuters.');
+      if (reportErrors) Alert.alert('Error', 'Could not load notes from commuters.');
     } finally {
       if (showLoading) setIsLoading(false);
     }
@@ -242,7 +244,7 @@ export default function CommuterNotesScreen() {
 
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await fetchNotes(false);
+    await fetchNotes(false, true);
     setIsRefreshing(false);
   };
 

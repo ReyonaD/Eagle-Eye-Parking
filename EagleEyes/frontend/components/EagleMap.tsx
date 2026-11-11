@@ -1,9 +1,9 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Animated, Easing, AccessibilityInfo, AppState } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Animated, Easing, AccessibilityInfo, AppState, Alert } from 'react-native';
 import MapView, { Marker, Polygon, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import LotDetailsSheet from './LotDetailsSheet';
 import { Ionicons } from '@expo/vector-icons';
-import { nearestLotDistance, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_DELTA, getStripeSegments } from '../utils/geo';
+import { nearestLotDistance, nearestCampus, NEARBY_LOT_THRESHOLD_METERS, NEARBY_ZOOM_DELTA, getStripeSegments } from '../utils/geo';
 import { getLotStatusIcons, isLotClosed, getActiveEvent, CLOSURE_CATEGORY, CLOSED_STRIPE_WIDTH } from '../utils/lotStatus';
 import { getEventVisual } from '../utils/alertVisuals';
 import AlertIcon from './AlertIcon';
@@ -16,6 +16,8 @@ const RECENTER_AFTER_BACKGROUND_MS = 5 * 60 * 1000;
 interface EagleMapProps {
   liveLots: any[];
   selectedCampus?: string;
+  // Called with the campus the user is on when the map zooms to their location.
+  onCampusDetected?: (campus: string) => void;
   mapType?: 'standard' | 'satellite';
   darkMap?: boolean;
 }
@@ -247,7 +249,7 @@ function getLotLabelCoordinate(
   })[0] || null;
 }
 
-export default function EagleMap({ liveLots, selectedCampus = "Main campus", mapType = "standard", darkMap = false }: EagleMapProps) {
+export default function EagleMap({ liveLots, selectedCampus = "Main campus", onCampusDetected, mapType = "standard", darkMap = false }: EagleMapProps) {
   // Satellite imagery is dark too, so it gets the same lighter overlay shades.
   const darkSurface = darkMap || mapType === 'satellite';
   const closedColors = getClosedLotColors(darkSurface);
@@ -279,7 +281,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
   const handleMapReady = () => {
     mapReadyRef.current = true;
     // initialRegion is Main campus; move if another campus was already selected
-    if (selectedCampus !== 'Main campus') animateToCampus(selectedCampus);
+    if (selectedCampus !== shownCampusRef.current) animateToCampus(selectedCampus);
     tryAutoZoom();
     if (mapLoadTimeoutRef.current) clearTimeout(mapLoadTimeoutRef.current);
     mapLoadTimeoutRef.current = setTimeout(() => {
@@ -296,15 +298,19 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
   // Animating before onMapReady throws natively on Android ("Map size can't be
   // 0"), so campus changes wait for the map; handleMapReady catches up.
   const mapReadyRef = useRef(false);
+  // Campus the map is showing. When the dropdown is set to it (e.g. after zooming
+  // to the user), the map stays where it is instead of jumping to the campus view.
+  const shownCampusRef = useRef('Main campus');
   const animateToCampus = (campus: string) => {
     const region = CAMPUS_REGIONS[campus];
     if (region) {
+      shownCampusRef.current = campus;
       mapRef.current?.animateToRegion(region, 800);
     }
   };
 
   useEffect(() => {
-    if (mapReadyRef.current) animateToCampus(selectedCampus);
+    if (mapReadyRef.current && selectedCampus !== shownCampusRef.current) animateToCampus(selectedCampus);
   }, [selectedCampus]);
 
   // Once we have a location fix, the lots and a ready map, zoom to the user if
@@ -313,6 +319,8 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
   // empty list would wrongly leave the map on Main Campus.
   const hasAutoZoomedRef = useRef(false);
   const userLocRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  // Latest fix, for the re-center button (userLocRef is cleared on resume).
+  const latestLocRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const liveLotsRef = useRef(liveLots);
   liveLotsRef.current = liveLots;
   const { updateUserLocation } = useLots();
@@ -324,6 +332,9 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     hasAutoZoomedRef.current = true;
 
     if (nearestLotDistance(userLoc, lots) <= NEARBY_LOT_THRESHOLD_METERS) {
+      const campus = nearestCampus(userLoc);
+      shownCampusRef.current = campus;
+      onCampusDetected?.(campus);
       mapRef.current?.animateToRegion({
         latitude: userLoc.latitude,
         longitude: userLoc.longitude,
@@ -336,6 +347,7 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
 
   useEffect(() => {
     tryAutoZoom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveLots]);
 
   // Back after a while in the background: zoom to the user again on the next fix.
@@ -362,7 +374,27 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
     // Shared with the Lots tab so its permit picker can list nearby permits first.
     updateUserLocation(userLoc);
     userLocRef.current = userLoc;
+    latestLocRef.current = userLoc;
     tryAutoZoom();
+  };
+
+  // Re-center button: back to the user at lot zoom, and the campus dropdown follows.
+  const handleRecenter = () => {
+    const userLoc = latestLocRef.current;
+    if (!mapRef.current) return;
+    if (!userLoc) {
+      Alert.alert('Location unavailable', 'Allow EagleEyes to use your location in Settings, then try again.');
+      return;
+    }
+    const campus = nearestCampus(userLoc);
+    shownCampusRef.current = campus;
+    onCampusDetected?.(campus);
+    mapRef.current.animateToRegion({
+      latitude: userLoc.latitude,
+      longitude: userLoc.longitude,
+      latitudeDelta: NEARBY_ZOOM_DELTA,
+      longitudeDelta: NEARBY_ZOOM_DELTA,
+    }, 600);
   };
 
   const handleZoomIn = async () => {
@@ -595,6 +627,15 @@ export default function EagleMap({ liveLots, selectedCampus = "Main campus", map
       />
 
       <View style={styles.zoomControls}>
+        <TouchableOpacity
+          style={styles.zoomButton}
+          onPress={handleRecenter}
+          accessibilityRole="button"
+          accessibilityLabel="Center on my location"
+        >
+          <Ionicons name="navigate" size={22} color="#00853e" />
+        </TouchableOpacity>
+        <View style={styles.zoomDivider} />
         <TouchableOpacity style={styles.zoomButton} onPress={handleZoomIn}>
           <Ionicons name="add" size={24} color="#00853e" />
         </TouchableOpacity>

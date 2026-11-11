@@ -51,6 +51,7 @@ export default function ResetPasswordScreen() {
 
       <TextInput
         style={styles.input}
+        placeholderTextColor="#6B7280"
         placeholder="New Password"
         value={password}
         onChangeText={setPassword}
@@ -60,6 +61,7 @@ export default function ResetPasswordScreen() {
 
       <TextInput
         style={styles.input}
+        placeholderTextColor="#6B7280"
         placeholder="Confirm New Password"
         value={confirmPassword}
         onChangeText={setConfirmPassword}
@@ -83,7 +85,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: 'bold', color: '#333', textAlign: 'center', marginBottom: 8 },
   subtitle: { fontSize: 15, color: '#666', textAlign: 'center', marginBottom: 32, paddingHorizontal: 12 },
   emailText: { fontWeight: 'bold', color: '#333' },
-  input: { height: 52, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, marginBottom: 16, fontSize: 16, letterSpacing: 0 },
+  input: { height: 52, backgroundColor: '#fff', color: '#1A1A1A', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, marginBottom: 16, fontSize: 16, letterSpacing: 0 },
   primaryButton: { backgroundColor: '#00853E', height: 52, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
   buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   backButton: { marginTop: 20, alignItems: 'center' },
